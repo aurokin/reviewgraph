@@ -450,6 +450,42 @@ def test_high_confidence_generic_refactor_raw_finding_is_suppressed(tmp_path: Pa
     ]
 
 
+def test_high_confidence_speculative_raw_finding_is_suppressed(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "speculative-finding.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["items"] = [
+        {
+            "type": "postable_finding",
+            "id": "finding-speculative",
+            "title": "Potential issue",
+            "body": "This may cause problems and requires investigation.",
+            "evidence": "Changed line 12 returns a value.",
+            "path": "src/cache.py",
+            "line": 12,
+            "priority": 2,
+            "severity": "suggestion",
+            "confidence": "high",
+            "fingerprint": "fixture-speculative",
+        }
+    ]
+    fixture_path.write_text(json.dumps(fixture))
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path))
+    review = result.json_data["review"]
+
+    assert result.json_data["local_verdict"] == "no_findings"
+    assert result.json_data["post_enabled"] is False
+    assert review["candidate_payload_preview"] is None
+    assert review["classified_output"]["postable_findings"] == []
+    assert review["classified_output"]["suppressed"] == [
+        {
+            "id": "finding-speculative",
+            "classification": "non_finding",
+            "reason": "Finding candidate did not meet postable quality policy.",
+        }
+    ]
+
+
 @pytest.mark.parametrize(
     ("title", "body"),
     (

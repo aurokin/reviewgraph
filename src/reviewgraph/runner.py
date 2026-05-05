@@ -364,6 +364,10 @@ def _is_postable_finding(finding: ClassifiedFinding) -> bool:
     text = f"{finding.title}\n{finding.body}\n{finding.evidence}".casefold()
     if _is_testing_advice(finding, text):
         return _has_testing_finding_shape(text)
+    if _is_generic_speculative_advice(text):
+        return False
+    if not _has_non_testing_finding_shape(text):
+        return False
     generic_refactor_advice = (
         "clean this up",
         "could be refactored",
@@ -424,6 +428,39 @@ def _has_testing_finding_shape(text: str) -> bool:
     )
     scenario = bool(re.search(r"\b(when|if|after|before|with|for|on)\b", text))
     return missing_coverage and changed_behavior and scenario
+
+
+def _is_generic_speculative_advice(text: str) -> bool:
+    speculative_terms = (
+        "could cause problems",
+        "may cause problems",
+        "might cause problems",
+        "potential issue",
+        "requires investigation",
+        "should investigate",
+    )
+    return any(term in text for term in speculative_terms)
+
+
+def _has_non_testing_finding_shape(text: str) -> bool:
+    changed_behavior = any(
+        term in text
+        for term in (
+            "breaks",
+            "drops",
+            "exposes",
+            "fails",
+            "leaks",
+            "raises",
+            "regress",
+            "returns",
+            "skips",
+            "stale",
+            "unauthorized",
+        )
+    )
+    scenario = bool(re.search(r"\b(when|if|after|before|with|without|for|on)\b", text))
+    return changed_behavior and scenario
 
 
 def _require_fields(data: dict[str, Any], fields: tuple[str, ...], label: str) -> None:
