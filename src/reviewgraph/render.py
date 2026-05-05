@@ -408,7 +408,7 @@ def _has_enough_fragment_signal(fragment: str) -> bool:
         return (
             len(fragment) >= 10
             and len(set(fragment.replace(" ", ""))) >= 5
-            and (any(word in sensitive_words for word in words) or max(len(word) for word in words) >= 8)
+            and any(word in sensitive_words for word in words)
         )
     compact = fragment.replace(" ", "")
     return len(fragment) >= 7 and len(set(compact)) >= 5
@@ -419,9 +419,11 @@ def _has_enough_word_signal(word: str, words: list[str], index: int) -> bool:
         return False
     if len(words) == 1:
         return len(word) >= 5 and len(set(word)) >= 4
-    if _looks_identifier_like(word):
-        return True
     context_window = words[max(0, index - 2) : index] + words[index + 1 : index + 3]
+    if _looks_identifier_like(word):
+        return any(token in _HIGH_SIGNAL_CONTEXT_WORDS for token in context_window)
+    if len(word) >= 10 and len(set(word)) >= 6:
+        return True
     return len(word) >= 5 and len(set(word)) >= 4 and any(token in _HIGH_SIGNAL_CONTEXT_WORDS for token in context_window)
 
 
@@ -463,6 +465,8 @@ def _normalize_memory_text(value: str) -> str:
 
 
 _COMMON_MEMORY_WORDS = {
+    "authentication",
+    "authorization",
     "branch",
     "cache",
     "candidate",

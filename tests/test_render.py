@@ -687,8 +687,9 @@ def test_common_long_domain_word_in_untrusted_memory_does_not_block_candidate_pa
 @pytest.mark.parametrize(
     ("untrusted_body", "finding_body"),
     (
-        ("I think line 12 is wrong.", "Changed line 12 returns stale data."),
-        ("I saw cache 1234 in this PR.", "Cache 1234 is handled by the new branch."),
+        ("I think line 123456 is wrong.", "Changed line 123456 returns stale data."),
+        ("I saw cache 123456 in this PR.", "Cache 123456 is handled by the new branch."),
+        ("Authentication 123456 failed locally.", "Authentication 123456 fails for valid sessions."),
     ),
 )
 def test_common_word_number_untrusted_memory_does_not_block_candidate_payload_preview(
@@ -721,6 +722,35 @@ def test_common_word_number_untrusted_memory_does_not_block_candidate_payload_pr
     )
 
     assert rendered.json_data["candidate_payload_preview"]["body"] == payload.body
+
+
+def test_unique_low_context_untrusted_token_cannot_enter_candidate_payload_preview() -> None:
+    untrusted_body = "Please use mergebypass here."
+    findings = [finding(body="Copied: mergebypass")]
+    plan = build_posting_plan(findings=findings)
+    payload = build_candidate_issue_comment_payload(
+        review_target=target(),
+        posting_plan=plan,
+        findings=findings,
+    )
+
+    with pytest.raises(RenderError, match="untrusted memory"):
+        render_review(
+            review_target=target(),
+            selected_reviewers=selected_reviewers(),
+            findings=findings,
+            posting_plan=plan,
+            candidate_payload=payload,
+            memory_references=[
+                MemoryReference(
+                    "mem-unique-token",
+                    "untrusted",
+                    "unresolved",
+                    "issue_comment",
+                    untrusted_body,
+                )
+            ],
+        )
 
 
 def test_identifier_like_single_token_untrusted_memory_cannot_enter_candidate_payload_preview() -> None:

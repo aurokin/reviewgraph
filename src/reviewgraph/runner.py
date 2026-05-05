@@ -230,7 +230,15 @@ def _classify_raw_outputs(
             item_type = _required_str(item, "type", "raw reviewer output item")
             if item_type == "postable_finding":
                 finding = _classified_finding(fixture, reviewer=reviewer, stage=stage, item=item)
-                findings.append(finding)
+                if _is_postable_finding(finding):
+                    findings.append(finding)
+                else:
+                    suppressed_outputs.append(
+                        SuppressedOutput(
+                            id=finding.id,
+                            reason="Finding candidate did not meet postable quality policy.",
+                        )
+                    )
             elif item_type == "local_note":
                 _require_fields(item, ("id", "title", "body", "evidence"), "local_note")
                 local_notes.append(
@@ -345,6 +353,20 @@ def _classified_finding(
         confidence=Confidence(_required_str(item, "confidence", "postable_finding")),
         fingerprint=_required_str(item, "fingerprint", "postable_finding"),
     )
+
+
+def _is_postable_finding(finding: ClassifiedFinding) -> bool:
+    if finding.confidence != Confidence.HIGH:
+        return False
+    text = f"{finding.title}\n{finding.body}\n{finding.evidence}".casefold()
+    generic_test_advice = (
+        "add tests",
+        "missing tests",
+        "needs tests",
+        "please add tests",
+        "test coverage",
+    )
+    return not any(phrase in text for phrase in generic_test_advice)
 
 
 def _require_fields(data: dict[str, Any], fields: tuple[str, ...], label: str) -> None:

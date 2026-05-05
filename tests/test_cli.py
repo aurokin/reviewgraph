@@ -332,6 +332,52 @@ def test_secret_like_output_item_id_fails_closed(tmp_path: Path, capsys: pytest.
     assert "abcdefghijklmnopqrstuvwxyz" not in stderr
 
 
+def test_generic_low_confidence_raw_finding_is_suppressed(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "generic-low-confidence.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["items"] = [
+        {
+            "type": "postable_finding",
+            "id": "finding-generic-tests",
+            "title": "Please add tests",
+            "body": "Please add tests for this change.",
+            "evidence": "Changed line 12.",
+            "path": "src/cache.py",
+            "line": 12,
+            "priority": 2,
+            "severity": "suggestion",
+            "confidence": "low",
+            "fingerprint": "fixture-generic-tests",
+        }
+    ]
+    fixture_path.write_text(json.dumps(fixture))
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path))
+    review = result.json_data["review"]
+
+    assert result.json_data["local_verdict"] == "no_findings"
+    assert result.json_data["post_enabled"] is False
+    assert review["candidate_payload_preview"] is None
+    assert review["classified_output"]["postable_findings"] == []
+    assert review["classified_output"]["suppressed"] == [
+        {
+            "id": "finding-generic-tests",
+            "classification": "non_finding",
+            "reason": "Finding candidate did not meet postable quality policy.",
+        }
+    ]
+    assert review["posting_plan"]["items"] == [
+        {
+            "id": "finding-generic-tests",
+            "source_classification": "non_finding",
+            "destination": "local_only",
+            "public_payload_eligible": False,
+            "fingerprint": None,
+            "body": "Finding candidate did not meet postable quality policy.",
+        }
+    ]
+
+
 def test_suggested_reply_fixture_is_local_only(tmp_path: Path) -> None:
     fixture_path = tmp_path / "suggested-reply.json"
     fixture = _basic_fixture()
