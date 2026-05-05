@@ -233,6 +233,22 @@ def test_renderer_outputs_redact_secret_like_target_and_path_metadata(tmp_path: 
     assert "[REDACTED]" in serialized
 
 
+def test_fixture_run_redacts_standalone_underscore_api_key(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "standalone-secret.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["items"][0]["body"] = (
+        "The new branch exposes sk_live_1234567890abcdef without a label."
+    )
+    fixture_path.write_text(json.dumps(fixture))
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path))
+
+    serialized = result.markdown + json.dumps(result.rendered.json_data) + json.dumps(result.json_data)
+    assert "sk_live" not in serialized
+    assert "1234567890abcdef" not in serialized
+    assert "[REDACTED]" in serialized
+
+
 def test_clarification_only_fixture_is_not_post_enabled(tmp_path: Path) -> None:
     fixture_path = tmp_path / "clarify.json"
     fixture = _basic_fixture()
@@ -458,6 +474,7 @@ def test_invalid_memory_body_type_returns_nonzero(
         (lambda data: data.pop("target"), "fixture.target is required"),
         (lambda data: data.update({"changed_files": []}), "fixture.changed_files"),
         (lambda data: data.update({"raw_reviewer_outputs": []}), "fixture.raw_reviewer_outputs"),
+        (lambda data: data.update({"run_mode": "post"}), "fixture.run_mode must be dry_run"),
     ),
 )
 def test_invalid_fixture_returns_nonzero(

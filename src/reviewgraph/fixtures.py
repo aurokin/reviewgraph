@@ -145,6 +145,9 @@ def parse_fixture_pr(data: dict[str, Any]) -> FixturePR:
     for field in required:
         if field not in data:
             raise FixtureError(f"fixture.{field} is required")
+    run_mode = data.get("run_mode", "dry_run")
+    if run_mode != "dry_run":
+        raise FixtureError("fixture.run_mode must be dry_run when present")
     if not isinstance(data["target"], dict):
         raise FixtureError("fixture.target must be an object")
     target = data["target"]
