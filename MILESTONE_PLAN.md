@@ -1,5 +1,7 @@
 # MILESTONE PLAN: PRD 0001 North Star
 
+Historical execution artifact for this milestone. Linear remains the durable source for issue status, milestone order, blockers, and handoff details; if this file conflicts with Linear, Linear wins.
+
 ## Linear scope
 
 - Milestone: `PRD 0001: North Star`

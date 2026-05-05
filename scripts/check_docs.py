@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -141,10 +142,13 @@ def parse_backlog_export(path: Path) -> tuple[dict[str, Any], list[Issue], int]:
     for index, item in enumerate(raw["issues"], start=1):
         if not isinstance(item, dict):
             raise ValidationError(f"issue at position {index} must be an object")
-        issue_id = item.get("id")
-        title = item.get("title", "")
-        status_type = item.get("status_type", "")
-        blocked_by = item.get("blocked_by", [])
+        for field in ("id", "title", "status_type", "blocked_by"):
+            if field not in item:
+                raise ValidationError(f"issue at position {index} missing required field: {field}")
+        issue_id = item["id"]
+        title = item["title"]
+        status_type = item["status_type"]
+        blocked_by = item["blocked_by"]
         if not isinstance(issue_id, str) or not issue_id:
             raise ValidationError(f"issue at position {index} has invalid id")
         if not isinstance(title, str):
@@ -203,6 +207,7 @@ def find_cycle(edges: dict[str, tuple[str, ...]]) -> list[str] | None:
 def check_backlog_export(path: Path, verbose: bool = False) -> list[str]:
     raw, issues, skipped_canceled = parse_backlog_export(path)
     errors: list[str] = []
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()[:16]
 
     positions: dict[str, int] = {}
     for ordinal, issue in enumerate(issues, start=1):
@@ -233,6 +238,8 @@ def check_backlog_export(path: Path, verbose: bool = False) -> list[str]:
 
     print(
         "backlog order check:",
+        f"path={str(path)!r}",
+        f"sha256={digest}",
         f"source={raw['source']!r}",
         f"project={raw['project']!r}",
         f"milestone={raw['milestone']!r}",
@@ -241,8 +248,13 @@ def check_backlog_export(path: Path, verbose: bool = False) -> list[str]:
         f"edges={edge_count}",
         f"skipped_canceled={skipped_canceled}",
     )
-    if verbose:
-        print("active order:", ", ".join(issue.id for issue in issues) or "<empty>")
+    print("active order:", ", ".join(issue.id for issue in issues) or "<empty>")
+    if edge_count:
+        for issue in issues:
+            for blocker in issue.blocked_by:
+                print(f"edge: {issue.id} blocked_by {blocker}")
+    elif verbose:
+        print("edges: <none>")
     if errors:
         for error in errors:
             print(f"backlog order error: {error}", file=sys.stderr)

@@ -1,5 +1,7 @@
 # ISSUE PLAN: AUR-229 Keep PRDs Architecture And Plan In Sync
 
+Historical execution artifact for this issue. Linear remains the durable source for issue status, blockers, and handoff details; if this file conflicts with Linear, Linear wins.
+
 ## Linear issue
 
 - Issue: `AUR-229` / `RG-040: Keep PRDs Architecture And Plan In Sync`
