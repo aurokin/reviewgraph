@@ -443,6 +443,35 @@ def test_generic_coverage_with_weak_behavior_evidence_is_suppressed(tmp_path: Pa
     assert review["classified_output"]["postable_findings"] == []
 
 
+def test_generic_coverage_with_vague_scenario_is_suppressed(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "generic-coverage-vague-scenario.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["items"] = [
+        {
+            "type": "postable_finding",
+            "id": "finding-vague-coverage",
+            "title": "Missing tests",
+            "body": "No tests when this changes.",
+            "evidence": "Changed line 12 returns stale value.",
+            "path": "src/cache.py",
+            "line": 12,
+            "priority": 2,
+            "severity": "suggestion",
+            "confidence": "high",
+            "fingerprint": "fixture-vague-coverage",
+        }
+    ]
+    fixture_path.write_text(json.dumps(fixture))
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path))
+    review = result.json_data["review"]
+
+    assert result.json_data["local_verdict"] == "no_findings"
+    assert result.json_data["post_enabled"] is False
+    assert review["candidate_payload_preview"] is None
+    assert review["classified_output"]["postable_findings"] == []
+
+
 def test_high_confidence_generic_refactor_raw_finding_is_suppressed(tmp_path: Path) -> None:
     fixture_path = tmp_path / "generic-refactor.json"
     fixture = _basic_fixture()
@@ -752,6 +781,11 @@ def test_concrete_security_and_privacy_finding_wording_is_postable(
         ("This permits better organization in future.", "Changed line 12 permits better organization in future."),
         ("This includes abstractions to improve maintainability.", "Changed line 12 includes abstractions to improve maintainability."),
         ("This enables easier maintenance when this grows.", "Changed line 12 enables easier maintenance when this grows."),
+        (
+            "The new helper allows future maintainers to understand the cache code.",
+            "Changed line 12 allows future maintainers to understand the cache code.",
+        ),
+        ("This accepts better structure in this module.", "Changed line 12 accepts better structure in this module."),
     ),
 )
 def test_generic_maintenance_finding_with_broad_verb_is_suppressed(

@@ -1052,6 +1052,65 @@ def test_stopword_only_untrusted_memory_does_not_block_candidate_payload_preview
     assert rendered.json_data["candidate_payload_preview"]["body"] == payload.body
 
 
+@pytest.mark.parametrize("untrusted_body", ("if the", "the if"))
+def test_stopword_phrase_untrusted_memory_does_not_block_candidate_payload_preview(untrusted_body: str) -> None:
+    findings = [finding(body="This returns a fresh value if the cache misses.")]
+    plan = build_posting_plan(findings=findings)
+    payload = build_candidate_issue_comment_payload(
+        review_target=target(),
+        posting_plan=plan,
+        findings=findings,
+    )
+
+    rendered = render_review(
+        review_target=target(),
+        selected_reviewers=selected_reviewers(),
+        findings=findings,
+        posting_plan=plan,
+        candidate_payload=payload,
+        memory_references=[
+            MemoryReference(
+                "mem-stopword-phrase",
+                "untrusted",
+                "unresolved",
+                "issue_comment",
+                untrusted_body,
+            )
+        ],
+    )
+
+    assert rendered.json_data["candidate_payload_preview"]["body"] == payload.body
+
+
+@pytest.mark.parametrize("untrusted_body", ("ACME", "beta"))
+def test_exact_short_untrusted_memory_body_cannot_enter_candidate_payload_preview(untrusted_body: str) -> None:
+    findings = [finding(body=f"Copied: {untrusted_body}")]
+    plan = build_posting_plan(findings=findings)
+    payload = build_candidate_issue_comment_payload(
+        review_target=target(),
+        posting_plan=plan,
+        findings=findings,
+    )
+
+    with pytest.raises(RenderError, match="untrusted memory"):
+        render_review(
+            review_target=target(),
+            selected_reviewers=selected_reviewers(),
+            findings=findings,
+            posting_plan=plan,
+            candidate_payload=payload,
+            memory_references=[
+                MemoryReference(
+                    "mem-exact-short",
+                    "untrusted",
+                    "unresolved",
+                    "issue_comment",
+                    untrusted_body,
+                )
+            ],
+        )
+
+
 def test_punctuation_normalized_untrusted_memory_cannot_enter_candidate_payload_preview() -> None:
     untrusted_body = "The reviewer wrote Ship-it now in an unresolved comment."
     findings = [finding(body="Copied: Ship it now")]

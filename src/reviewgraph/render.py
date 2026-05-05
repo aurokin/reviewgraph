@@ -335,6 +335,8 @@ def _memory_body_overlaps_candidate(memory_body: str | None, candidate_body: str
         return False
     normalized_memory = _normalize_memory_text(memory_body)
     normalized_candidate = _normalize_memory_text(candidate_body)
+    if _exact_memory_body_is_meaningful(normalized_memory) and normalized_memory in normalized_candidate:
+        return True
     candidate_words = set(normalized_candidate.split())
     compact_candidate = normalized_candidate.replace(" ", "")
     meaningful_fragments = _meaningful_memory_fragments(memory_body)
@@ -377,7 +379,7 @@ def _public_finding_text(posting_plan: PostingPlan | None, findings: tuple[Class
 def _meaningful_memory_fragments(memory_body: str) -> tuple[str, ...]:
     normalized = _normalize_memory_text(memory_body)
     raw_tokens = [token for token in re.split(r"\s+", memory_body.strip()) if token]
-    fragments = {normalized} if normalized and " " in normalized else set()
+    fragments = {normalized} if _full_memory_fragment_is_meaningful(normalized) else set()
     for sentence in normalized.replace("!", ".").replace("?", ".").split("."):
         sentence = sentence.strip()
         if len(sentence) >= 16:
@@ -421,6 +423,22 @@ def _has_enough_fragment_signal(fragment: str) -> bool:
         )
     compact = fragment.replace(" ", "")
     return len(fragment) >= 7 and len(set(compact)) >= 5
+
+
+def _exact_memory_body_is_meaningful(normalized: str) -> bool:
+    words = normalized.split()
+    if not words:
+        return False
+    if all(word in _COMMON_MEMORY_WORDS for word in words):
+        return False
+    if len(words) == 1:
+        word = words[0]
+        return word not in _COMMON_MEMORY_WORDS and len(word) >= 4 and len(set(word)) >= 4
+    return len(normalized) >= 4 and len(set(normalized.replace(" ", ""))) >= 4
+
+
+def _full_memory_fragment_is_meaningful(normalized: str) -> bool:
+    return " " in normalized and _exact_memory_body_is_meaningful(normalized)
 
 
 def _has_enough_word_signal(word: str, words: list[str], index: int) -> bool:
@@ -538,6 +556,7 @@ _COMMON_MEMORY_WORDS = {
     "during",
     "evidence",
     "here",
+    "if",
     "issue",
     "line",
     "mentioned",
@@ -551,6 +570,7 @@ _COMMON_MEMORY_WORDS = {
     "reviewer",
     "should",
     "target",
+    "the",
     "thread",
     "untrusted",
 }

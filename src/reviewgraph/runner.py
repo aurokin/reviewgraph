@@ -378,9 +378,13 @@ def _is_postable_finding(finding: ClassifiedFinding) -> bool:
         "extract helper",
         "cleaner code",
         "better organization",
+        "better structure",
         "improve maintainability",
         "abstractions",
+        "future maintainer",
+        "future maintainers",
         "improve readability",
+        "understand the",
         "refactor this",
         "simplify this code",
         "when this grows",
@@ -436,7 +440,26 @@ def _has_testing_finding_shape(text: str) -> bool:
         )
     )
     scenario = bool(re.search(r"\b(when|if|after|before|with|without|on)\b", text))
-    return missing_coverage and changed_behavior and scenario
+    return (
+        missing_coverage
+        and changed_behavior
+        and scenario
+        and not _has_vague_testing_scenario(text)
+        and _has_specific_testing_target(text)
+    )
+
+
+def _has_vague_testing_scenario(text: str) -> bool:
+    return any(phrase in text for phrase in ("for this change", "when this changes", "this changes", "changed behavior"))
+
+
+def _has_specific_testing_target(text: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(cache|auth|login|redirect|filename|visibility|session|token|header|api|request|response|caller|input|path)\b",
+            text,
+        )
+    )
 
 
 def _is_generic_speculative_advice(text: str) -> bool:
