@@ -38,7 +38,7 @@ class ArtifactKind(StrEnum):
 
 
 def validate_priority(priority: int) -> int:
-    if not isinstance(priority, int) or priority < 0 or priority > 3:
+    if type(priority) is not int or priority < 0 or priority > 3:
         raise ValueError("priority must be an integer from 0 through 3")
     return priority
 

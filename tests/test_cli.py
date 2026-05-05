@@ -1,5 +1,7 @@
 import ast
 import json
+import subprocess
+import sys
 from importlib import resources
 from pathlib import Path
 
@@ -89,6 +91,33 @@ def test_package_fixture_data_is_available() -> None:
     data_root = resources.files("reviewgraph").joinpath("fixtures_data")
     assert data_root.joinpath("manifest.json").is_file()
     assert data_root.joinpath("prs/basic-pr.json").is_file()
+
+
+def test_fixture_id_resolution_is_not_shadowed_by_local_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    Path("basic-pr").write_text("{}")
+
+    result = run_fixture_dry_run(fixture_ref="basic-pr")
+
+    assert result.json_data["fixture_id"] == "basic-pr"
+    assert result.json_data["review"]["review_target"]["owner_repo"] == "acme/widgets"
+
+
+def test_module_command_works_with_editable_install(tmp_path: Path) -> None:
+    venv_dir = tmp_path / "venv"
+    subprocess.run([sys.executable, "-m", "venv", str(venv_dir)], check=True)
+    python = venv_dir / "bin" / "python"
+    subprocess.run([str(python), "-m", "pip", "install", "-e", "."], check=True, stdout=subprocess.DEVNULL)
+
+    completed = subprocess.run(
+        [str(python), "-m", "reviewgraph.cli", "--fixture-pr", "basic-pr", "--print-markdown"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "# ReviewGraph Dry Run" in completed.stdout
+    assert completed.stderr == ""
 
 
 def test_manifest_registry_includes_consumed_basic_fixture() -> None:
@@ -338,6 +367,7 @@ def test_no_eligible_reviewer_returns_nonzero(tmp_path: Path, capsys: pytest.Cap
         ("base_sha", None, "fixture.target.base_sha must be a non-empty string"),
         ("head_sha", "", "fixture.target.head_sha must be a non-empty string"),
         ("pr_number", "42", "fixture.target.pr_number must be a positive integer"),
+        ("pr_number", True, "fixture.target.pr_number must be a positive integer"),
     ),
 )
 def test_invalid_target_metadata_returns_nonzero(
@@ -350,6 +380,29 @@ def test_invalid_target_metadata_returns_nonzero(
     fixture_path = tmp_path / "bad-target.json"
     fixture = _basic_fixture()
     fixture["target"][field] = value
+    fixture_path.write_text(json.dumps(fixture))
+
+    assert main(["--fixture-pr", str(fixture_path)]) == 2
+    assert expected_stderr in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected_stderr"),
+    (
+        ("line", True, "postable_finding.line must be an integer"),
+        ("priority", True, "postable_finding.priority must be an integer"),
+    ),
+)
+def test_boolean_finding_integer_fields_return_nonzero(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    field: str,
+    value: object,
+    expected_stderr: str,
+) -> None:
+    fixture_path = tmp_path / "bad-finding-int.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["items"][0][field] = value
     fixture_path.write_text(json.dumps(fixture))
 
     assert main(["--fixture-pr", str(fixture_path)]) == 2
@@ -406,6 +459,13 @@ def test_non_object_nested_fixture_entries_return_nonzero(
 
     assert main(["--fixture-pr", str(fixture_path)]) == 2
     assert "changed_ranges entries must be objects" in capsys.readouterr().err
+
+    fixture = _basic_fixture()
+    fixture["changed_files"][0]["changed_ranges"][0]["start"] = True
+    fixture_path.write_text(json.dumps(fixture))
+
+    assert main(["--fixture-pr", str(fixture_path)]) == 2
+    assert "changed range start must be an integer" in capsys.readouterr().err
 
     fixture = _basic_fixture()
     fixture["raw_reviewer_outputs"] = ["not-an-object"]

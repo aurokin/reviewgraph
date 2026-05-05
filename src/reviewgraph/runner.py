@@ -281,7 +281,7 @@ def _classified_finding(
         "postable_finding",
     )
     path = str(item["path"])
-    line = int(item["line"])
+    line = _required_int(item, "line", "postable_finding")
     assert_changed_line(fixture, path=path, line=line)
     return ClassifiedFinding(
         id=str(item["id"]),
@@ -292,7 +292,7 @@ def _classified_finding(
         evidence=str(item["evidence"]),
         path=path,
         line=line,
-        priority=int(item["priority"]),
+        priority=_required_int(item, "priority", "postable_finding"),
         severity=Severity(str(item["severity"])),
         confidence=Confidence(str(item["confidence"])),
         fingerprint=str(item["fingerprint"]),
@@ -309,6 +309,13 @@ def _required_str(data: dict[str, Any], field: str, label: str) -> str:
     value = data.get(field)
     if not isinstance(value, str) or not value:
         raise RunnerError(f"{label}.{field} is required")
+    return value
+
+
+def _required_int(data: dict[str, Any], field: str, label: str) -> int:
+    value = data.get(field)
+    if type(value) is not int:
+        raise RunnerError(f"{label}.{field} must be an integer")
     return value
 
 

@@ -80,14 +80,14 @@ def load_manifest(path: Path | None = None) -> dict[str, Any]:
 
 
 def resolve_fixture_ref(fixture_ref: str) -> Path:
-    candidate = Path(fixture_ref)
-    if candidate.exists():
-        return candidate
-
     manifest = load_manifest()
     for entry in manifest["fixtures"]:
         if entry["id"] == fixture_ref:
             return _resource_path(entry["path"])
+
+    candidate = Path(fixture_ref)
+    if candidate.exists():
+        return candidate
     raise FixtureError(f"fixture reference not found: {redact_for_error(fixture_ref)}")
 
 
@@ -126,7 +126,7 @@ def parse_fixture_pr(data: dict[str, Any]) -> FixturePR:
     for field in ("owner_repo", "base_sha", "head_sha", "diff_basis"):
         if not isinstance(target.get(field), str) or not target[field]:
             raise FixtureError(f"fixture.target.{field} must be a non-empty string")
-    if not isinstance(target.get("pr_number"), int) or target["pr_number"] <= 0:
+    if not _is_json_int(target.get("pr_number")) or target["pr_number"] <= 0:
         raise FixtureError("fixture.target.pr_number must be a positive integer")
     if target.get("merge_base_sha") is not None and not isinstance(target.get("merge_base_sha"), str):
         raise FixtureError("fixture.target.merge_base_sha must be a string or null")
@@ -224,6 +224,10 @@ def _required_str(data: dict[str, Any], field: str, label: str) -> str:
 
 def _required_int(data: dict[str, Any], field: str) -> int:
     value = data.get(field)
-    if not isinstance(value, int):
+    if not _is_json_int(value):
         raise FixtureError(f"changed range {field} must be an integer")
     return value
+
+
+def _is_json_int(value: object) -> bool:
+    return type(value) is int
