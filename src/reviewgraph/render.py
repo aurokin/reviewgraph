@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Iterable
 
@@ -16,7 +17,15 @@ from reviewgraph.models import (
     SuppressedOutput,
     TruncationNotice,
 )
-from reviewgraph.posting import CandidateIssueCommentPayload, PostingPlan, PostingPlanItem
+from reviewgraph.posting import (
+    CandidateIssueCommentPayload,
+    PostingPlan,
+    PostingPlanItem,
+    build_candidate_issue_comment_payload,
+    findings_hash,
+    full_body_hash,
+    visible_body_hash,
+)
 from reviewgraph.redaction import redact_text
 
 
@@ -75,6 +84,9 @@ def render_json(*, inputs: "_RenderInputs", context: "_RenderContext | None" = N
     context = context or _RenderContext()
     candidate_preview = _candidate_payload_preview(
         inputs.candidate_payload,
+        inputs.review_target,
+        inputs.posting_plan,
+        inputs.findings,
         inputs.memory_references,
         context,
     )
@@ -182,7 +194,14 @@ def render_markdown(*, inputs: "_RenderInputs", context: "_RenderContext | None"
     else:
         lines.append("- None")
 
-    preview = _candidate_payload_preview(inputs.candidate_payload, inputs.memory_references, context)
+    preview = _candidate_payload_preview(
+        inputs.candidate_payload,
+        inputs.review_target,
+        inputs.posting_plan,
+        inputs.findings,
+        inputs.memory_references,
+        context,
+    )
     lines.extend(["", "## Candidate Payload Preview"])
     if preview is None:
         lines.append("- None")
@@ -213,15 +232,30 @@ def _markdown_items(items: Iterable[tuple[str, str]], context: "_RenderContext")
 
 def _candidate_payload_preview(
     candidate_payload: CandidateIssueCommentPayload | None,
+    review_target: ReviewTarget,
+    posting_plan: PostingPlan | None,
+    findings: tuple[ClassifiedFinding, ...],
     memory_references: tuple[MemoryReference, ...],
     context: "_RenderContext",
 ) -> dict[str, Any] | None:
     if candidate_payload is None:
         return None
+    _validate_candidate_payload_binding(
+        candidate_payload=candidate_payload,
+        review_target=review_target,
+        posting_plan=posting_plan,
+        findings=findings,
+    )
     body = context.redact(candidate_payload.body)
+    if body != candidate_payload.body:
+        raise RenderError("candidate payload requires redaction after hash binding")
     for memory in memory_references:
-        if memory.trust_label == "untrusted" and memory.body and memory.body in body:
+        if _is_unsafe_memory(memory) and _memory_body_overlaps_candidate(
+            memory.body,
+            _public_finding_text(posting_plan, findings),
+        ):
             raise RenderError(f"candidate payload contains untrusted memory body: {memory.id}")
+    context.absorb_candidate_payload_status(candidate_payload.redaction_status)
     return {
         "artifact_kind": candidate_payload.artifact_kind.value,
         "review_target": candidate_payload.review_target.to_ordered_dict(),
@@ -236,6 +270,118 @@ def _candidate_payload_preview(
             "categories": list(candidate_payload.redaction_status.categories),
         },
     }
+
+
+def _validate_candidate_payload_binding(
+    *,
+    candidate_payload: CandidateIssueCommentPayload,
+    review_target: ReviewTarget,
+    posting_plan: PostingPlan | None,
+    findings: tuple[ClassifiedFinding, ...],
+) -> None:
+    if candidate_payload.review_target != review_target:
+        raise RenderError("candidate payload target does not match rendered review target")
+    if candidate_payload.visible_body_hash != visible_body_hash(candidate_payload.body):
+        raise RenderError("candidate payload visible body hash does not match body")
+    if candidate_payload.full_body_hash != full_body_hash(candidate_payload.body):
+        raise RenderError("candidate payload full body hash does not match body")
+    if candidate_payload.findings_hash != findings_hash(candidate_payload.item_fingerprints):
+        raise RenderError("candidate payload findings hash does not match item fingerprints")
+    if posting_plan is None:
+        raise RenderError("candidate payload requires a posting plan")
+    for item in posting_plan.public_payload_items:
+        if item.id != "summary" and not item.fingerprint:
+            raise RenderError("public payload item is missing a fingerprint")
+    plan_fingerprints = tuple(
+        sorted(item.fingerprint for item in posting_plan.public_payload_items if item.fingerprint)
+    )
+    if plan_fingerprints != candidate_payload.item_fingerprints:
+        raise RenderError("candidate payload item fingerprints do not match posting plan")
+    expected_payload = build_candidate_issue_comment_payload(
+        review_target=review_target,
+        posting_plan=posting_plan,
+        findings=findings,
+    )
+    if candidate_payload != expected_payload:
+        raise RenderError("candidate payload does not match current rendered findings")
+
+
+def _is_unsafe_memory(memory: MemoryReference) -> bool:
+    return memory.trust_label != "trusted"
+
+
+def _memory_body_overlaps_candidate(memory_body: str | None, candidate_body: str) -> bool:
+    if not memory_body:
+        return False
+    normalized_candidate = _normalize_memory_text(candidate_body)
+    candidate_words = set(normalized_candidate.split())
+    compact_candidate = normalized_candidate.replace(" ", "")
+    meaningful_fragments = _meaningful_memory_fragments(memory_body)
+    for fragment in meaningful_fragments:
+        if " " in fragment and fragment in normalized_candidate:
+            return True
+        if " " not in fragment and fragment in candidate_words:
+            return True
+        compact_fragment = fragment.replace(" ", "")
+        if _has_enough_compact_fragment_signal(compact_fragment) and compact_fragment in compact_candidate:
+            return True
+    return False
+
+
+def _public_finding_text(posting_plan: PostingPlan | None, findings: tuple[ClassifiedFinding, ...]) -> str:
+    if posting_plan is None:
+        return ""
+    findings_by_id = {finding.id: finding for finding in findings}
+    public_text: list[str] = []
+    for item in posting_plan.public_payload_items:
+        if item.id == "summary":
+            continue
+        finding = findings_by_id.get(item.id)
+        if finding is not None:
+            public_text.extend([finding.title, finding.body])
+    return "\n".join(public_text)
+
+
+def _meaningful_memory_fragments(memory_body: str) -> tuple[str, ...]:
+    normalized = _normalize_memory_text(memory_body)
+    fragments = {normalized} if normalized else set()
+    for sentence in normalized.replace("!", ".").replace("?", ".").split("."):
+        sentence = sentence.strip()
+        if len(sentence) >= 16:
+            fragments.add(sentence)
+    words = normalized.split()
+    for word in words:
+        if _has_enough_word_signal(word):
+            fragments.add(word)
+    for size in range(2, min(5, len(words)) + 1):
+        for index in range(0, len(words) - size + 1):
+            fragment = " ".join(words[index : index + size])
+            if _has_enough_fragment_signal(fragment) or _has_enough_compact_fragment_signal(
+                fragment.replace(" ", "")
+            ):
+                fragments.add(fragment)
+    for index in range(0, max(len(words) - 5, 0)):
+        fragment = " ".join(words[index : index + 6])
+        if len(fragment) >= 24:
+            fragments.add(fragment)
+    return tuple(sorted(fragments))
+
+
+def _has_enough_fragment_signal(fragment: str) -> bool:
+    compact = fragment.replace(" ", "")
+    return len(fragment) >= 7 and len(set(compact)) >= 5
+
+
+def _has_enough_word_signal(word: str) -> bool:
+    return len(word) >= 5 and len(set(word)) >= 4
+
+
+def _has_enough_compact_fragment_signal(fragment: str) -> bool:
+    return len(fragment) >= 5 and len(set(fragment)) >= 4
+
+
+def _normalize_memory_text(value: str) -> str:
+    return " ".join(re.sub(r"[_\W]+", " ", value.casefold()).split())
 
 
 def _finding_json(finding: ClassifiedFinding, context: "_RenderContext") -> dict[str, Any]:
@@ -317,7 +463,7 @@ def _memory_json(memory: MemoryReference, context: "_RenderContext") -> dict[str
         "trust_label": memory.trust_label,
         "resolved_status": memory.resolved_status,
         "source_type": memory.source_type,
-        "body": context.redact(memory.body) if memory.body and memory.trust_label != "untrusted" else None,
+        "body": context.redact(memory.body) if memory.body and not _is_unsafe_memory(memory) else None,
     }
 
 
@@ -351,18 +497,29 @@ class _RenderInputs:
 
 class _RenderContext:
     def __init__(self) -> None:
+        self._redacted = False
         self._replacement_count = 0
         self._categories: list[str] = []
+        self._candidate_payload_status_absorbed = False
 
     def redact(self, value: str) -> str:
         result = redact_text(value)
+        self._redacted = self._redacted or result.redacted
         self._replacement_count += result.replacement_count
         self._categories.extend(result.categories)
         return result.text
 
+    def absorb_candidate_payload_status(self, status: RedactionStatus) -> None:
+        if self._candidate_payload_status_absorbed:
+            return
+        self._candidate_payload_status_absorbed = True
+        self._redacted = self._redacted or status.redacted
+        self._replacement_count += status.replacement_count
+        self._categories.extend(status.categories)
+
     def status(self) -> RedactionStatus:
         return RedactionStatus(
-            redacted=self._replacement_count > 0,
+            redacted=self._redacted or self._replacement_count > 0,
             replacement_count=self._replacement_count,
             categories=tuple(dict.fromkeys(self._categories)),
         )
