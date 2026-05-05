@@ -1,92 +1,88 @@
-# ISSUE PLAN: AUR-208 Build Posting Plan For Dry Run
+# ISSUE PLAN: AUR-209 Render Redacted Markdown And JSON
 
 Historical execution artifact for this issue. Linear remains the durable source for issue status, blockers, and handoff details; if this file conflicts with Linear, Linear wins. Fetch current state from Linear before acting on this plan.
 
 ## Linear issue snapshot
 
-- Issue: `AUR-208` / `RG-019: Build Posting Plan For Dry Run`
+- Issue: `AUR-209` / `RG-020: Render Redacted Markdown And JSON`
 - Milestone: `PRD 0002: MVP Tracer Bullet`
 - Status at planning: `In Progress`
 
 ## Acceptance criteria mapping
 
-1. Posting plan supports local only, top-level summary item, review body item, inline candidate, and suggested reply.
-   - Evidence target: typed destination enum/model and tests that assign each supported destination.
-2. MVP artifact kind is `issue_comment`.
-   - Evidence target: candidate payload model stores `artifact_kind="issue_comment"` and top-level PR comment target metadata.
-3. Formal PR review payloads are rejected.
-   - Evidence target: construction/validation rejects `pull_request_review`, `inline_comment`, `approve`, `request_changes`, or `COMMENT` review-event style payload kinds.
-4. Local notes and suggested replies are excluded from postable payload items.
-   - Evidence target: posting plan tests include findings, local notes, and suggested replies; only postable findings enter candidate public payload items.
-5. Candidate payload includes review target metadata and idempotency fingerprints.
-   - Evidence target: candidate payload includes owner/repo, PR number, base SHA, head SHA, merge-base SHA, diff basis, item fingerprints, visible-body hash, final-body hash placeholder/primitives, and sorted finding fingerprint hash primitives.
+1. Markdown distinguishes postable findings, local notes, clarification requests, suggested replies, and suppressed counts.
+   - Evidence target: `render_markdown(...)` has explicit sections for each class and reports suppressed/non-finding count.
+2. JSON includes review target, selected reviewers, classified output, local verdict, and posting plan.
+   - Evidence target: `render_json(...)` returns a deterministic dict with those fields and stable primitive values.
+3. Token-like content is redacted from markdown and JSON.
+   - Evidence target: renderer redacts all externally sourced text before output, including finding body/evidence, local notes, clarification questions, suggested replies, memory snippets, truncation notes, and payload previews.
+4. Rendered output includes memory IDs, trust labels, resolved status, and truncation status that shaped the run.
+   - Evidence target: minimal `MemoryReference` and `TruncationNotice` models plus markdown/JSON sections that expose IDs/status without turning memory bodies into public payload previews.
+5. Rendered output includes truncation notes when context was bounded.
+   - Evidence target: tests with bounded context assert markdown and JSON include truncation status and notes.
+6. Output does not include public request-changes wording unless explicitly allowed.
+   - Evidence target: default render path suppresses `request_changes` phrasing in public/candidate-payload preview text while still allowing local verdict JSON to record machine value.
+7. Public payload preview fields never include untrusted comment bodies from #44.
+   - Evidence target: tests with trusted and untrusted memory prove untrusted body text is absent from public payload preview fields and appears only as passive metadata if surfaced at all.
 
 ## Minimal foundation ownership
 
-This issue is the first runtime issue in a scaffold-only repo. It may add only the foundation needed by posting-plan tests:
+This issue may add only the foundation needed by renderer tests:
 
-- `pyproject.toml` with package/test tooling and a runnable `python -m pytest` path.
-- `src/reviewgraph/__init__.py` and minimal modules for models, posting, redaction, and side-effect sentinel types.
-- `tests/` with focused posting tests and a placeholder/default test path if needed.
-- Minimal shared dataclasses/enums for review targets, diff anchors, classified findings, local notes, suggested replies, suppressed outputs, clarification requests, local verdict, redaction status, posting destinations, posting plan items, and candidate issue-comment payload.
-- A small redaction primitive used by candidate payload body construction so token-like text is not introduced into payload previews before `AUR-209`. Tests must cover the redaction classes this issue claims to support.
-- Pure posting-plan and payload builders. `src/reviewgraph/posting.py` must not import writer, transport, GitHub client, approval, finalization, or marker-reconciliation modules, and builders must not accept writer/client arguments.
+- `src/reviewgraph/render.py` with markdown and JSON rendering functions.
+- Minimal render input/result dataclasses if needed, preferably in `render.py` unless shared by later code immediately.
+- Minimal `SelectedReviewer`, `MemoryReference`, and `TruncationNotice` dataclasses if needed for render input.
+- Tests in `tests/test_render.py` with deterministic fixture objects built from the existing `models.py` and `posting.py` contracts.
 
-Do not implement the graph shell, CLI, reviewer config loader, fake reviewer adapter, rich quality classifier, approval storage, marker reconciliation, live reads, live LLM, writer port, or real writer behavior in this issue.
+Do not implement graph execution, CLI commands, fixture PR parsing, reviewer config loading, fake reviewer adapters, live GitHub reads, live LLM calls, approval, finalization, or writer behavior in this issue.
 
 ## Implementation plan
 
-1. Add the Python project skeleton with conservative dependencies. Prefer stdlib dataclasses/enums unless a dependency is already justified by tests.
-2. Define minimal model contracts in `src/reviewgraph/models.py`:
-   - `ReviewTarget`
-   - `ClassifiedFinding`
-   - `DiffAnchor`
-   - `LocalNote`
-   - `SuggestedReply`
-   - `SuppressedOutput`
-   - `ClarificationRequest`
-   - `ReviewVerdict`
-   - `RedactionStatus`
-   - strict literal/enum values for severity, confidence, priority, classification, and artifact kind
-3. Add `src/reviewgraph/redaction.py` with deterministic token-like redaction for API keys, bearer/GitHub tokens, authorization headers, `.env` assignments, and private key blocks. Keep it small; broader live-LLM redaction coverage remains later scope, but this slice must test every redaction class it claims.
-4. Add `src/reviewgraph/posting.py`:
-   - `PostingDestination`
-   - `PostingPlanItem`
-   - `PostingPlan`
-   - `CandidateIssueCommentPayload`
-   - `build_posting_plan(...)`
-   - `build_candidate_issue_comment_payload(...)`
-   - `validate_mvp_artifact_kind(...)`
-   - stable hash/fingerprint helpers with explicit canonicalization
-5. Keep writer reachability out of this slice by design. Do not add `side_effects.py` unless it contains only a non-writer marker such as a deliberately unimported test sentinel. Prefer tests that inspect `posting.py` imports/signatures and prove builders are pure.
-6. Add `tests/test_posting.py` covering:
-   - every destination enum value;
-   - candidate payload kind is `issue_comment`;
-   - invalid formal PR review/inline/request-changes/approve artifact kinds fail;
-   - inline candidates require a `DiffAnchor` that overlaps changed target code, while MVP still renders/posts only top-level issue-comment payloads;
-   - local notes, suggested replies, clarification requests, suppressed outputs, and non-findings are excluded from public payload items;
-   - local `request_changes` verdict wording is excluded from candidate public payload text unless a later approval policy explicitly allows it;
-   - review target metadata and fingerprints are present;
-   - hashes are deterministic and canonical: UTF-8 bytes, LF line endings, one trailing newline for visible bodies, stable target field order, sorted finding fingerprints, duplicate fingerprint rejection, visible-body hash excluding future marker lines, and final-body hash primitive including the exact full body bytes supplied to it;
-   - API keys, bearer tokens, GitHub tokens, authorization headers, `.env` assignments, and private key blocks are redacted before candidate body/hash creation;
-   - `src/reviewgraph/posting.py` does not import writer, transport, GitHub client, approval, finalization, or marker-reconciliation modules;
-   - posting-plan and candidate-payload builders do not accept writer/client arguments.
+1. Add minimal renderer input contracts:
+   - `SelectedReviewer` with reviewer name, stage, and trigger reasons.
+   - `MemoryReference` with ID, trust label, resolved status, source type, and optional body.
+   - `TruncationNotice` with resource, truncated flag, original count/bytes when available, retained count/bytes when available, and note.
+   - `RenderedReview` with markdown, JSON dict, and redaction status.
+2. Add `src/reviewgraph/render.py`:
+   - `render_markdown(...)`
+   - `render_json(...)`
+   - `render_review(...)` convenience wrapper if useful
+   - stable serialization helpers for review target, selected reviewers, classified outputs, posting plan, memory references, truncation, local verdict, and candidate payload preview metadata.
+3. Keep renderer output deterministic:
+   - preserve input order for selected reviewers and output items;
+   - use primitive JSON values only;
+   - avoid timestamps unless supplied by the caller;
+   - do not include raw object reprs.
+4. Apply `redact_text(...)` to every rendered external text field before it enters markdown or JSON. Reuse `RedactionStatus` and aggregate categories/counts.
+5. Public payload preview handling:
+   - include candidate payload kind, hashes, target metadata, and item fingerprints;
+   - include candidate body only after redaction;
+   - never include untrusted memory bodies in public payload preview fields;
+   - keep local verdict separate from candidate public text by default.
+6. Add `tests/test_render.py` covering:
+   - markdown sections for postable findings, local notes, clarification requests, suggested replies, suppressed count, selected reviewers, memory, truncation, local verdict, and posting plan;
+   - JSON includes review target, selected reviewers, classified outputs, local verdict, posting plan, memory metadata, truncation notices, candidate payload preview, and redaction status;
+   - API keys, bearer tokens, GitHub tokens, authorization headers, `.env` assignments, private key blocks, standalone provider keys, and JSON-style secret fields are absent from markdown and JSON string output;
+   - untrusted memory body text is absent from public payload preview fields;
+   - trusted/untrusted labels, resolved status, memory IDs, and truncation status are present;
+   - `request_changes` local verdict does not appear as public request-changes wording in markdown or candidate payload preview by default;
+   - rendering remains pure: no writer/transport/GitHub/approval/finalization imports in `render.py`.
 7. Run:
-   - `python -m pytest tests/test_posting.py`
+   - `python -m pytest tests/test_render.py`
    - `python -m pytest`
+   - `python -m py_compile src/reviewgraph/*.py`
    - `python scripts/check_docs.py`
    - `git diff --check`
 
 ## Out of scope
 
-- No real GitHub writer adapter.
-- No writer port/interface in posting-plan code.
-- No approval model beyond payload/hash primitives needed by posting-plan metadata.
-- No full PR fixture schema, graph shell, CLI, reviewer config validation, fake reviewer adapter, or live integrations.
-- No formal PR review, inline comment, approval, or request-changes GitHub payload construction.
-- No semantic deduplication.
+- No CLI.
+- No graph runner or fixture PR parser.
+- No reviewer config loader or fake reviewer adapter.
+- No live GitHub, live LLM, approval, finalization, marker reconciliation, or writer adapter.
+- No public posting of suggested replies, clarification requests, local notes, or untrusted memory bodies.
 
 ## Review approach
 
 - Get fresh subagent plan review before implementation.
-- After implementation, move `AUR-208` to `In Review`, run fresh code review subagents, fix material issues, and commit after each review cycle.
+- After implementation, move `AUR-209` to `In Review`, run fresh code review subagents, fix material issues, and commit after each review cycle.
