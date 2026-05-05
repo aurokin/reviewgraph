@@ -1,0 +1,27 @@
+{
+  "source": "Linear",
+  "project": "ReviewGraph",
+  "milestone": "Synthetic Example",
+  "exported_at": "2026-05-05T00:00:00Z",
+  "note": "Synthetic non-authoritative fixture for scripts/check_docs.py. This is not the ReviewGraph backlog.",
+  "issues": [
+    {
+      "id": "AUR-1",
+      "title": "First synthetic issue",
+      "status_type": "completed",
+      "blocked_by": []
+    },
+    {
+      "id": "AUR-2",
+      "title": "Second synthetic issue",
+      "status_type": "backlog",
+      "blocked_by": ["AUR-1"]
+    },
+    {
+      "id": "AUR-3",
+      "title": "Canceled synthetic issue",
+      "status_type": "canceled",
+      "blocked_by": ["AUR-2"]
+    }
+  ]
+}

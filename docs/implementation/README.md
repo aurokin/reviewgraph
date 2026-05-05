@@ -13,6 +13,24 @@ Concrete implementation work is tracked in Linear, not in generated files inside
 
 When a Linear issue exposes a missing durable rule, update the narrowest doc instead of adding a one-off local planning file.
 
+## Validation
+
+Run the documentation contract check before handing off documentation or planning work:
+
+```bash
+python scripts/check_docs.py
+```
+
+To prove a Linear issue queue export is dependency-ordered, pass a canonical export:
+
+```bash
+python scripts/check_docs.py --backlog-export path/to/linear-backlog-export.json
+```
+
+The export must be a JSON object with `source: "Linear"`, `project`, `milestone`, `exported_at`, and an ordered `issues` array. Each issue uses `id`, `title`, `status_type`, and `blocked_by`. The checker filters issues whose `status_type` is `canceled`, then fails on duplicate active IDs, missing blockers, cycles, or blockers that appear after their dependent issue. It prints source, project, milestone, timestamp, active issue count, dependency edge count, and skipped canceled count.
+
+Synthetic examples live in `docs/plans/fixtures/`. They are parser/checker examples only and are not the ReviewGraph backlog.
+
 ## Expected future docs
 
 - `models.md` — Pydantic/state model contracts.

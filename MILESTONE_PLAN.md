@@ -44,6 +44,6 @@ The milestone is complete when:
 - `AUR-229` is done.
 - `AUR-253` is done.
 - The repo contains a documented validation command or script covering documentation links and Linear backlog dependency-order verification from an explicit export/input format.
-- The backlog-order check reports which issues and dependency edges were evaluated and fails on missing references, duplicate issue IDs, cycles, or dependency inversions.
+- The backlog-order check reports which issues and dependency edges were evaluated and fails on missing references, duplicate active issue IDs, cycles, or dependency inversions.
 - `git diff --check` passes.
 - The milestone-end documentation audit finds no missing PRD 0001 contract details.

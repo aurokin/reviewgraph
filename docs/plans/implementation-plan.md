@@ -14,6 +14,18 @@ Start with tracer bullets, not a complete policy engine. The first useful implem
 
 The executable backlog lives in Linear. Treat this plan as the durable sequencing narrative, not the complete ticket list. Every implementation issue should identify the narrowest contract doc, the deterministic fixture or fake, the harness command, the expected artifact, and the explicit out-of-scope boundary before code lands.
 
+## MVP constraints
+
+- Dry-run is the default behavior.
+- Reviewer output becomes structured findings, local notes, clarification requests, suggested replies, or suppressed non-findings before rendering.
+- The local verdict is separate from public GitHub text.
+- Side effects are last, behind rendering, item-level approval, final payload validation, target freshness, actor/permission proof, redaction, and marker reconciliation.
+- MVP writes only an approved top-level PR comment.
+- Formal GitHub review submission, inline comments, approvals, and request-changes writes are out of scope for MVP.
+- Fixture PRs, fake GitHub adapters, and fake reviewer adapters prove behavior before live integrations.
+- Live read, live LLM, and live post behavior are opt-in.
+- Linear is the executable backlog; repository docs are the durable product, architecture, harness, and decision contracts.
+
 ## Phase 1 — Contracts and fixtures
 
 ### Task 1: Create Python project skeleton

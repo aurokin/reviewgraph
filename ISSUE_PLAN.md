@@ -22,7 +22,7 @@
    - Validation target: script checks decisions index exists and is linked.
 5. A documented command or script checks that the issue backlog queue is dependency-ordered.
    - Evidence target: `scripts/check_docs.py` or equivalent, documented in `docs/implementation/README.md` and/or `docs/harnesses/harness-engineering.md`.
-   - Validation target: command accepts a Linear backlog export JSON, reports checked issues/edges, and fails on duplicates, missing references, cycles, or dependency inversions.
+   - Validation target: command accepts a Linear backlog export JSON, reports checked issues/edges, and fails on duplicate active issue IDs, missing references, cycles, or dependency inversions.
 
 ## Implementation plan
 
@@ -57,7 +57,7 @@
    - Ordered issues are taken from the JSON array order.
    - Dependency edges are `blocked_by` only. Parent, related, duplicate, and canceled relationships are ignored unless represented as `blocked_by`.
    - Issues whose `status_type` is `canceled` are filtered before dependency checks.
-   - Duplicate active issue IDs or duplicate queue entries fail.
+   - Duplicate active issue IDs fail after canceled issues are filtered.
    - Missing blockers, cycles, and blocker-after-dependent inversions fail.
    - `source` must be `Linear` so hand-shaped generic JSON is not mistaken for canonical evidence.
    - Output reports source, project, milestone, exported timestamp, checked issue count, edge count, skipped canceled count, and concise failing edges. Add a `--verbose` flag for full order if useful.

@@ -166,3 +166,21 @@ pytest -m live_post --requires-human-approval
 ```
 
 Live read may run only after fake pagination and read-gap harnesses exist. Live LLM may run only after context package, redaction, minimization, budget, and fake reviewer harnesses exist. Live post may run only against a disposable allowlisted PR after fake writer, approval, freshness, actor/permission, final hash, and marker reconciliation harnesses exist.
+
+## Documentation Contract Check
+
+For documentation and planning slices, run:
+
+```bash
+python scripts/check_docs.py
+```
+
+This verifies the docs index points at required architecture, PRD, decision, harness, and implementation-plan entry points, and that the implementation plan and agent instructions preserve core MVP constraints.
+
+When validating a Linear issue queue, export the ordered Linear issues into the canonical JSON shape described in `docs/implementation/README.md`, then run:
+
+```bash
+python scripts/check_docs.py --backlog-export path/to/linear-backlog-export.json
+```
+
+The backlog check is intentionally export-based and read-only. It does not make repository docs the backlog; it proves that a Linear-derived queue has no duplicate active IDs, missing blocker references, cycles, or blocker-after-dependent inversions.
