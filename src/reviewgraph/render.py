@@ -377,7 +377,7 @@ def _public_finding_text(posting_plan: PostingPlan | None, findings: tuple[Class
 def _meaningful_memory_fragments(memory_body: str) -> tuple[str, ...]:
     normalized = _normalize_memory_text(memory_body)
     raw_tokens = [token for token in re.split(r"\s+", memory_body.strip()) if token]
-    fragments = {normalized} if normalized else set()
+    fragments = {normalized} if normalized and " " in normalized else set()
     for sentence in normalized.replace("!", ".").replace("?", ".").split("."):
         sentence = sentence.strip()
         if len(sentence) >= 16:
@@ -460,12 +460,15 @@ def _has_enough_compact_fragment_signal(fragment: str, raw_fragment: str = "") -
 
 def _has_high_signal_context(words: list[str], raw_fragment: str) -> bool:
     return any(word in _HIGH_SIGNAL_CONTEXT_WORDS for word in words) or bool(
-        re.search(r"[A-Za-z]+[-_][A-Za-z0-9]*\d|\d[-_][A-Za-z0-9]+|[A-Za-z]+[-_][A-Za-z]+", raw_fragment)
+        re.search(
+            r"[A-Za-z]+[^\w\s][A-Za-z0-9]*\d|\d[^\w\s][A-Za-z0-9]+|[A-Za-z]+[^\w\s][A-Za-z]+",
+            raw_fragment,
+        )
     )
 
 
 def _compact_raw_token(raw_token: str) -> str | None:
-    if "-" not in raw_token and "_" not in raw_token:
+    if not re.search(r"[^\w\s]", raw_token):
         return None
     compact = _normalize_memory_text(raw_token).replace(" ", "")
     if len(compact) < 5 or len(set(compact)) < 4:
@@ -483,7 +486,7 @@ def _raw_token_has_high_signal_context(raw_tokens: list[str], index: int) -> boo
 
 
 def _raw_token_has_delimiter_digit_signal(raw_token: str) -> bool:
-    return bool(re.search(r"[A-Za-z0-9]+[-_][A-Za-z0-9]*\d|\d[-_][A-Za-z0-9]+", raw_token))
+    return bool(re.search(r"[A-Za-z0-9]+[^\w\s][A-Za-z0-9]*\d|\d[^\w\s][A-Za-z0-9]+", raw_token))
 
 
 def _has_meaningful_compact_raw_token_signal(compact_token: str, words: list[str], index: int) -> bool:
@@ -536,6 +539,7 @@ _COMMON_MEMORY_WORDS = {
     "evidence",
     "here",
     "issue",
+    "line",
     "mentioned",
     "never",
     "patch",

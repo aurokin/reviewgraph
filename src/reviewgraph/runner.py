@@ -376,7 +376,10 @@ def _is_postable_finding(finding: ClassifiedFinding) -> bool:
         "easier to maintain",
         "easier to read",
         "extract helper",
-        "helper",
+        "cleaner code",
+        "better organization",
+        "improve maintainability",
+        "abstractions",
         "improve readability",
         "refactor this",
         "simplify this code",
@@ -432,7 +435,7 @@ def _has_testing_finding_shape(text: str) -> bool:
             "breaks",
         )
     )
-    scenario = bool(re.search(r"\b(when|if|after|before|with|for|on)\b", text))
+    scenario = bool(re.search(r"\b(when|if|after|before|with|without|on)\b", text))
     return missing_coverage and changed_behavior and scenario
 
 

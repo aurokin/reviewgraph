@@ -751,6 +751,7 @@ def test_common_tech_tokens_in_untrusted_memory_do_not_block_candidate_payload_p
     ("untrusted_body", "finding_body"),
     (
         ("I think line 123456 is wrong.", "Changed line 123456 returns stale data."),
+        ("I think line-123456 is wrong.", "Changed line 123456 returns stale data."),
         ("I saw cache 123456 in this PR.", "Cache 123456 is handled by the new branch."),
         ("I saw cache-123456 in this PR.", "Cache 123456 is handled by the new branch."),
         ("Authentication 123456 failed locally.", "Authentication 123456 fails for valid sessions."),
@@ -891,6 +892,12 @@ def test_mixed_identifier_untrusted_memory_cannot_enter_candidate_payload_previe
     (
         ("ACME-42", "Copied: ACME42"),
         ("customer-123456", "Copied: customer123456"),
+        ("customer/123456", "Copied: customer123456"),
+        ("customer:123456", "Copied: customer123456"),
+        ("account/123456", "Copied: account123456"),
+        ("ACME.42", "Copied: ACME42"),
+        ("The unresolved thread referenced ticket PROJ.1234.", "Copied: PROJ1234"),
+        ("The unresolved thread referenced identifier user.12345.", "Copied: user12345"),
         ("The unresolved thread referenced account cache-123456.", "Copied: cache123456"),
         ("The unresolved thread referenced ticket PROJ-1234.", "Copied: PROJ1234"),
         ("The unresolved thread referenced account ACME-42.", "Copied: ACME42"),
@@ -1008,6 +1015,36 @@ def test_common_word_near_untrusted_secret_context_does_not_block_candidate_payl
                 "unresolved",
                 "issue_comment",
                 "Untrusted commenter said SECRET_TOKEN should never become public evidence.",
+            )
+        ],
+    )
+
+    assert rendered.json_data["candidate_payload_preview"]["body"] == payload.body
+
+
+@pytest.mark.parametrize("untrusted_body", ("if", "the"))
+def test_stopword_only_untrusted_memory_does_not_block_candidate_payload_preview(untrusted_body: str) -> None:
+    findings = [finding(body=f"This returns a fresh value {untrusted_body} the cache misses.")]
+    plan = build_posting_plan(findings=findings)
+    payload = build_candidate_issue_comment_payload(
+        review_target=target(),
+        posting_plan=plan,
+        findings=findings,
+    )
+
+    rendered = render_review(
+        review_target=target(),
+        selected_reviewers=selected_reviewers(),
+        findings=findings,
+        posting_plan=plan,
+        candidate_payload=payload,
+        memory_references=[
+            MemoryReference(
+                "mem-stopword",
+                "untrusted",
+                "unresolved",
+                "issue_comment",
+                untrusted_body,
             )
         ],
     )

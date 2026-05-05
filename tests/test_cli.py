@@ -414,6 +414,35 @@ def test_high_confidence_generic_coverage_raw_finding_is_suppressed(tmp_path: Pa
     ]
 
 
+def test_generic_coverage_with_weak_behavior_evidence_is_suppressed(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "generic-coverage-weak-evidence.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["items"] = [
+        {
+            "type": "postable_finding",
+            "id": "finding-generic-coverage",
+            "title": "No regression coverage",
+            "body": "No regression coverage was added for this change.",
+            "evidence": "Changed line 12 returns stale data.",
+            "path": "src/cache.py",
+            "line": 12,
+            "priority": 2,
+            "severity": "suggestion",
+            "confidence": "high",
+            "fingerprint": "fixture-generic-coverage",
+        }
+    ]
+    fixture_path.write_text(json.dumps(fixture))
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path))
+    review = result.json_data["review"]
+
+    assert result.json_data["local_verdict"] == "no_findings"
+    assert result.json_data["post_enabled"] is False
+    assert review["candidate_payload_preview"] is None
+    assert review["classified_output"]["postable_findings"] == []
+
+
 def test_high_confidence_generic_refactor_raw_finding_is_suppressed(tmp_path: Path) -> None:
     fixture_path = tmp_path / "generic-refactor.json"
     fixture = _basic_fixture()
@@ -596,6 +625,35 @@ def test_correctness_finding_that_mentions_test_mode_is_postable(tmp_path: Path)
     assert review["candidate_payload_preview"]["item_fingerprints"] == ["fixture-test-mode-bypass"]
 
 
+def test_concrete_helper_finding_is_postable(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "helper-leak.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["items"] = [
+        {
+            "type": "postable_finding",
+            "id": "finding-helper-leak",
+            "title": "Helper leaks session values",
+            "body": "The new helper leaks session values when auth fails.",
+            "evidence": "Changed line 12 leaks session values when auth fails.",
+            "path": "src/cache.py",
+            "line": 12,
+            "priority": 1,
+            "severity": "critical",
+            "confidence": "high",
+            "fingerprint": "fixture-helper-leak",
+        }
+    ]
+    fixture_path.write_text(json.dumps(fixture))
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path))
+    review = result.json_data["review"]
+
+    assert result.json_data["local_verdict"] == "comment"
+    assert result.json_data["post_enabled"] is True
+    assert review["classified_output"]["postable_findings"][0]["id"] == "finding-helper-leak"
+    assert review["classified_output"]["suppressed"] == []
+
+
 def test_concrete_security_finding_with_normal_review_language_is_postable(tmp_path: Path) -> None:
     fixture_path = tmp_path / "open-redirect.json"
     fixture = _basic_fixture()
@@ -686,8 +744,21 @@ def test_concrete_security_and_privacy_finding_wording_is_postable(
     assert review["candidate_payload_preview"]["item_fingerprints"] == ["fixture-security-wording"]
 
 
-@pytest.mark.parametrize("verb", ("allows", "accepts", "permits", "includes", "enables"))
-def test_generic_maintenance_finding_with_broad_verb_is_suppressed(tmp_path: Path, verb: str) -> None:
+@pytest.mark.parametrize(
+    ("body", "evidence"),
+    (
+        ("This allows easier maintenance when this grows.", "Changed line 12 allows easier maintenance when this grows."),
+        ("This accepts cleaner code in this module.", "Changed line 12 accepts cleaner code in this module."),
+        ("This permits better organization in future.", "Changed line 12 permits better organization in future."),
+        ("This includes abstractions to improve maintainability.", "Changed line 12 includes abstractions to improve maintainability."),
+        ("This enables easier maintenance when this grows.", "Changed line 12 enables easier maintenance when this grows."),
+    ),
+)
+def test_generic_maintenance_finding_with_broad_verb_is_suppressed(
+    tmp_path: Path,
+    body: str,
+    evidence: str,
+) -> None:
     fixture_path = tmp_path / "generic-enables.json"
     fixture = _basic_fixture()
     fixture["raw_reviewer_outputs"][0]["items"] = [
@@ -695,8 +766,8 @@ def test_generic_maintenance_finding_with_broad_verb_is_suppressed(tmp_path: Pat
             "type": "postable_finding",
             "id": "finding-generic-enables",
             "title": "Improve structure",
-            "body": f"This {verb} easier maintenance when this grows.",
-            "evidence": f"Changed line 12 {verb} easier maintenance when this grows.",
+            "body": body,
+            "evidence": evidence,
             "path": "src/cache.py",
             "line": 12,
             "priority": 3,
