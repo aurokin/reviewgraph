@@ -597,7 +597,7 @@ def test_short_partial_untrusted_memory_fragment_cannot_enter_candidate_payload_
         )
 
 
-def test_single_token_untrusted_memory_fragment_does_not_block_candidate_payload_preview() -> None:
+def test_high_signal_single_token_untrusted_memory_fragment_cannot_enter_candidate_payload_preview() -> None:
     untrusted_body = "The customer mentioned codename orion during the thread."
     findings = [finding(body="Copied: orion")]
     plan = build_posting_plan(findings=findings)
@@ -607,24 +607,23 @@ def test_single_token_untrusted_memory_fragment_does_not_block_candidate_payload
         findings=findings,
     )
 
-    rendered = render_review(
-        review_target=target(),
-        selected_reviewers=selected_reviewers(),
-        findings=findings,
-        posting_plan=plan,
-        candidate_payload=payload,
-        memory_references=[
-            MemoryReference(
-                "mem-token",
-                "untrusted",
-                "unresolved",
-                "issue_comment",
-                untrusted_body,
-            )
-        ],
-    )
-
-    assert rendered.json_data["candidate_payload_preview"]["body"] == payload.body
+    with pytest.raises(RenderError, match="untrusted memory"):
+        render_review(
+            review_target=target(),
+            selected_reviewers=selected_reviewers(),
+            findings=findings,
+            posting_plan=plan,
+            candidate_payload=payload,
+            memory_references=[
+                MemoryReference(
+                    "mem-token",
+                    "untrusted",
+                    "unresolved",
+                    "issue_comment",
+                    untrusted_body,
+                )
+            ],
+        )
 
 
 def test_common_domain_words_in_untrusted_memory_do_not_block_candidate_payload_preview() -> None:

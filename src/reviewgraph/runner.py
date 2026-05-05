@@ -283,9 +283,13 @@ def _classify_raw_outputs(
 
 
 def _validate_finding_fingerprints(findings: tuple[ClassifiedFinding, ...]) -> None:
+    seen: set[str] = set()
     for finding in findings:
         if redact_for_error(finding.fingerprint) != finding.fingerprint:
             raise RunnerError("postable_finding.fingerprint requires a non-secret stable identity")
+        if finding.fingerprint in seen:
+            raise RunnerError("postable_finding.fingerprint must be unique")
+        seen.add(finding.fingerprint)
 
 
 def _classified_finding(

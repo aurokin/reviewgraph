@@ -340,6 +340,8 @@ def _memory_body_overlaps_candidate(memory_body: str | None, candidate_body: str
     for fragment in meaningful_fragments:
         if " " in fragment and _has_enough_fragment_signal(fragment) and fragment in normalized_candidate:
             return True
+        if " " not in fragment and fragment in candidate_words:
+            return True
         compact_fragment = fragment.replace(" ", "")
         if (
             " " in fragment
@@ -373,6 +375,9 @@ def _meaningful_memory_fragments(memory_body: str) -> tuple[str, ...]:
         if len(sentence) >= 16:
             fragments.add(sentence)
     words = normalized.split()
+    for index, word in enumerate(words):
+        if _has_enough_word_signal(word, words, index):
+            fragments.add(word)
     for size in range(2, min(5, len(words)) + 1):
         for index in range(0, len(words) - size + 1):
             fragment = " ".join(words[index : index + size])
@@ -402,12 +407,52 @@ def _has_enough_fragment_signal(fragment: str) -> bool:
     return len(fragment) >= 7 and len(set(compact)) >= 5
 
 
+def _has_enough_word_signal(word: str, words: list[str], index: int) -> bool:
+    if word in _COMMON_MEMORY_WORDS:
+        return False
+    if len(words) == 1:
+        return len(word) >= 5 and len(set(word)) >= 4
+    if len(word) >= 8 and len(set(word)) >= 5:
+        return True
+    context_window = words[max(0, index - 2) : index] + words[index + 1 : index + 3]
+    return len(word) >= 5 and len(set(word)) >= 4 and any(token in _HIGH_SIGNAL_CONTEXT_WORDS for token in context_window)
+
+
 def _has_enough_compact_fragment_signal(fragment: str) -> bool:
     return len(fragment) >= 5 and len(set(fragment)) >= 4
 
 
 def _normalize_memory_text(value: str) -> str:
     return " ".join(re.sub(r"[_\W]+", " ", value.casefold()).split())
+
+
+_COMMON_MEMORY_WORDS = {
+    "branch",
+    "cache",
+    "candidate",
+    "change",
+    "comment",
+    "customer",
+    "issue",
+    "patch",
+    "payload",
+    "review",
+    "reviewer",
+    "target",
+    "thread",
+}
+
+_HIGH_SIGNAL_CONTEXT_WORDS = {
+    "account",
+    "codename",
+    "customer",
+    "identifier",
+    "issue",
+    "key",
+    "secret",
+    "ticket",
+    "token",
+}
 
 
 def _finding_json(finding: ClassifiedFinding, context: "_RenderContext") -> dict[str, Any]:
