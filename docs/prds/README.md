@@ -2,6 +2,8 @@
 
 These PRDs turn the architecture docs into independently plannable product slices. They are not a single linear implementation plan. Each PRD should be small enough to become one or more issue sets while preserving the larger ReviewGraph product contract.
 
+Implementation issues for these PRDs live in Linear. Keep this directory focused on product slice intent, durable decisions, and acceptance shape. Do not mirror the full Linear backlog here.
+
 ## Read Order
 
 1. [North Star](0001-north-star.md)
@@ -28,3 +30,5 @@ These PRDs turn the architecture docs into independently plannable product slice
 ## Rule
 
 When implementation behavior changes, update the narrowest PRD or durable architecture doc rather than expanding this index.
+
+When implementation sequencing changes, update Linear relationships first. Update this index only when the durable dependency shape changes.

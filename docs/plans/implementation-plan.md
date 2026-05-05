@@ -10,7 +10,9 @@
 
 ## Implementation posture
 
-Start with tracer bullets, not a complete policy engine. The first useful implementation should run a fixture PR through the graph, select reviewers with staged reasons, emit markdown/JSON, classify output into postable and non-postable items, and prove no GitHub writer is called. Then add specialized reviewers, ambiguity clarification, live reads, item-level approval, and finally approval-gated posting.
+Start with tracer bullets, not a complete policy engine. The first useful implementation should run a fixture PR through the graph, select reviewers with staged reasons, emit markdown/JSON, classify output into postable and non-postable items, and prove no GitHub writer is called. Reviewer context boundaries and clarification/resume are part of the early graph shape, not late integration polish. Live reads, live LLM calls, and approval-gated posting come after the fixture graph proves those contracts.
+
+The executable backlog lives in Linear. Treat this plan as the durable sequencing narrative, not the complete ticket list. Every implementation issue should identify the narrowest contract doc, the deterministic fixture or fake, the harness command, the expected artifact, and the explicit out-of-scope boundary before code lands.
 
 ## Phase 1 — Contracts and fixtures
 
@@ -27,7 +29,7 @@ Start with tracer bullets, not a complete policy engine. The first useful implem
 
 ### Task 2: Define state and schema models
 
-**Objective:** Add typed models for run mode, review targets, posting targets, PR context, conversation memory, config, selected reviewers, reviewer run keys, findings, local notes, suppressed outputs, clarification requests, posting plans, verdicts, approvals, and writer results.
+**Objective:** Add typed models for run mode, review targets, posting targets, PR context, conversation memory, config, selected reviewers, reviewer run keys, risk assessment, findings, local notes, suggested replies, suppressed outputs, clarification requests, posting plans, verdicts, approvals, and writer results.
 
 **Files:**
 - Create: `src/reviewgraph/models.py`
@@ -86,9 +88,21 @@ Start with tracer bullets, not a complete policy engine. The first useful implem
 
 **Verification:** oversized fixtures receive truncation markers and stale target metadata prevents post eligibility.
 
+### Task 7: Define reviewer context package and adapter boundary
+
+**Objective:** Define the scoped package that every reviewer receives before any reviewer adapter is implemented.
+
+**Files:**
+- Create: `src/reviewgraph/reviewer_context.py`
+- Create: `src/reviewgraph/prompts/`
+- Test: `tests/test_reviewer_context.py`
+- Test: `tests/test_adapter_boundaries.py`
+
+**Verification:** context packages include target metadata, active stage, selected reviewer metadata, bounded diff context, trusted memory references, passive untrusted-memory metadata, truncation notes, capability policy, model/tool config, and redaction status. Boundary tests fail if reviewer or prompt modules import GitHub write transports, approval code, payload builders, or global GitHub clients.
+
 ## Phase 2 — Routing and policy
 
-### Task 7: Implement staged reviewer selection
+### Task 8: Implement staged reviewer selection
 
 **Objective:** Select reviewers based on stage, always/path/label/diff/conversation/risk triggers.
 
@@ -98,7 +112,7 @@ Start with tracer bullets, not a complete policy engine. The first useful implem
 
 **Verification:** each fixture selects expected reviewers and records stage plus reasons. `conversation_patterns` match only trusted actionable memory and untrusted comments cannot select reviewers.
 
-### Task 8: Implement reviewer output normalization
+### Task 9: Implement reviewer output normalization
 
 **Objective:** Convert reviewer JSON into validated finding objects or clarification requests.
 
@@ -108,17 +122,17 @@ Start with tracer bullets, not a complete policy engine. The first useful implem
 
 **Verification:** malformed findings are rejected or repaired according to policy.
 
-### Task 9: Implement review quality classification
+### Task 10: Implement review quality classification
 
-**Objective:** Classify normalized reviewer output into postable findings, local notes, clarification requests, or suppressed non-findings.
+**Objective:** Classify normalized reviewer output into postable findings, local notes, clarification requests, suggested replies, or suppressed non-findings.
 
 **Files:**
 - Create: `src/reviewgraph/quality.py`
 - Test: `tests/test_quality.py`
 
-**Verification:** Codex-inspired eligibility rules suppress generic, speculative, pre-existing, self-declared blocking, and locationless postable findings.
+**Verification:** Codex-inspired eligibility rules suppress generic, speculative, pre-existing, self-declared blocking, and locationless postable findings. Logic-review golden cases cover cross-file invariant evidence, changed-line anchoring, ambiguity-to-clarification, and suppression of generic architecture advice.
 
-### Task 10: Implement ranking and verdict policy
+### Task 11: Implement ranking and verdict policy
 
 **Objective:** Rank quality-classified findings and recommend local comment/request-changes/dry-run verdict.
 
@@ -128,7 +142,7 @@ Start with tracer bullets, not a complete policy engine. The first useful implem
 
 **Verification:** low-confidence and ambiguous findings cannot request changes; local request-changes does not imply GitHub `REQUEST_CHANGES`.
 
-### Task 11: Add posting plan and approval proof models
+### Task 12: Add posting plan and approval proof models
 
 **Objective:** Build item-level posting plans, candidate payload hashes, approved payload hashes, and public/private verdict separation before any live adapter exists.
 
@@ -142,7 +156,7 @@ Start with tracer bullets, not a complete policy engine. The first useful implem
 
 ## Phase 3 — Graph and adapters
 
-### Task 12: Add fake GitHub adapter
+### Task 13: Add fake GitHub adapter
 
 **Objective:** Let graph runs use fixture PRs as GitHub context.
 
@@ -152,7 +166,7 @@ Start with tracer bullets, not a complete policy engine. The first useful implem
 
 **Verification:** adapter returns fixture context by PR ref.
 
-### Task 13: Add fake reviewer adapter
+### Task 14: Add fake reviewer adapter
 
 **Objective:** Run reviewers deterministically for tests.
 
@@ -162,7 +176,17 @@ Start with tracer bullets, not a complete policy engine. The first useful implem
 
 **Verification:** fake reviewer results normalize and classify into expected postable findings, local notes, suppressed outputs, suggested replies, non-findings, malformed JSON, optional failures, required failures, or clarification requests. Reviewer adapters receive only scoped reviewer context packages and no GitHub transports.
 
-### Task 14: Build LangGraph workflow
+### Task 15: Add clarification resume gate
+
+**Objective:** Stop for human clarification when needed and resume only affected reviewers after answers are supplied.
+
+**Files:**
+- Create: `src/reviewgraph/clarification.py`
+- Test: `tests/test_clarification.py`
+
+**Verification:** clarification request prevents posting; answered clarification resumes the recorded reviewer/stage; unanswered ambiguity cannot produce a blocking verdict; the graph does not pop unrelated queued stages or rerun unrelated completed reviewers.
+
+### Task 16: Build LangGraph workflow
 
 **Objective:** Wire fetch, memory, target resolution, context budgeting, staged routing, review, normalization, quality classification, clarification, ranking, posting plan, render, approve, and emit nodes.
 
@@ -174,7 +198,7 @@ Start with tracer bullets, not a complete policy engine. The first useful implem
 
 ## Phase 4 — CLI and live-read
 
-### Task 15: Add dry-run CLI
+### Task 17: Add dry-run CLI
 
 **Objective:** Review a PR fixture or live PR and emit markdown/JSON postable findings, local notes, suppressed counts, selected reviewers, conversation memory summary, and clarification requests.
 
@@ -184,7 +208,7 @@ Start with tracer bullets, not a complete policy engine. The first useful implem
 
 **Verification:** CLI dry run writes expected outputs and never calls writer.
 
-### Task 16: Add live GitHub read adapter
+### Task 18: Add live GitHub read adapter
 
 **Objective:** Fetch PR metadata/files/diff/comments/review threads via GitHub API or `gh`, including pagination, trusted author, resolved-thread, authenticated actor, and required permission data.
 
@@ -192,9 +216,9 @@ Start with tracer bullets, not a complete policy engine. The first useful implem
 - Modify: `src/reviewgraph/github.py`
 - Test: `tests/test_github_live_read_contract.py`
 
-**Verification:** live tests are opt-in and skipped by default; fake transport tests prove all pages are fetched for files, issue comments, review comments, reviews, and thread state before truncation is applied; unknown actor or insufficient/unknown permissions fail closed.
+**Verification:** live tests are opt-in and skipped by default; fake transport tests prove all pages are fetched for files, issue comments, review comments, reviews, and thread state before truncation is applied; unknown thread state is modeled distinctly and is non-actionable by default; unknown actor or insufficient/unknown permissions fail closed.
 
-### Task 17: Add live LLM adapter
+### Task 19: Add live LLM adapter
 
 **Objective:** Use configured API provider for real reviewer calls.
 
@@ -206,17 +230,7 @@ Start with tracer bullets, not a complete policy engine. The first useful implem
 
 ## Phase 5 — Approval-gated posting
 
-### Task 18: Add clarification resume gate
-
-**Objective:** Stop for human clarification when needed and resume only affected reviewers after answers are supplied.
-
-**Files:**
-- Create: `src/reviewgraph/clarification.py`
-- Test: `tests/test_clarification.py`
-
-**Verification:** clarification request prevents posting; answered clarification resumes the recorded reviewer/stage; unanswered ambiguity cannot produce a blocking verdict.
-
-### Task 19: Add idempotent GitHub comment writer
+### Task 20: Add idempotent GitHub comment writer
 
 **Objective:** Post a top-level PR comment only after fresh-target, actor/permission, redaction, marker-reconciliation, and final-payload-hash approval checks.
 

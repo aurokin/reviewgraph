@@ -14,6 +14,7 @@ class ReviewState(TypedDict):
     posting_target: PostingTarget | None
     pr: PullRequestContext | None
     conversation_memory: PRConversationMemory | None
+    read_gaps: list[ReadGap]
     config: ReviewConfig
     config_hash: str
     stage_queue: list[ReviewStage]
@@ -26,8 +27,10 @@ class ReviewState(TypedDict):
     reviewer_run_status: dict[str, ReviewerRunStatus]
     reviewer_results: list[ReviewerResult]
     context_budget: ContextBudget
+    redaction_status: RedactionStatus | None
     findings: list[Finding]
     local_notes: list[LocalNote]
+    suggested_replies: list[SuggestedReply]
     suppressed_outputs: list[SuppressedReviewerOutput]
     clarification_requests: list[ClarificationRequest]
     pending_clarification_ids: list[str]
@@ -37,6 +40,10 @@ class ReviewState(TypedDict):
     local_verdict: ReviewVerdict | None
     rendered_markdown: str | None
     posting_plan: PostingPlan | None
+    actor_permission_gate: ActorPermissionGateResult | None
+    payload_validation: PayloadValidationResult | None
+    marker_reconciliation: MarkerReconciliationResult | None
+    finalization_status: FinalizationStatus | None
     candidate_github_payload: GitHubReviewPayload | None
     final_github_payload: GitHubReviewPayload | None
     candidate_payload_hash: str | None
@@ -140,7 +147,7 @@ Reviewer selection may happen more than once as state changes. Examples:
 
 - `initial_triage`: always-on correctness and tests reviewers inspect the change shape.
 - `specialized_review`: path, label, risk, or diff triggers introduce focused reviewers.
-- `logic_review`: reviewers inspect cross-file reasoning, invariants, and product behavior when the diff suggests non-local risk.
+- `logic_review`: reviewers inspect cross-file reasoning, invariants, and product behavior when the diff suggests non-local risk. Postable logic findings still need changed-line anchoring and concrete evidence; unclear intent becomes a clarification request.
 - `clarification_review`: reviewers that raised material ambiguity can ask a human for context before making a mergeability recommendation.
 
 Each selected reviewer must record the stage and trigger reasons in state.

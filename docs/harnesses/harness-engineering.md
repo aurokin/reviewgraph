@@ -1,103 +1,168 @@
 # Harness Engineering
 
-Harnesses prove the product contract without requiring live GitHub or live LLM calls.
+Harnesses are the product contract in executable form. They prove ReviewGraph's graph state, reviewer boundaries, quality policy, and side-effect gates before live GitHub or live LLM behavior is trusted.
 
-## Confidence ladder
+This document is not the implementation backlog. The detailed issue sequence lives in Linear. Use this guide to decide what proof a slice needs, what fixtures or fakes should exist, and which validation command an implementation agent should run before handing off work.
 
-Use the lightest harness that proves the change.
+## Progressive Disclosure
 
-1. **Schema harness** — validate config, PR context, findings, verdicts, and payload models.
-2. **Memory harness** — fixture PR comments and review threads become structured conversation memory.
-3. **Routing harness** — fixture PRs select the expected reviewer agents with expected stages and reasons.
-4. **Reviewer harness** — deterministic fake LLM responses normalize into findings, local notes, suppressed output, or clarification requests.
-5. **Quality harness** — finding eligibility classifies postable findings separately from local advice and non-findings.
-6. **Verdict harness** — high-confidence findings can affect local verdicts; low-confidence and ambiguous findings cannot.
-7. **Graph harness** — full LangGraph run with fixture GitHub adapter and fake reviewer runners.
-8. **Dry-run CLI harness** — command produces markdown + JSON and performs no side effects.
-9. **Approval harness** — rejected approval never calls GitHub writer; approved approval creates at most one top-level PR comment for the approved payload.
-10. **Live read smoke** — fetch a real public PR in read-only mode.
-11. **Live post smoke** — only against a disposable test PR, after explicit human approval.
+Read only as deep as the task requires:
 
-## Fixture PRs
+1. Product behavior: `docs/product/rules.md`
+2. Graph shape and state: `docs/architecture/state-graph.md`
+3. Reviewer context and prompts: `docs/prds/0010-agent-context-and-adapter-boundaries.md`
+4. Quality policy: `docs/architecture/review-quality.md`
+5. Side effects and approval: `docs/architecture/side-effects.md`
+6. Harness proof: this document
+7. Concrete task order: Linear issues in the ReviewGraph project
 
-Maintain fixtures under `tests/fixtures/prs/` once implementation starts:
+If a slice changes behavior, update the narrowest durable doc before or alongside the harness. Do not copy the Linear issue list into docs.
 
-- `frontend-state-change.json`
-- `security-sensitive-change.json`
-- `docs-only-change.json`
-- `mixed-risk-change.json`
-- `ambiguous-logic-change.json`
-- `breaking-api-change.json`
-- `oversized-change.json`
-- `stale-approval-change.json`
-- `untrusted-comment-injection.json`
-- `paginated-github-read.json`
+## Slice Proof Contract
 
-Each fixture should include metadata, labels, changed files, patch snippets, PR comments, review comments, and resolved/unresolved thread state when relevant.
+Every implementation slice should be able to answer:
 
-## Tracer bullets
+- Contract: which product, architecture, PRD, or decision doc defines the behavior?
+- Fixture or fake: what deterministic input proves the behavior without live credentials?
+- Harness: what command proves the slice?
+- Expected artifact: what model, output file, trace, or fake transport result should exist?
+- Side-effect proof: why no GitHub write, live LLM call, or secret-bearing trace can happen by default?
+- Out of scope: what tempting adjacent behavior is explicitly deferred?
 
-Build early vertical slices that exercise the graph end to end before expanding every policy:
+Use this shape for issue handoff comments, PR descriptions, and implementation notes. Keep it short enough that another agent can execute it without rereading the whole repository.
 
-1. **Fixture dry run:** fixture PR -> conversation memory -> always-on reviewers -> markdown/JSON -> no writer call.
-2. **Specialized reviewer:** path or diff trigger introduces a security/frontend reviewer with recorded stage and reason.
-3. **Logic ambiguity:** a logic reviewer returns a clarification request; graph stops before verdict/posting.
-4. **Clarification resume:** a supplied human answer is recorded in state and the graph resumes review.
-5. **Quality gate:** fake reviewer output is split into postable finding, local note, and suppressed non-finding.
-6. **Allowed post proof:** item-approved top-level PR comment payload calls the fake GitHub writer once; rejected approval calls it zero times.
+## Confidence Ladder
 
-## Required tests before MVP is complete
+Use the lightest harness that proves the change. Move down the ladder only when the lower proof depends on the higher one.
 
-- Config validation rejects unknown trigger fields.
-- Config validation rejects `triggers.stages`; `stages` is valid only as a top-level agent field.
-- Config validation rejects `verdict_power: approve` for MVP.
-- Path triggers select matching reviewers.
-- Diff patterns select matching reviewers.
-- Always-on reviewers are selected for every PR.
-- Stage eligibility is recorded for every selected reviewer.
-- Stage cursor initializes with `active_stage=None` and advances to `initial_triage` before reviewer selection.
-- `stage_queue` contains only future normal stages and completed stages are never rerun.
-- Clarification resume restores the suspended source stage without popping an unrelated queued stage.
-- PR comments and review threads are available as structured memory.
-- Trusted/untrusted review authors are distinguished before comments become actionable feedback.
-- Reviewer capabilities default to read-only and cannot call GitHub writers.
-- Shipped example config validates.
-- Failed optional reviewer records an error and continues.
-- Failed required reviewer prevents posting.
-- Low-confidence finding cannot request changes.
-- Ambiguous mergeability issue becomes a clarification request, not a high-confidence finding.
-- Generic finding without PR-specific evidence is suppressed.
-- Reviewer self-declared postability/blocking is ignored by the quality gate.
-- Generic missing-test feedback becomes a local note or non-finding.
-- Finding introduced outside the PR diff is not postable.
-- Postable finding includes a short changed-line location.
-- Large PR fixture receives bounded reviewer context and emits truncation local notes.
-- Context budget enforces reviewer-count and live-call caps deterministically, with local notes for skipped/deferred reviewers.
-- Pagination fixtures prove GitHub files, issue comments, review comments, reviews, and review-thread state fetch all pages before truncation logic runs.
-- Untrusted PR comments cannot trigger `conversation_patterns` routing.
-- Unlisted review bot comments remain passive memory by default.
-- Secret-like diff/comment content is redacted from logs, traces, JSON errors, and default output.
-- Secret-like diff/comment content is redacted from rendered markdown and candidate/final GitHub payloads.
-- Dry-run mode never invokes GitHub writer.
-- Approval rejection never invokes GitHub writer.
-- Approval acceptance creates at most one top-level PR comment artifact for the approved payload and does not duplicate finding fingerprints.
-- Approval with no approved findings, local notes only, or suppressed findings only never invokes GitHub writer.
-- Approval subset hashes bind to the final issue-comment body; stale candidate hashes are rejected.
-- MVP payload schema rejects `event: COMMENT` and `/pulls/{pr}/reviews` endpoints.
-- Unknown authenticated GitHub actor or insufficient/unknown permission blocks approval/posting.
-- Local request-changes recommendation does not submit GitHub `REQUEST_CHANGES`.
-- Stale head/base SHA between approval and posting prevents writer invocation.
-- Retry after writer timeout reconciles by embedded ReviewGraph marker and does not duplicate comments.
-- Fake writer seeded with an existing ReviewGraph marker skips duplicate posting after process restart.
+1. Schema harness: config, PR context, graph state, findings, verdicts, approvals, payloads, gate results.
+2. Fixture harness: static PR contexts with changed files, patches, comments, reviews, thread state, labels, and target SHAs.
+3. Memory harness: fixture conversation becomes trusted/passive memory with resolved, unresolved, or unknown thread state.
+4. Routing harness: reviewer selection records stage, trigger, risk, budget, and memory reasons.
+5. Reviewer harness: fake reviewer outputs cover success, local notes, clarification, suggested replies, non-findings, malformed JSON, and failures.
+6. Quality harness: reviewer output becomes postable findings, local notes, clarification requests, suggested replies, or suppressed output.
+7. Graph harness: full LangGraph fixture run proves stage cursor, reviewer status, clarification resume, dry-run branch, and fail-closed branches.
+8. Render harness: markdown and JSON output are redacted, stable enough for golden checks, and do not include public write pressure by default.
+9. Approval/finalization harness: approval binds item selection, final payload hash, actor/permission snapshot, target freshness, marker reconciliation, and non-empty approved findings.
+10. Fake writer harness: approved finalized top-level issue-comment payload creates at most one fake comment.
+11. Live read smoke: opt-in read-only GitHub fetch with pagination and read-gap reporting.
+12. Live LLM smoke: opt-in provider call after redaction, minimization, budget, and fake reviewer proof.
+13. Live post smoke: manual-only disposable PR proof after dry-run, approval, freshness, actor, permission, hash, marker, and fake writer proof.
 
-## Live API discipline
+## Fixture Corpus
 
-Live tests are opt-in. They must never run as part of default test commands.
+Maintain a manifest under `tests/fixtures/prs/` once implementation starts. The manifest is required before individual schema-valid fixture files are complete.
+
+Required scenarios:
+
+- `frontend-state-change`
+- `security-sensitive-change`
+- `docs-only-change`
+- `mixed-risk-change`
+- `ambiguous-logic-change`
+- `breaking-api-change`
+- `oversized-change`
+- `stale-approval-change`
+- `untrusted-comment-injection`
+- `paginated-github-read`
+
+Each manifest entry should name:
+
+- Behavior proved by the fixture.
+- Later harnesses or issue IDs that consume it.
+- Required fields: metadata, labels, changed files, patches, base SHA, head SHA, merge-base SHA, diff basis, comments, review comments, reviews, and resolved/unresolved/unknown thread state when relevant.
+- Whether it must include trusted memory, untrusted memory, secret-like content, pagination, target drift, or oversized context.
+
+Default validation should prove every required scenario is named and every schema-valid fixture is consumed by at least one harness.
+
+## Golden Output Rules
+
+Golden tests should protect product behavior without freezing incidental wording.
+
+- Prefer whole-object equality for typed models and machine JSON.
+- Compare selected markdown sections, not full prompt-shaped prose.
+- Never compare raw live LLM output in default tests.
+- Redaction tests should assert secrets are absent from logs, traces, JSON errors, markdown, candidate payloads, final payloads, and provider-bound requests.
+- Quality golden cases should include postable finding, local note, clarification request, suggested reply, suppressed non-finding, generic missing-test feedback, cross-file logic evidence, ambiguous logic intent, and generic architecture advice.
+- Logic-review findings may cite cross-file evidence, but public locations must anchor to changed code that introduced or exposed the risk.
+
+## Required Harness Families
+
+### Contracts
+
+- Config rejects unknown trigger fields, `triggers.stages`, unsupported MVP capabilities, and `verdict_power: approve`.
+- `ReviewState` includes explicit gate state for read gaps, redaction, actor/permission, payload validation, marker reconciliation, finalization, approval, and writer result.
+- Reviewer output cannot self-declare postability, blocking, final priority, or GitHub destination.
+
+### Graph Cursor
+
+- Initial cursor is `active_stage=None`, `stage_queue=["initial_triage","specialized_review","logic_review"]`, and `completed_stages=[]`.
+- `advance_or_finish_stage` is the only node that mutates cursor fields.
+- `clarification_review` is transient and never lives in the normal queue.
+- Resume from clarification reruns only affected reviewers and does not pop unrelated stages.
+
+### Memory And Trust
+
+- PR comments and review threads become structured memory before reviewer fanout.
+- Trusted humans, trusted bots, untrusted humans, unlisted bots, resolved threads, unresolved threads, and unknown thread state are distinct.
+- Untrusted comments are passive data. They cannot route reviewers, override prompts, satisfy evidence requirements, influence verdicts, approve posting, or enter public payload text in MVP.
+- Unknown required thread state fails closed for actionability until a later policy proves otherwise.
+
+### Reviewer Boundaries
+
+- Reviewer adapters receive only `ReviewerContextPackage` and return structured `ReviewerResult`.
+- Reviewer adapters do not receive GitHub transports, approval state, finalization code, payload builders, or writer clients.
+- Fake and live reviewers share the same input/output contract.
+- Capabilities default to `none` or `diff_context`; tool-using reviewers are future work.
+
+### Review Quality
+
+- Postable findings require changed-code evidence, an actionable scenario, graph-owned classification, and a precise changed-code location when available.
+- Low-confidence or intent-dependent mergeability concerns become clarification requests.
+- Generic, speculative, pre-existing, duplicate-without-new-analysis, or locationless issues are local notes or suppressed output.
+- Suggested replies are local-only in MVP.
+- Testing feedback is postable only with changed behavior, a concrete regression scenario, and identifiable missing coverage.
+
+### Rendering And Redaction
+
+- Dry-run output includes selected reviewer reasons, memory IDs, trust labels, resolved status, truncation status, local verdict, classified output, posting plan, and suppressed counts.
+- Output distinguishes postable findings, local notes, clarification requests, suggested replies, and non-findings.
+- Secret-like content is redacted before rendering, tracing, payload validation, live LLM requests, or posting.
+- Candidate and final public payloads cannot contain untrusted comment bodies in MVP.
+
+### Side Effects
+
+- Dry-run mode never invokes the writer.
+- Rejected approval, missing approval, no approved findings, local-note-only, suggested-reply-only, suppressed-only, and clarification-only runs never invoke the writer.
+- MVP payload kind is top-level `issue_comment`; formal PR reviews, inline comments, labels, statuses, `APPROVE`, and `REQUEST_CHANGES` are rejected.
+- Approval binds approved item IDs, review target, final full comment hash, actor, permission, and checked-at time.
+- Finalization re-checks target freshness, actor, permission, redaction, payload hash, marker reconciliation, and duplicate fingerprints before writer reachability.
+- Marker reconciliation paginates existing comments, trusts only the approved actor or configured ReviewGraph bot, and fails closed on trusted malformed or conflicting markers for the same target.
+
+## Tracer Bullets
+
+Build these early vertical slices before expanding every policy:
+
+1. Fixture dry run: fixture PR -> conversation memory -> always-on reviewer -> markdown/JSON -> no writer call.
+2. Specialized reviewer: path, label, diff, or risk trigger introduces a focused reviewer with recorded stage and reason.
+3. Logic ambiguity: logic reviewer returns a clarification request; graph stops before verdict/posting.
+4. Clarification resume: supplied human answer is recorded and only affected reviewers rerun.
+5. Quality gate: fake reviewer output splits into postable finding, local note, suggested reply, and suppressed non-finding.
+6. Allowed post proof: item-approved top-level issue-comment payload calls the fake writer once; rejected or empty approval calls it zero times.
+7. GitHub read proof: fake paginated GitHub read feeds the same graph path as fixtures.
+8. Fail-closed proof: stale target, read gap, unknown actor, unknown permission, or marker conflict prevents writer reachability.
+
+## Live API Discipline
+
+Default commands must never require credentials or mutate external systems.
 
 Recommended future commands:
 
 ```bash
 pytest
 pytest -m live_read
+pytest -m live_llm
 pytest -m live_post --requires-human-approval
 ```
+
+Live read may run only after fake pagination and read-gap harnesses exist. Live LLM may run only after context package, redaction, minimization, budget, and fake reviewer harnesses exist. Live post may run only against a disposable allowlisted PR after fake writer, approval, freshness, actor/permission, final hash, and marker reconciliation harnesses exist.

@@ -50,4 +50,4 @@ Build a confidence ladder of fixtures, schema tests, fake adapters, graph tests,
 
 ## Further Notes
 
-This PRD should drive issue creation. Each implementation slice should identify the lightest harness that proves it and avoid live APIs until the fake path is solid.
+This PRD should guide Linear issue creation and updates. Each implementation slice should identify the lightest harness that proves it and avoid live APIs until the fake path is solid.

@@ -12,8 +12,15 @@ This directory uses progressive disclosure: start broad, then follow the narrowe
 6. [Review Quality](architecture/review-quality.md) — finding eligibility, comment shape, and reviewer skill set.
 7. [LLM Data Handling](architecture/llm-data-handling.md) — live LLM opt-in, minimization, and redaction.
 8. [PRDs](prds/README.md) — independently plannable product slices.
-9. [Harness Engineering](harnesses/harness-engineering.md) — proof strategy before code.
-10. [Implementation Plan](plans/implementation-plan.md) — bite-sized implementation sequence.
+9. [Decisions](decisions/README.md) — durable tradeoffs and source-of-truth boundaries.
+10. [Harness Engineering](harnesses/harness-engineering.md) — proof strategy before code.
+11. [Implementation Plan](plans/implementation-plan.md) — bite-sized implementation sequence.
+
+## Source of truth
+
+- Product, architecture, harness, and decision contracts live in this repository.
+- Concrete implementation tickets, milestone order, blockers, and agent handoff details live in Linear under the ReviewGraph project.
+- Do not recreate temporary issue trees in the repo once Linear represents them.
 
 ## By task
 
@@ -25,6 +32,19 @@ This directory uses progressive disclosure: start broad, then follow the narrowe
 - Changing finding quality policy -> `architecture/review-quality.md`
 - Changing live LLM behavior -> `architecture/llm-data-handling.md`
 - Changing PR conversation memory -> `architecture/overview.md` and `architecture/state-graph.md`
+- Recording a durable tradeoff -> `decisions/README.md`
+- Choosing proof for an implementation slice -> `harnesses/harness-engineering.md`
 - Adding tests -> `harnesses/harness-engineering.md`
 - Deciding whether to post to GitHub -> `product/rules.md` and `architecture/side-effects.md`
 - Breaking work into implementation slices -> `prds/README.md`
+- Working a concrete implementation ticket -> Linear issue plus the narrowest linked durable doc
+
+## By proof type
+
+- Schema/model behavior -> `harnesses/harness-engineering.md#contracts`
+- Graph cursor or resume behavior -> `harnesses/harness-engineering.md#graph-cursor`
+- PR memory, trust, and read gaps -> `harnesses/harness-engineering.md#memory-and-trust`
+- Reviewer context boundaries -> `harnesses/harness-engineering.md#reviewer-boundaries`
+- Finding quality and logic review -> `harnesses/harness-engineering.md#review-quality`
+- Rendering, redaction, and payload previews -> `harnesses/harness-engineering.md#rendering-and-redaction`
+- Approval, finalization, and GitHub writes -> `harnesses/harness-engineering.md#side-effects`

@@ -11,6 +11,7 @@ Reviewer output should be normalized into one of these classes:
 - `postable_finding`: a concrete issue suitable for a PR review comment after approval.
 - `local_note`: useful local advice that should not be posted as review feedback.
 - `clarification_request`: a question that must be answered before a high-confidence mergeability recommendation.
+- `suggested_reply`: a local-only draft response to a human PR comment; MVP never posts it automatically.
 - `non_finding`: generic, unsupported, duplicate-without-new-analysis, or speculative output that should be suppressed.
 
 Only `postable_finding` items should be candidates for GitHub review payloads.

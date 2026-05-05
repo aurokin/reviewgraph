@@ -15,13 +15,13 @@ These are durable product constraints. Implementation details can change; these 
 
 ## Review quality rules
 
-1. Reviewer output must be classified as postable finding, local note, clarification request, or suppressed non-finding before rendering.
+1. Reviewer output must be classified as postable finding, local note, clarification request, suggested reply, or suppressed non-finding before rendering.
 2. Postable findings must include priority, severity, confidence, rationale, concrete evidence, and a precise location that overlaps the diff when available.
 3. High-severity findings require concrete evidence from the PR context.
 4. Weak or speculative findings should be suggestions or local notes, not blocking warnings.
 5. Ambiguous findings that would affect mergeability should request human clarification instead of pretending to be certain.
 6. Generic findings that could apply to almost any PR should be suppressed.
-7. The summary should distinguish blocking issues, clarification requests, local notes, and optional improvements.
+7. The summary should distinguish blocking issues, clarification requests, local notes, suggested replies, and optional improvements.
 
 ## Scope rules
 

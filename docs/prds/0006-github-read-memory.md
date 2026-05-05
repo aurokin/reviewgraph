@@ -21,8 +21,9 @@ Build GitHub read adapters that fetch PR metadata, changed files, diffs, comment
 
 ## Implementation Decisions
 
-- Read adapters may use GitHub REST API or `gh`.
+- Read adapters may use GitHub REST API or `gh`, but the chosen transport must explicitly report whether resolved review-thread state is available.
 - Required read context includes owner/repo, PR number, title/body/author, base/head SHAs, merge base, labels, changed files, patches, comments, reviews, review comments, and thread state where available.
+- Thread resolution is modeled as `resolved`, `unresolved`, or `unknown`. Unknown thread state is fail-closed for actionability: it can remain visible as memory, but it cannot trigger conversation-pattern routing or support a postable finding until the graph records why that is safe.
 - Adapters must paginate files, issue comments, review comments, reviews, and thread state.
 - Conversation memory stores author, author association, timestamp, body, path/line when available, URL, resolved state, and trust classification.
 - Trusted human authors are owner/member/collaborator plus authenticated operator.
@@ -37,6 +38,7 @@ Build GitHub read adapters that fetch PR metadata, changed files, diffs, comment
 - Tests assert untrusted comments remain passive memory.
 - Tests assert unlisted bots remain passive memory.
 - Tests assert resolved threads are non-actionable unless new unresolved follow-up appears.
+- Tests assert unknown thread state is distinct from resolved/unresolved state and cannot produce actionable routing or postable findings by default.
 - Tests assert missing actor or insufficient/unknown permission blocks approval/posting.
 
 ## Out of Scope

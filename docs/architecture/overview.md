@@ -11,8 +11,9 @@ CLI / webhook event
   -> finding normalizer
   -> review quality classifier
   -> ranking/verdict/clarification policy
+  -> output renderer / candidate GitHub payload builder
   -> human approval gate
-  -> output renderer / GitHub side-effect adapter
+  -> GitHub side-effect adapter
 ```
 
 ## Modules
@@ -43,7 +44,7 @@ Validates reviewer output into the canonical finding schema.
 
 ### Review quality classifier
 
-Applies the finding eligibility policy from `review-quality.md`. Reviewer output becomes a postable finding, local note, clarification request, or suppressed non-finding before any renderer or GitHub payload sees it.
+Applies the finding eligibility policy from `review-quality.md`. Reviewer output becomes a postable finding, local note, clarification request, suggested reply, or suppressed non-finding before any renderer or GitHub payload sees it. Suggested replies are local-only in MVP and never become GitHub replies automatically.
 
 ### Ranking/verdict/clarification policy
 

@@ -19,6 +19,7 @@ Classify all reviewer output into postable findings, local notes, clarification 
 7. As a developer, I want diff anchors modeled, so that future inline comments are built on a safe foundation.
 8. As a maintainer, I want public request-changes wording excluded by default, so that a top-level comment does not become de facto requested changes.
 9. As a maintainer, I want postable comments to be concise and matter-of-fact, so that they resemble high-signal code review.
+10. As a maintainer, I want logic-review findings to prove a concrete changed behavior or invariant break, so that cross-file reasoning does not become generic architecture commentary.
 
 ## Implementation Decisions
 
@@ -30,6 +31,9 @@ Classify all reviewer output into postable findings, local notes, clarification 
 - Inline posting requires a validated diff anchor and is deferred.
 - MVP top-level PR comments can include approved findings but not unapproved local verdict pressure.
 - Suggested replies to human comments are local-only in MVP.
+- Logic-review findings may cite cross-file or product-behavior evidence, but their postable location must anchor to changed code that introduced or exposed the risk.
+- Logic-review output that depends on unstated product intent, migration expectations, or reviewer assumptions becomes a clarification request instead of a blocking finding.
+- Generic architectural preferences, broad refactor advice, and non-local concerns without changed-code causality are local notes or non-findings.
 
 ## Testing Decisions
 
@@ -39,6 +43,8 @@ Classify all reviewer output into postable findings, local notes, clarification 
 - Tests assert generic missing-test feedback is not postable.
 - Tests assert postable findings require changed-code evidence and short locations.
 - Tests assert secret-like evidence is redacted before rendering or posting.
+- Logic-review golden cases cover cross-file invariant break, breaking API behavior, ambiguous product intent that becomes a clarification request, and generic architecture advice that is suppressed or local-only.
+- Logic-review golden cases assert that cross-file evidence can support a finding, but the public location still anchors to the changed line or hunk that introduced the risk.
 
 ## Out of Scope
 

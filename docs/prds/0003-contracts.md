@@ -20,22 +20,26 @@ Define typed contracts for the core state and data models before building live i
 8. As a reviewer, I want clarification requests modeled, so that ambiguity can stop the graph safely.
 9. As a developer, I want `ReviewerRunKey` and status models, so that resume/retry behavior is deterministic.
 10. As a developer, I want `DiffAnchor` modeled separately from display location, so that future inline support has a safe path.
+11. As a developer, I want risk assessment modeled as graph-owned state, so that risk-based reviewer routing is explainable and deterministic.
 
 ## Implementation Decisions
 
-- `ReviewState` includes run ID, run mode, post-enabled flag, review target, posting target, config hash, stage cursor, reviewer run status, context budget, classified outputs, posting plan, payload hashes, approval, writer result, and errors.
+- `ReviewState` includes run ID, run mode, post-enabled flag, review target, posting target, read gaps, config hash, stage cursor, risk assessment, reviewer run status, context budget, redaction status, classified outputs, suggested replies, posting plan, actor/permission gate result, payload validation result, marker reconciliation result, finalization status, payload hashes, approval, writer result, and errors.
 - `ReviewTarget` includes owner/repo, PR number, base SHA, head SHA, merge-base SHA when available, and diff basis.
 - `ReviewerRunKey` includes target hash, config hash, stage, reviewer name, attempt metadata, retry metadata, and clarification ID when applicable.
 - Raw reviewer findings exclude graph-owned fields such as classification, blocking, final priority, fingerprint, and posting destination.
 - Classified findings include graph-owned classification, priority integer, blocking flag, diff anchor, and fingerprint.
 - `ApprovalDecision` stores approved item IDs, final payload hash, full review target or target hash, actor, timestamp, and public-verdict choice.
 - `PostingPlan` stores destination per item: local only, top-level summary item, review body item, inline candidate, or suggested reply.
+- `RiskAssessment` stores changed file count, changed line count, touched surfaces, labels, deterministic diff-pattern hints, configured thresholds, risk level, and traceable reasons.
+- Fail-closed gate result models are graph-owned state, not helper-local booleans: `ReadGap`, `RedactionStatus`, `ActorPermissionGateResult`, `PayloadValidationResult`, `MarkerReconciliationResult`, and `FinalizationStatus`.
 - MVP config supports `none` and `diff_context` capabilities; `read_repo`, `github_read`, and `run_tests` are later-phase capabilities.
 - MVP config rejects `verdict_power: approve`.
 
 ## Testing Decisions
 
 - Schema tests validate happy path and invalid enum values.
+- Schema tests cover fail-closed gate result fields on `ReviewState`.
 - Config tests reject unknown trigger fields, `triggers.stages`, unsupported capabilities, and `verdict_power: approve`.
 - The shipped example config must validate.
 - Raw reviewer output that attempts to claim postability/blocking must be ignored or downgraded by quality classification.
