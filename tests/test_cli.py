@@ -1,5 +1,6 @@
 import ast
 import json
+import os
 import subprocess
 import sys
 from importlib import resources
@@ -120,6 +121,21 @@ def test_module_command_works_with_editable_install(tmp_path: Path) -> None:
     assert completed.stderr == ""
 
 
+def test_module_command_works_from_checkout_with_pythonpath() -> None:
+    env = os.environ.copy()
+    env["PYTHONPATH"] = "src"
+    completed = subprocess.run(
+        [sys.executable, "-m", "reviewgraph.cli", "--fixture-pr", "basic-pr", "--print-markdown"],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert "# ReviewGraph Dry Run" in completed.stdout
+    assert completed.stderr == ""
+
+
 def test_manifest_registry_includes_consumed_basic_fixture() -> None:
     manifest = load_manifest()
 
@@ -179,6 +195,25 @@ def test_top_level_json_envelope_redacts_fixture_strings(tmp_path: Path) -> None
     assert "ghp_" not in serialized
     assert "abcdefghijklmnopqrstuvwxyz" not in serialized
     assert "[REDACTED]" in serialized
+
+
+def test_markdown_redacts_secret_like_target_and_path_metadata(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "secret-markdown.json"
+    fixture = _basic_fixture()
+    fixture["target"]["owner_repo"] = "ghp_abcdefghijklmnopqrstuvwxyz123456/repo"
+    fixture["target"]["head_sha"] = "ghs_abcdefghijklmnopqrstuvwxyz123456"
+    fixture["changed_files"][0]["path"] = "src/ghp_abcdefghijklmnopqrstuvwxyz123456.py"
+    fixture["raw_reviewer_outputs"][0]["items"][0]["path"] = "src/ghp_abcdefghijklmnopqrstuvwxyz123456.py"
+    fixture_path.write_text(json.dumps(fixture))
+    markdown_path = tmp_path / "review.md"
+
+    assert main(["--fixture-pr", str(fixture_path), "--markdown-out", str(markdown_path)]) == 0
+
+    markdown = markdown_path.read_text()
+    assert "ghp_" not in markdown
+    assert "ghs_" not in markdown
+    assert "abcdefghijklmnopqrstuvwxyz" not in markdown
+    assert "[REDACTED]" in markdown
 
 
 def test_clarification_only_fixture_is_not_post_enabled(tmp_path: Path) -> None:
@@ -607,6 +642,14 @@ def test_oversized_fixture_returns_nonzero(tmp_path: Path, capsys: pytest.Captur
 
     assert main(["--fixture-pr", str(fixture_path)]) == 2
     assert "exceeds" in capsys.readouterr().err
+
+
+def test_non_regular_fixture_path_returns_nonzero(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    fixture_dir = tmp_path / "fixture-dir"
+    fixture_dir.mkdir()
+
+    assert main(["--fixture-pr", str(fixture_dir)]) == 2
+    assert "regular file" in capsys.readouterr().err
 
 
 def test_unwritable_output_path_returns_nonzero(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

@@ -164,15 +164,20 @@ def _resource_path(relative: str) -> Path:
 
 def _read_json_file(path: Path, *, label: str) -> dict[str, Any]:
     try:
-        size = path.stat().st_size
+        if not path.is_file():
+            raise FixtureError(f"{label} path must be a regular file: {redact_for_error(str(path))}")
+        with path.open("rb") as handle:
+            raw = handle.read(MAX_FIXTURE_BYTES + 1)
     except OSError as exc:
         raise FixtureError(f"{label} file is not readable: {redact_for_error(str(path))}") from exc
-    if size > MAX_FIXTURE_BYTES:
+    if len(raw) > MAX_FIXTURE_BYTES:
         raise FixtureError(f"{label} file exceeds {MAX_FIXTURE_BYTES} bytes: {redact_for_error(str(path))}")
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(raw.decode("utf-8"))
     except json.JSONDecodeError as exc:
         raise FixtureError(f"{label} JSON is invalid at line {exc.lineno}: {exc.msg}") from exc
+    except UnicodeDecodeError as exc:
+        raise FixtureError(f"{label} JSON must be UTF-8") from exc
     except OSError as exc:
         raise FixtureError(f"{label} file is not readable: {redact_for_error(str(path))}") from exc
     if not isinstance(data, dict):

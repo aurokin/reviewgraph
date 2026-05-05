@@ -125,8 +125,8 @@ def render_markdown(*, inputs: "_RenderInputs", context: "_RenderContext | None"
         "# ReviewGraph Dry Run",
         "",
         "## Target",
-        f"- PR: {inputs.review_target.owner_repo}#{inputs.review_target.pr_number}",
-        f"- Head: {inputs.review_target.head_sha}",
+        f"- PR: {context.redact(inputs.review_target.owner_repo)}#{inputs.review_target.pr_number}",
+        f"- Head: {context.redact(inputs.review_target.head_sha)}",
         "",
         "## Local Verdict",
         f"- Value: {_private_verdict_label(inputs.local_verdict)}",
@@ -134,13 +134,14 @@ def render_markdown(*, inputs: "_RenderInputs", context: "_RenderContext | None"
         "## Selected Reviewers",
     ]
     lines.extend(
-        f"- {reviewer.name} ({reviewer.stage}): {', '.join(context.redact(reason) for reason in reviewer.reasons)}"
+        f"- {context.redact(reviewer.name)} ({context.redact(reviewer.stage)}): "
+        f"{', '.join(context.redact(reason) for reason in reviewer.reasons)}"
         for reviewer in inputs.selected_reviewers
     )
     lines.extend(["", "## Postable Findings"])
     if inputs.findings:
         lines.extend(
-            f"- P{finding.priority} {context.redact(finding.title)} ({finding.path}:{finding.line})"
+            f"- P{finding.priority} {context.redact(finding.title)} ({context.redact(finding.path)}:{finding.line})"
             f" - {context.redact(finding.body)}"
             for finding in inputs.findings
         )
@@ -161,19 +162,20 @@ def render_markdown(*, inputs: "_RenderInputs", context: "_RenderContext | None"
 
     lines.extend(["", "## Suggested Replies"])
     lines.extend(
-        f"- {reply.id}: {context.redact(reply.proposed_body)}" for reply in inputs.suggested_replies
+        f"- {context.redact(reply.id)}: {context.redact(reply.proposed_body)}" for reply in inputs.suggested_replies
     )
     if not inputs.suggested_replies:
         lines.append("- None")
 
     lines.extend(["", "## Suppressed Outputs", f"- Count: {len(inputs.suppressed_outputs)}"])
     for output in inputs.suppressed_outputs:
-        lines.append(f"- {output.id}: {context.redact(output.reason)}")
+        lines.append(f"- {context.redact(output.id)}: {context.redact(output.reason)}")
 
     lines.extend(["", "## Memory"])
     for memory in inputs.memory_references:
         lines.append(
-            f"- {memory.id}: trust={memory.trust_label}, resolved={memory.resolved_status}, source={memory.source_type}"
+            f"- {context.redact(memory.id)}: trust={context.redact(memory.trust_label)}, "
+            f"resolved={context.redact(memory.resolved_status)}, source={context.redact(memory.source_type)}"
         )
     if not inputs.memory_references:
         lines.append("- None")
@@ -182,7 +184,8 @@ def render_markdown(*, inputs: "_RenderInputs", context: "_RenderContext | None"
     if inputs.truncation_notices:
         for notice in inputs.truncation_notices:
             lines.append(
-                f"- {notice.resource}: truncated={str(notice.truncated).lower()} - {context.redact(notice.note)}"
+                f"- {context.redact(notice.resource)}: truncated={str(notice.truncated).lower()}"
+                f" - {context.redact(notice.note)}"
             )
     else:
         lines.append("- None")
@@ -190,7 +193,10 @@ def render_markdown(*, inputs: "_RenderInputs", context: "_RenderContext | None"
     lines.extend(["", "## Posting Plan"])
     if inputs.posting_plan is not None:
         for item in inputs.posting_plan.items:
-            lines.append(f"- {item.id}: {item.destination.value}, public={str(item.public_payload_eligible).lower()}")
+            lines.append(
+                f"- {context.redact(item.id)}: {context.redact(item.destination.value)}, "
+                f"public={str(item.public_payload_eligible).lower()}"
+            )
     else:
         lines.append("- None")
 
