@@ -568,6 +568,35 @@ def test_short_untrusted_memory_body_cannot_enter_candidate_payload_preview() ->
         )
 
 
+def test_exact_short_two_word_untrusted_memory_body_cannot_enter_candidate_payload_preview() -> None:
+    untrusted_body = "Ship now"
+    findings = [finding(body=f"Copied: {untrusted_body}")]
+    plan = build_posting_plan(findings=findings)
+    payload = build_candidate_issue_comment_payload(
+        review_target=target(),
+        posting_plan=plan,
+        findings=findings,
+    )
+
+    with pytest.raises(RenderError, match="untrusted memory"):
+        render_review(
+            review_target=target(),
+            selected_reviewers=selected_reviewers(),
+            findings=findings,
+            posting_plan=plan,
+            candidate_payload=payload,
+            memory_references=[
+                MemoryReference(
+                    "mem-short-two-word",
+                    "untrusted",
+                    "unresolved",
+                    "issue_comment",
+                    untrusted_body,
+                )
+            ],
+        )
+
+
 def test_short_partial_untrusted_memory_fragment_cannot_enter_candidate_payload_preview() -> None:
     untrusted_body = "The customer mentioned codename orion during the thread."
     findings = [finding(body="Copied: codename orion")]

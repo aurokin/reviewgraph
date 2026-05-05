@@ -378,6 +378,42 @@ def test_generic_low_confidence_raw_finding_is_suppressed(tmp_path: Path) -> Non
     ]
 
 
+def test_high_confidence_generic_coverage_raw_finding_is_suppressed(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "generic-coverage.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["items"] = [
+        {
+            "type": "postable_finding",
+            "id": "finding-generic-coverage",
+            "title": "No regression coverage",
+            "body": "No regression coverage was added for this change.",
+            "evidence": "Changed line 12.",
+            "path": "src/cache.py",
+            "line": 12,
+            "priority": 2,
+            "severity": "suggestion",
+            "confidence": "high",
+            "fingerprint": "fixture-generic-coverage",
+        }
+    ]
+    fixture_path.write_text(json.dumps(fixture))
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path))
+    review = result.json_data["review"]
+
+    assert result.json_data["local_verdict"] == "no_findings"
+    assert result.json_data["post_enabled"] is False
+    assert review["candidate_payload_preview"] is None
+    assert review["classified_output"]["postable_findings"] == []
+    assert review["classified_output"]["suppressed"] == [
+        {
+            "id": "finding-generic-coverage",
+            "classification": "non_finding",
+            "reason": "Finding candidate did not meet postable quality policy.",
+        }
+    ]
+
+
 def test_suggested_reply_fixture_is_local_only(tmp_path: Path) -> None:
     fixture_path = tmp_path / "suggested-reply.json"
     fixture = _basic_fixture()

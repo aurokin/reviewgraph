@@ -333,12 +333,17 @@ def _is_unsafe_memory(memory: MemoryReference) -> bool:
 def _memory_body_overlaps_candidate(memory_body: str | None, candidate_body: str) -> bool:
     if not memory_body:
         return False
+    normalized_memory = _normalize_memory_text(memory_body)
     normalized_candidate = _normalize_memory_text(candidate_body)
     candidate_words = set(normalized_candidate.split())
     compact_candidate = normalized_candidate.replace(" ", "")
     meaningful_fragments = _meaningful_memory_fragments(memory_body)
     for fragment in meaningful_fragments:
-        if " " in fragment and _has_enough_fragment_signal(fragment) and fragment in normalized_candidate:
+        if (
+            " " in fragment
+            and (_has_enough_fragment_signal(fragment) or fragment == normalized_memory)
+            and fragment in normalized_candidate
+        ):
             return True
         if " " not in fragment and fragment in candidate_words:
             return True

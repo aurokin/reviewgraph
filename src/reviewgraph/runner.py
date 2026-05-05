@@ -363,7 +363,11 @@ def _is_postable_finding(finding: ClassifiedFinding) -> bool:
         "add tests",
         "missing tests",
         "needs tests",
+        "no regression coverage",
+        "no test coverage",
+        "no tests",
         "please add tests",
+        "regression coverage",
         "test coverage",
     )
     return not any(phrase in text for phrase in generic_test_advice)
