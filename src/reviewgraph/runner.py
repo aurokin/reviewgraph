@@ -362,26 +362,54 @@ def _is_postable_finding(finding: ClassifiedFinding) -> bool:
     if not _has_concrete_finding_evidence(finding.evidence):
         return False
     text = f"{finding.title}\n{finding.body}\n{finding.evidence}".casefold()
-    generic_advice = (
-        "add tests",
+    if _is_testing_advice(text):
+        return _has_testing_finding_shape(text)
+    generic_refactor_advice = (
         "clean this up",
         "could be refactored",
-        "missing tests",
-        "needs tests",
-        "no regression coverage",
-        "no test coverage",
-        "no tests",
-        "please add tests",
-        "regression coverage",
+        "extract helper",
+        "improve readability",
+        "refactor this",
         "simplify this code",
-        "test coverage",
     )
-    return not any(phrase in text for phrase in generic_advice)
+    return not any(phrase in text for phrase in generic_refactor_advice)
 
 
 def _has_concrete_finding_evidence(evidence: str) -> bool:
     normalized = evidence.casefold().strip()
     return not bool(re.fullmatch(r"changed line \d+\.?", normalized))
+
+
+def _is_testing_advice(text: str) -> bool:
+    testing_terms = ("coverage", "regression test", "test", "tests")
+    return any(term in text for term in testing_terms)
+
+
+def _has_testing_finding_shape(text: str) -> bool:
+    missing_coverage = (
+        ("coverage" in text or "test" in text)
+        and any(term in text for term in ("missing", "no ", "without", "lacks", "not covered", "does not cover"))
+    )
+    changed_behavior = any(
+        term in text
+        for term in (
+            "changed behavior",
+            "changed line",
+            "new branch",
+            "introduced",
+            "now ",
+            "regress",
+            "returns",
+            "raises",
+            "fails",
+            "skips",
+            "drops",
+            "leaks",
+            "breaks",
+        )
+    )
+    scenario = bool(re.search(r"\b(when|if|after|before|with|for|on)\b", text))
+    return missing_coverage and changed_behavior and scenario
 
 
 def _require_fields(data: dict[str, Any], fields: tuple[str, ...], label: str) -> None:

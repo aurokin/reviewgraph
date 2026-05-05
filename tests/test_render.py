@@ -814,6 +814,44 @@ def test_identifier_like_single_token_untrusted_memory_cannot_enter_candidate_pa
 @pytest.mark.parametrize(
     ("untrusted_body", "finding_body"),
     (
+        ("Please use abc12345 here.", "Copied: abc12345"),
+        ("The unresolved thread referenced user12345.", "Copied: user12345"),
+    ),
+)
+def test_mixed_identifier_untrusted_memory_cannot_enter_candidate_payload_preview(
+    untrusted_body: str,
+    finding_body: str,
+) -> None:
+    findings = [finding(body=finding_body)]
+    plan = build_posting_plan(findings=findings)
+    payload = build_candidate_issue_comment_payload(
+        review_target=target(),
+        posting_plan=plan,
+        findings=findings,
+    )
+
+    with pytest.raises(RenderError, match="untrusted memory"):
+        render_review(
+            review_target=target(),
+            selected_reviewers=selected_reviewers(),
+            findings=findings,
+            posting_plan=plan,
+            candidate_payload=payload,
+            memory_references=[
+                MemoryReference(
+                    "mem-mixed-identifier",
+                    "untrusted",
+                    "unresolved",
+                    "issue_comment",
+                    untrusted_body,
+                )
+            ],
+        )
+
+
+@pytest.mark.parametrize(
+    ("untrusted_body", "finding_body"),
+    (
         ("ACME-42", "Copied: ACME42"),
         ("The unresolved thread referenced ticket PROJ-1234.", "Copied: PROJ1234"),
         ("The unresolved thread referenced account ACME-42.", "Copied: ACME42"),

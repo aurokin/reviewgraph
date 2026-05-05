@@ -450,6 +450,86 @@ def test_high_confidence_generic_refactor_raw_finding_is_suppressed(tmp_path: Pa
     ]
 
 
+@pytest.mark.parametrize(
+    ("title", "body"),
+    (
+        ("Improve coverage", "This should have a regression test."),
+        ("Extract helper", "Extract helper to make this easier to read."),
+    ),
+)
+def test_high_confidence_generic_advice_raw_finding_is_suppressed(
+    tmp_path: Path,
+    title: str,
+    body: str,
+) -> None:
+    fixture_path = tmp_path / "generic-advice.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["items"] = [
+        {
+            "type": "postable_finding",
+            "id": "finding-generic-advice",
+            "title": title,
+            "body": body,
+            "evidence": "Changed line 12.",
+            "path": "src/cache.py",
+            "line": 12,
+            "priority": 2,
+            "severity": "suggestion",
+            "confidence": "high",
+            "fingerprint": "fixture-generic-advice",
+        }
+    ]
+    fixture_path.write_text(json.dumps(fixture))
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path))
+    review = result.json_data["review"]
+
+    assert result.json_data["local_verdict"] == "no_findings"
+    assert result.json_data["post_enabled"] is False
+    assert review["candidate_payload_preview"] is None
+    assert review["classified_output"]["postable_findings"] == []
+    assert review["classified_output"]["suppressed"] == [
+        {
+            "id": "finding-generic-advice",
+            "classification": "non_finding",
+            "reason": "Finding candidate did not meet postable quality policy.",
+        }
+    ]
+
+
+def test_concrete_missing_regression_coverage_raw_finding_is_postable(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "concrete-coverage.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["items"] = [
+        {
+            "type": "postable_finding",
+            "id": "finding-cache-coverage",
+            "title": "Missing regression coverage for cache miss",
+            "body": (
+                "The new branch returns stale data when the cache misses, "
+                "but there is no regression test covering a cache miss after invalidation."
+            ),
+            "evidence": "Changed line 12 returns stale value when the cache misses.",
+            "path": "src/cache.py",
+            "line": 12,
+            "priority": 2,
+            "severity": "warning",
+            "confidence": "high",
+            "fingerprint": "fixture-cache-coverage",
+        }
+    ]
+    fixture_path.write_text(json.dumps(fixture))
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path))
+    review = result.json_data["review"]
+
+    assert result.json_data["local_verdict"] == "comment"
+    assert result.json_data["post_enabled"] is True
+    assert review["classified_output"]["postable_findings"][0]["id"] == "finding-cache-coverage"
+    assert review["classified_output"]["suppressed"] == []
+    assert review["candidate_payload_preview"]["item_fingerprints"] == ["fixture-cache-coverage"]
+
+
 def test_suggested_reply_fixture_is_local_only(tmp_path: Path) -> None:
     fixture_path = tmp_path / "suggested-reply.json"
     fixture = _basic_fixture()
