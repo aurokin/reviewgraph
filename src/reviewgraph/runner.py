@@ -56,6 +56,7 @@ def run_fixture_dry_run(
     reviewer_config_path: str | None = None,
     writer_sentinel: object | None = None,
 ) -> DryRunResult:
+    writer_call_count_before = _writer_call_count(writer_sentinel)
     fixture = load_fixture_pr(fixture_ref)
     config = load_reviewer_config(reviewer_config_path)
     selected_reviewers = _select_reviewers(config)
@@ -86,7 +87,6 @@ def run_fixture_dry_run(
         posting_plan=posting_plan,
         findings=classified["findings"],
     )
-    writer_call_count_before = _writer_call_count(writer_sentinel)
     rendered = render_review(
         review_target=review_target,
         selected_reviewers=selected_reviewers,
@@ -362,7 +362,7 @@ def _is_postable_finding(finding: ClassifiedFinding) -> bool:
     if not _has_concrete_finding_evidence(finding.evidence):
         return False
     text = f"{finding.title}\n{finding.body}\n{finding.evidence}".casefold()
-    if _is_testing_advice(text):
+    if _is_testing_advice(finding, text):
         return _has_testing_finding_shape(text)
     generic_refactor_advice = (
         "clean this up",
@@ -380,8 +380,22 @@ def _has_concrete_finding_evidence(evidence: str) -> bool:
     return not bool(re.fullmatch(r"changed line \d+\.?", normalized))
 
 
-def _is_testing_advice(text: str) -> bool:
-    testing_terms = ("coverage", "regression test", "test", "tests")
+def _is_testing_advice(finding: ClassifiedFinding, text: str) -> bool:
+    if finding.source_reviewer == "testing":
+        return True
+    testing_terms = (
+        "add tests",
+        "improve coverage",
+        "missing coverage",
+        "missing test",
+        "missing tests",
+        "no regression coverage",
+        "no test coverage",
+        "please add tests",
+        "regression test",
+        "test coverage",
+        "without tests",
+    )
     return any(term in text for term in testing_terms)
 
 

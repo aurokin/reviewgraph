@@ -530,6 +530,36 @@ def test_concrete_missing_regression_coverage_raw_finding_is_postable(tmp_path: 
     assert review["candidate_payload_preview"]["item_fingerprints"] == ["fixture-cache-coverage"]
 
 
+def test_correctness_finding_that_mentions_test_mode_is_postable(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "test-mode-bypass.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["items"] = [
+        {
+            "type": "postable_finding",
+            "id": "finding-test-mode-bypass",
+            "title": "Test mode bypasses auth",
+            "body": "The new branch skips auth when test mode is enabled, so callers can reach protected data.",
+            "evidence": "Changed line 12 skips auth when test mode is enabled.",
+            "path": "src/cache.py",
+            "line": 12,
+            "priority": 1,
+            "severity": "critical",
+            "confidence": "high",
+            "fingerprint": "fixture-test-mode-bypass",
+        }
+    ]
+    fixture_path.write_text(json.dumps(fixture))
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path))
+    review = result.json_data["review"]
+
+    assert result.json_data["local_verdict"] == "comment"
+    assert result.json_data["post_enabled"] is True
+    assert review["classified_output"]["postable_findings"][0]["id"] == "finding-test-mode-bypass"
+    assert review["classified_output"]["suppressed"] == []
+    assert review["candidate_payload_preview"]["item_fingerprints"] == ["fixture-test-mode-bypass"]
+
+
 def test_suggested_reply_fixture_is_local_only(tmp_path: Path) -> None:
     fixture_path = tmp_path / "suggested-reply.json"
     fixture = _basic_fixture()

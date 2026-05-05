@@ -441,6 +441,8 @@ def _looks_identifier_like(word: str) -> bool:
 
 
 def _looks_mixed_identifier_like(word: str) -> bool:
+    if word in _COMMON_TECH_TOKENS:
+        return False
     return (
         any(char.isalpha() for char in word)
         and any(char.isdigit() for char in word)
@@ -512,6 +514,14 @@ _HIGH_SIGNAL_CONTEXT_WORDS = {
     "secret",
     "ticket",
     "token",
+}
+
+_COMMON_TECH_TOKENS = {
+    "http2",
+    "node18",
+    "python3",
+    "react19",
+    "sha256",
 }
 
 

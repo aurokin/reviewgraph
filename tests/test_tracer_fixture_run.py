@@ -65,12 +65,14 @@ def test_basic_fixture_tracer_golden_run() -> None:
     fixture = load_fixture_pr("basic-pr")
     raw_items = fixture.raw_reviewer_outputs[0]["items"]
 
-    result = run_fixture_dry_run(fixture_ref="basic-pr", writer_sentinel=RaisingWriter())
+    writer = RaisingWriter()
+    result = run_fixture_dry_run(fixture_ref="basic-pr", writer_sentinel=writer)
     data = result.json_data
     review = data["review"]
     classified = review["classified_output"]
 
     assert result.writer_call_count == 0
+    assert writer.call_count == 0
     assert data["run_mode"] == "dry_run"
     assert data["post_enabled"] is True
     assert data["fixture_id"] == "basic-pr"
@@ -193,7 +195,8 @@ def test_basic_fixture_tracer_json_is_stable() -> None:
 
 
 class RaisingWriter:
-    call_count = 0
+    def __init__(self) -> None:
+        self.call_count = 0
 
     def __call__(self) -> None:
         self.call_count += 1
