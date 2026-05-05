@@ -848,6 +848,8 @@ def test_identifier_like_single_token_untrusted_memory_cannot_enter_candidate_pa
     ("untrusted_body", "finding_body"),
     (
         ("Please use abc12345 here.", "Copied: abc12345"),
+        ("Please use abc12345 here.", "Copied: abc-12345"),
+        ("Please use abc12345 here.", "Copied: abc_12345"),
         ("The unresolved thread referenced user12345.", "Copied: user12345"),
     ),
 )

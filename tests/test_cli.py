@@ -596,6 +596,36 @@ def test_correctness_finding_that_mentions_test_mode_is_postable(tmp_path: Path)
     assert review["candidate_payload_preview"]["item_fingerprints"] == ["fixture-test-mode-bypass"]
 
 
+def test_concrete_security_finding_with_normal_review_language_is_postable(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "open-redirect.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["items"] = [
+        {
+            "type": "postable_finding",
+            "id": "finding-open-redirect",
+            "title": "Login redirect accepts user-controlled URL",
+            "body": "The new branch accepts a user-controlled redirect URL when login expires, enabling open redirect.",
+            "evidence": "Changed line 12 enables open redirect when login expires.",
+            "path": "src/cache.py",
+            "line": 12,
+            "priority": 1,
+            "severity": "critical",
+            "confidence": "high",
+            "fingerprint": "fixture-open-redirect",
+        }
+    ]
+    fixture_path.write_text(json.dumps(fixture))
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path))
+    review = result.json_data["review"]
+
+    assert result.json_data["local_verdict"] == "comment"
+    assert result.json_data["post_enabled"] is True
+    assert review["classified_output"]["postable_findings"][0]["id"] == "finding-open-redirect"
+    assert review["classified_output"]["suppressed"] == []
+    assert review["candidate_payload_preview"]["item_fingerprints"] == ["fixture-open-redirect"]
+
+
 def test_suggested_reply_fixture_is_local_only(tmp_path: Path) -> None:
     fixture_path = tmp_path / "suggested-reply.json"
     fixture = _basic_fixture()

@@ -348,6 +348,8 @@ def _memory_body_overlaps_candidate(memory_body: str | None, candidate_body: str
         if " " not in fragment and fragment in candidate_words:
             return True
         compact_fragment = fragment.replace(" ", "")
+        if " " not in fragment and _looks_mixed_identifier_like(fragment) and compact_fragment in compact_candidate:
+            return True
         if (
             " " in fragment
             and (_has_enough_fragment_signal(fragment) or _looks_identifier_like(compact_fragment))

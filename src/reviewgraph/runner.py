@@ -447,12 +447,18 @@ def _has_non_testing_finding_shape(text: str) -> bool:
         term in text
         for term in (
             "breaks",
+            "corrupts",
             "drops",
+            "enables",
             "exposes",
             "fails",
+            "hangs",
+            "ignores",
+            "misroutes",
             "leaks",
             "raises",
             "regress",
+            "rejects",
             "returns",
             "skips",
             "stale",
