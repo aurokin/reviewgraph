@@ -12,6 +12,7 @@ from reviewgraph.models import (
     ClarificationRequest,
     ClassifiedFinding,
     LocalNote,
+    OutputClassification,
     RedactionStatus,
     ReviewTarget,
     ReviewVerdict,
@@ -64,7 +65,16 @@ class CandidateIssueCommentPayload:
     redaction_status: RedactionStatus
 
 
+MARKER_PREFIX = "<!-- reviewgraph:"
+
+
 def canonical_visible_body(text: str) -> str:
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    visible_lines = [line for line in normalized.split("\n") if not line.startswith(MARKER_PREFIX)]
+    return "\n".join(visible_lines).rstrip("\n") + "\n"
+
+
+def canonical_full_body(text: str) -> str:
     normalized = text.replace("\r\n", "\n").replace("\r", "\n")
     return normalized.rstrip("\n") + "\n"
 
@@ -78,7 +88,7 @@ def visible_body_hash(text: str) -> str:
 
 
 def full_body_hash(full_body: str) -> str:
-    return sha256_text(full_body)
+    return sha256_text(canonical_full_body(full_body))
 
 
 def canonical_json_hash(data: object) -> str:
@@ -102,6 +112,7 @@ def validate_mvp_artifact_kind(kind: str | ArtifactKind) -> ArtifactKind:
 def build_posting_plan(
     *,
     findings: Iterable[ClassifiedFinding],
+    review_target: ReviewTarget | None = None,
     local_notes: Iterable[LocalNote] = (),
     suggested_replies: Iterable[SuggestedReply] = (),
     clarification_requests: Iterable[ClarificationRequest] = (),
@@ -124,7 +135,15 @@ def build_posting_plan(
 
     for finding in findings:
         if finding.id in inline_candidate_ids:
-            if finding.diff_anchor is None or not finding.diff_anchor.overlaps_changed_target:
+            if finding.diff_anchor is None:
+                raise PostingPlanError("inline candidates require a diff anchor overlapping changed target code")
+            if review_target is None:
+                raise PostingPlanError("inline candidates require a review target")
+            if not finding.diff_anchor.validates_finding_location(
+                path=finding.path,
+                line=finding.line,
+                target_commit_sha=review_target.head_sha,
+            ):
                 raise PostingPlanError("inline candidates require a diff anchor overlapping changed target code")
             destination = PostingDestination.INLINE_CANDIDATE
             public_payload_eligible = False
@@ -184,6 +203,7 @@ def build_candidate_issue_comment_payload(
     kind = validate_mvp_artifact_kind(artifact_kind)
     findings_by_id = {finding.id: finding for finding in findings}
     public_items = posting_plan.public_payload_items
+    _validate_public_payload_items(public_items)
     missing = [item.id for item in public_items if item.id != "summary" and item.id not in findings_by_id]
     if missing:
         raise PostingPlanError(f"public payload item has no matching finding: {', '.join(missing)}")
@@ -194,6 +214,8 @@ def build_candidate_issue_comment_payload(
         f"Head: {review_target.head_sha}",
         "",
     ]
+    if include_public_verdict and local_verdict == ReviewVerdict.REQUEST_CHANGES:
+        raise PostingPlanError("request_changes verdict text is not public in MVP candidate payloads")
     if include_public_verdict and local_verdict is not None:
         body_parts.extend([f"Local verdict: {local_verdict.value}", ""])
 
@@ -231,6 +253,20 @@ def build_candidate_issue_comment_payload(
             categories=redaction.categories,
         ),
     )
+
+
+def _validate_public_payload_items(public_items: tuple[PostingPlanItem, ...]) -> None:
+    for item in public_items:
+        if item.id == "summary":
+            if item.destination != PostingDestination.TOP_LEVEL_SUMMARY_ITEM:
+                raise PostingPlanError("summary public item must use top_level_summary_item destination")
+            continue
+        if item.destination != PostingDestination.REVIEW_BODY_ITEM:
+            raise PostingPlanError("only review_body_item findings can enter public payload items")
+        if item.source_classification != OutputClassification.POSTABLE_FINDING.value:
+            raise PostingPlanError("only postable findings can enter public payload items")
+        if not item.fingerprint:
+            raise PostingPlanError("public payload findings require fingerprints")
 
 
 def assert_builder_signatures_are_pure() -> None:

@@ -17,8 +17,10 @@ from reviewgraph.models import (
 )
 from reviewgraph.posting import (
     ArtifactKind,
+    PostingPlan,
     PostingDestination,
     PostingPlanError,
+    PostingPlanItem,
     assert_builder_signatures_are_pure,
     build_candidate_issue_comment_payload,
     build_posting_plan,
@@ -45,6 +47,8 @@ def finding(
     body: str = "The new branch returns stale data when the cache misses.",
     fingerprint: str = "fp-1",
     diff_anchor: DiffAnchor | None = None,
+    severity: Severity = Severity.WARNING,
+    confidence: Confidence = Confidence.HIGH,
 ) -> ClassifiedFinding:
     return ClassifiedFinding(
         id=finding_id,
@@ -56,8 +60,8 @@ def finding(
         path="src/cache.py",
         line=12,
         priority=1,
-        severity=Severity.WARNING,
-        confidence=Confidence.HIGH,
+        severity=severity,
+        confidence=confidence,
         fingerprint=fingerprint,
         diff_anchor=diff_anchor,
     )
@@ -73,6 +77,7 @@ def test_posting_plan_supports_all_destinations() -> None:
     )
     plan = build_posting_plan(
         findings=[finding(), finding("finding-2", fingerprint="fp-2", diff_anchor=anchor)],
+        review_target=target(),
         local_notes=[LocalNote("note-1", "Review size", "This is local.", "file count")],
         suggested_replies=[SuggestedReply("reply-1", "comment-1", "Local draft reply")],
         include_summary=True,
@@ -102,6 +107,35 @@ def test_inline_candidates_require_changed_target_diff_anchor() -> None:
     with pytest.raises(PostingPlanError, match="diff anchor"):
         build_posting_plan(
             findings=[finding(diff_anchor=bad_anchor)],
+            review_target=target(),
+            inline_candidate_ids={"finding-1"},
+        )
+
+    wrong_path_anchor = DiffAnchor(
+        path="src/other.py",
+        line=12,
+        hunk_start=10,
+        hunk_end=14,
+        target_commit_sha="head456",
+    )
+    with pytest.raises(PostingPlanError, match="diff anchor"):
+        build_posting_plan(
+            findings=[finding(diff_anchor=wrong_path_anchor)],
+            review_target=target(),
+            inline_candidate_ids={"finding-1"},
+        )
+
+    stale_anchor = DiffAnchor(
+        path="src/cache.py",
+        line=12,
+        hunk_start=10,
+        hunk_end=14,
+        target_commit_sha="oldhead",
+    )
+    with pytest.raises(PostingPlanError, match="diff anchor"):
+        build_posting_plan(
+            findings=[finding(diff_anchor=stale_anchor)],
+            review_target=target(),
             inline_candidate_ids={"finding-1"},
         )
 
@@ -169,6 +203,54 @@ def test_request_changes_verdict_is_not_public_by_default() -> None:
     assert "request_changes" not in payload.body
     assert "request changes" not in payload.body.lower()
 
+    with pytest.raises(PostingPlanError, match="request_changes"):
+        build_candidate_issue_comment_payload(
+            review_target=target(),
+            posting_plan=plan,
+            findings=[finding()],
+            local_verdict=ReviewVerdict.REQUEST_CHANGES,
+            include_public_verdict=True,
+        )
+
+
+def test_candidate_payload_rejects_tampered_public_plan_items() -> None:
+    tampered = PostingPlan(
+        items=(
+            PostingPlanItem(
+                id="finding-1",
+                source_classification="suggested_reply",
+                destination=PostingDestination.SUGGESTED_REPLY,
+                public_payload_eligible=True,
+                fingerprint="fp-1",
+            ),
+        )
+    )
+
+    with pytest.raises(PostingPlanError, match="review_body_item"):
+        build_candidate_issue_comment_payload(
+            review_target=target(),
+            posting_plan=tampered,
+            findings=[finding()],
+        )
+
+    tampered_local = PostingPlan(
+        items=(
+            PostingPlanItem(
+                id="finding-1",
+                source_classification="postable_finding",
+                destination=PostingDestination.LOCAL_ONLY,
+                public_payload_eligible=True,
+                fingerprint="fp-1",
+            ),
+        )
+    )
+    with pytest.raises(PostingPlanError, match="review_body_item"):
+        build_candidate_issue_comment_payload(
+            review_target=target(),
+            posting_plan=tampered_local,
+            findings=[finding()],
+        )
+
 
 def test_candidate_payload_has_fingerprints_and_canonical_hashes() -> None:
     second = finding("finding-2", body="Another concrete issue.", fingerprint="fp-0")
@@ -183,6 +265,8 @@ def test_candidate_payload_has_fingerprints_and_canonical_hashes() -> None:
     assert payload.visible_body_hash == visible_body_hash(payload.body)
     assert payload.full_body_hash == full_body_hash(payload.body)
     assert canonical_visible_body("a\r\nb\n\n") == "a\nb\n"
+    assert full_body_hash("a\r\nb\n\n") == full_body_hash("a\nb\n")
+    assert visible_body_hash("a\n<!-- reviewgraph:payload -->\n") == visible_body_hash("a\n")
 
     duplicate = finding("finding-3", fingerprint="fp-1")
     duplicate_plan = build_posting_plan(findings=[finding(), duplicate])
@@ -197,9 +281,12 @@ def test_candidate_payload_has_fingerprints_and_canonical_hashes() -> None:
 def test_redacts_supported_secret_classes_before_hashing() -> None:
     secret_body = """
 api_key = sk_live_1234567890abcdef
+{"api_key": "sk-proj-1234567890abcdef"}
 Authorization: Bearer abcdefghijklmnopqrstuvwxyz
 Use Bearer zyxwvutsrqponmlkjihgfedcba here
 token=ghp_abcdefghijklmnopqrstuvwxyz123456
+fine_grained=github_pat_abcdefghijklmnopqrstuvwxyz123456
+standalone sk-proj-zyxwvutsrqponmlkjihgfedcba
 GITHUB_TOKEN=ghs_abcdefghijklmnopqrstuvwxyz123456
 -----BEGIN PRIVATE KEY-----
 private-material
@@ -213,6 +300,7 @@ private-material
     )
 
     assert "sk_live" not in payload.body
+    assert "sk-proj" not in payload.body
     assert "abcdefghijklmnopqrstuvwxyz" not in payload.body
     assert "PRIVATE KEY" not in payload.body
     assert payload.redaction_status.redacted is True
@@ -221,9 +309,18 @@ private-material
         "authorization_header",
         "bearer_token",
         "github_token",
+        "standalone_api_key",
         "api_key",
         "env_assignment",
     }
+
+
+def test_classified_finding_rejects_invalid_enum_values() -> None:
+    with pytest.raises(ValueError, match="severity"):
+        finding(severity="blocker")  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="confidence"):
+        finding(confidence="certain")  # type: ignore[arg-type]
 
 
 def test_posting_module_has_no_writer_or_transport_imports() -> None:

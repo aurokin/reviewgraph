@@ -28,8 +28,14 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ),
     ("authorization_header", re.compile(r"(?im)^(\s*authorization\s*:\s*)(?:bearer|basic)\s+\S+")),
     ("bearer_token", re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{12,}")),
-    ("github_token", re.compile(r"\bgh[psuor]_[A-Za-z0-9_]{20,}\b")),
-    ("api_key", re.compile(r"(?i)\b(?:api[_-]?key|token|secret)\s*[:=]\s*['\"]?[A-Za-z0-9._~+/=-]{12,}['\"]?")),
+    ("github_token", re.compile(r"\b(?:gh[psuor]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b")),
+    ("standalone_api_key", re.compile(r"\b(?:sk|rk|pk|xox[baprs])-[A-Za-z0-9_-]{12,}\b")),
+    (
+        "api_key",
+        re.compile(
+            r"(?i)([\"']?\b(?:api[_-]?key|token|secret)[\"']?\s*[:=]\s*)[\"']?[A-Za-z0-9._~+/=-]{12,}[\"']?"
+        ),
+    ),
     ("env_assignment", re.compile(r"(?im)^([A-Z][A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD)\s*=\s*).+$")),
 )
 
@@ -40,7 +46,7 @@ def redact_text(text: str) -> RedactionResult:
     categories: list[str] = []
 
     for category, pattern in _PATTERNS:
-        if category in {"authorization_header", "env_assignment"}:
+        if category in {"authorization_header", "env_assignment", "api_key"}:
             redacted, count = pattern.subn(lambda match: f"{match.group(1)}{REDACTION_TOKEN}", redacted)
         else:
             redacted, count = pattern.subn(REDACTION_TOKEN, redacted)

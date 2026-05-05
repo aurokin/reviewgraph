@@ -100,6 +100,14 @@ class DiffAnchor:
     def overlaps_changed_target(self) -> bool:
         return self.side == "RIGHT" and self.hunk_start <= self.line <= self.hunk_end
 
+    def validates_finding_location(self, *, path: str, line: int, target_commit_sha: str) -> bool:
+        return (
+            self.path == path
+            and self.line == line
+            and self.target_commit_sha == target_commit_sha
+            and self.overlaps_changed_target
+        )
+
 
 @dataclass(frozen=True)
 class ClassifiedFinding:
@@ -121,6 +129,10 @@ class ClassifiedFinding:
 
     def __post_init__(self) -> None:
         validate_priority(self.priority)
+        if not isinstance(self.severity, Severity):
+            raise ValueError("severity must be a Severity value")
+        if not isinstance(self.confidence, Confidence):
+            raise ValueError("confidence must be a Confidence value")
         if self.classification != OutputClassification.POSTABLE_FINDING:
             raise ValueError("ClassifiedFinding must use postable_finding classification")
         for name in ("id", "source_reviewer", "source_stage", "title", "body", "evidence", "path", "fingerprint"):
