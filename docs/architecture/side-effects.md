@@ -6,14 +6,36 @@ The most important production boundary is between review generation and GitHub m
 
 The graph may prepare a GitHub payload, but only the side-effect adapter may post it.
 
+Clarification is not a GitHub write in MVP. If a reviewer needs human input, the graph should stop with a local question or structured clarification output rather than posting that question to the PR automatically.
+
+## Posting plan
+
+The renderer produces a `PostingPlan` before approval. Each output item has one destination:
+
+- `local_only`
+- `top_level_summary_item`
+- `review_body_item`
+- `inline_candidate`
+- `suggested_reply`
+
+MVP supports one write shape only: a top-level PR comment. Formal PR reviews, inline comments, and replies to human comments remain dry-run candidates until later side-effect decisions approve them.
+
 ## Approval contract
 
-The approval gate receives:
+The approval gate receives a candidate payload:
 
 - rendered markdown
 - JSON findings
-- recommended verdict
-- exact GitHub payload
+- selected postable finding IDs
+- local notes excluded from posting
+- clarification requests and answers
+- local verdict
+- posting plan
+- candidate GitHub payload
+- candidate payload hash
+- review target
+- authenticated GitHub actor and permission summary
+- redaction status for rendered output and candidate payloads
 
 It returns:
 
@@ -21,11 +43,52 @@ It returns:
 {
   "approved": true,
   "mode": "post_comment",
+  "approved_finding_ids": ["finding-1", "finding-3"],
+  "approved_final_payload_hash": "sha256:...",
+  "approved_review_target_hash": "sha256:...",
+  "approved_review_target": {
+    "owner_repo": "owner/repo",
+    "pr_number": 123,
+    "base_sha": "def456",
+    "head_sha": "abc123",
+    "merge_base_sha": "789abc",
+    "diff_basis": "merge_base"
+  },
+  "approved_github_actor": "reviewgraph-bot",
+  "approved_permission": "write",
+  "approved_permission_checked_at": "...",
+  "include_public_verdict": false,
   "approved_by": "local-user",
   "timestamp": "..."
 }
 ```
 
+The final GitHub payload is built deterministically from `approved_finding_ids` and the candidate payload. `approved_final_payload_hash` binds to the full final issue-comment body after item selection, including the hidden ReviewGraph marker line. The marker's own `payload` field stores a separate visible-body hash that excludes the marker, avoiding a self-referential hash. Before the writer is invoked, ReviewGraph must either show the final payload or prove that its hash equals `approved_final_payload_hash`. If approving a subset changes the body hash, the old candidate hash must be rejected.
+
+`finalize_github_payload` owns the last pre-writer gate. It verifies approved hash, approved actor, current actor, current permission, full target freshness, redaction status, non-empty approved findings, and marker reconciliation plan. If any check fails, the writer adapter is unreachable and ReviewGraph emits dry-run output with the fail-closed reason.
+
 ## Non-interactive mode
 
 In CI or webhook mode, MVP should refuse posting unless an explicit future policy is designed. Do not infer approval from config alone.
+
+## Freshness and idempotency
+
+`finalize_github_payload` must fail closed when the PR head/base/merge-base state no longer matches the approved review target. `post_or_emit` must only receive finalized payloads that already passed freshness checks.
+
+Freshness includes owner/repo, PR number, base SHA, head SHA, merge-base SHA when available, and diff basis. Unknown merge-base freshness in post mode is a failure, not a warning.
+
+Every postable finding must have a stable fingerprint, target SHA, and body hash. The writer must fetch existing ReviewGraph artifacts before posting and create at most one top-level comment for the approved payload while preserving per-finding fingerprints for reconciliation. If a network timeout occurs after GitHub accepted a write, retry must reconcile by payload hash and finding fingerprint/body hash instead of posting a duplicate.
+
+Embedded marker reconciliation is trusted only for comments authored by the approved GitHub actor or a configured trusted ReviewGraph bot. Markers from other authors are ignored. Malformed markers are inert unless they appear on a trusted-author comment for the same target and cannot be safely interpreted; in that case the graph fails closed rather than posting a duplicate.
+
+## GitHub Artifact Discipline
+
+MVP may post only a top-level PR comment after approval. `COMMENT` reviews, `APPROVE`, and `REQUEST_CHANGES` are deferred side effects even if the local verdict recommends them.
+
+The local verdict is separate from the GitHub artifact kind and public markdown. MVP must not include request-changes wording in a GitHub comment unless `include_public_verdict` is explicitly approved.
+
+Approval must be item-level. The user should be able to approve, reject, or defer each postable finding before the GitHub payload is submitted.
+
+`suggested_reply` is local-only in MVP. It is never eligible for candidate or final GitHub payloads, including mixed runs that also contain approved findings.
+
+If `approved_finding_ids` is empty, or the run has only local notes, suggested replies, suppressed findings, or clarification requests, the writer must not be invoked.

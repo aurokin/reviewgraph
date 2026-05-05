@@ -1,38 +1,87 @@
 agents:
   security:
     description: Finds auth, injection, secrets, SSRF, unsafe eval, path traversal.
+    stages: ["specialized_review"]
     triggers:
       paths: ["src/auth/**", "src/api/**", "server/**"]
       diff_patterns: ["password", "token", "jwt", "eval", "exec", "secret"]
       risk_min: medium
     required: false
     verdict_power: request_changes
+    capabilities: ["diff_context"]
 
   correctness:
     description: Reviews logic, edge cases, error handling, and API behavior.
+    stages: ["initial_triage", "logic_review"]
     triggers:
       always: true
     required: true
     verdict_power: request_changes
+    capabilities: ["diff_context"]
 
   frontend_state:
     description: Reviews React/Vue state, async flows, loading/error states, and UI regressions.
+    stages: ["specialized_review"]
     triggers:
       paths: ["apps/web/**", "src/**/*.tsx", "src/**/*.jsx", "src/**/*.vue"]
       labels: ["frontend"]
     required: false
     verdict_power: comment
+    capabilities: ["diff_context"]
 
   tests:
     description: Checks test coverage, missing edge cases, and flaky patterns.
+    stages: ["initial_triage", "specialized_review"]
     triggers:
       always: true
     required: true
     verdict_power: comment
+    capabilities: ["diff_context"]
+
+  logic:
+    description: Reviews non-local behavior, invariants, state transitions, and business logic.
+    stages: ["logic_review", "clarification_review"]
+    triggers:
+      risk_min: medium
+      conversation_patterns: ["intended", "ambiguous", "not sure", "why"]
+    required: false
+    verdict_power: request_changes
+    capabilities: ["diff_context"]
+
+  breaking_changes:
+    description: Reviews external integrations, CLI flags, config, APIs, persisted state, and protocol compatibility.
+    stages: ["specialized_review", "logic_review"]
+    triggers:
+      paths: ["src/config/**", "src/cli/**", "src/api/**", "docs/**"]
+      risk_min: medium
+    required: false
+    verdict_power: request_changes
+    capabilities: ["diff_context"]
+
+  change_size:
+    description: Checks whether the PR is too large to review well and suggests smaller coherent stages.
+    stages: ["initial_triage"]
+    triggers:
+      changed_lines_min: 500
+    required: false
+    verdict_power: comment
+    capabilities: ["none"]
+
+  context_budget:
+    description: Reviews model-visible context growth, unbounded fragments, and prompt/cache hazards.
+    stages: ["specialized_review", "logic_review"]
+    triggers:
+      paths: ["src/context/**", "src/prompts/**", "src/reviewgraph/**"]
+      diff_patterns: ["prompt", "context", "history", "memory", "token"]
+    required: false
+    verdict_power: request_changes
+    capabilities: ["diff_context"]
 
   docs_api:
     description: Checks docs, public API changes, migration notes, and contract drift.
+    stages: ["specialized_review"]
     triggers:
       paths: ["docs/**", "README.md", "packages/*/src/**"]
     required: false
     verdict_power: comment
+    capabilities: ["diff_context"]

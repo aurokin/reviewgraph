@@ -1,14 +1,16 @@
 # ReviewGraph MVP Implementation Plan
 
-> **For Hermes:** Use subagent-driven-development skill to implement this plan task-by-task.
+**Goal:** Build a CLI LangGraph PR review orchestrator that reads a PR, builds shared conversation memory from PR comments, introduces reviewer agents at explicit graph stages, runs deterministic/fake or live reviewer contexts, classifies review output for quality, renders findings/notes/clarification requests, and dry-runs GitHub posting behind item-level approval.
 
-**Goal:** Build a CLI LangGraph PR review orchestrator that reads a PR, selects configured reviewer agents, runs deterministic/fake or live LLM reviewers, renders findings, and dry-runs GitHub posting behind approval.
-
-**Architecture:** Keep GitHub access, LLM calls, LangGraph state, reviewer prompts, and side effects behind separate adapters. Prove behavior with fixtures before live APIs.
+**Architecture:** Keep GitHub access, PR conversation memory, LLM calls, LangGraph state, reviewer prompts, and side effects behind separate adapters. Prove behavior with fixtures before live APIs.
 
 **Tech Stack:** Python, LangGraph, LangChain model integrations, Pydantic, PyYAML, Typer or argparse, pytest.
 
 ---
+
+## Implementation posture
+
+Start with tracer bullets, not a complete policy engine. The first useful implementation should run a fixture PR through the graph, select reviewers with staged reasons, emit markdown/JSON, classify output into postable and non-postable items, and prove no GitHub writer is called. Then add specialized reviewers, ambiguity clarification, live reads, item-level approval, and finally approval-gated posting.
 
 ## Phase 1 — Contracts and fixtures
 
@@ -25,13 +27,13 @@
 
 ### Task 2: Define state and schema models
 
-**Objective:** Add typed models for PR context, config, selected reviewers, findings, verdicts, and approval decisions.
+**Objective:** Add typed models for run mode, review targets, posting targets, PR context, conversation memory, config, selected reviewers, reviewer run keys, findings, local notes, suppressed outputs, clarification requests, posting plans, verdicts, approvals, and writer results.
 
 **Files:**
 - Create: `src/reviewgraph/models.py`
 - Test: `tests/test_models.py`
 
-**Verification:** model tests validate happy path and invalid severity/confidence values.
+**Verification:** model tests validate happy path and invalid severity/confidence/priority values.
 
 ### Task 3: Add reviewer config loader
 
@@ -39,37 +41,66 @@
 
 **Files:**
 - Create: `src/reviewgraph/config.py`
-- Create: `review_agents.example.yaml`
+- Create: `examples/review_agents.example.yaml`
 - Test: `tests/test_config.py`
 
-**Verification:** invalid trigger fields fail with clear errors.
+**Verification:** invalid trigger fields, `triggers.stages`, `verdict_power: approve`, and unsupported reviewer capabilities fail with clear errors; `examples/review_agents.example.yaml` validates.
 
-### Task 4: Add PR fixture format
+### Task 4: Add PR fixture and conversation format
 
-**Objective:** Create fixture PR contexts for routing tests.
+**Objective:** Create fixture PR contexts for routing, memory, and graph tests.
 
 **Files:**
 - Create: `tests/fixtures/prs/security-sensitive-change.json`
 - Create: `tests/fixtures/prs/frontend-state-change.json`
 - Create: `tests/fixtures/prs/docs-only-change.json`
+- Create: `tests/fixtures/prs/mixed-risk-change.json`
+- Create: `tests/fixtures/prs/ambiguous-logic-change.json`
+- Create: `tests/fixtures/prs/breaking-api-change.json`
+- Create: `tests/fixtures/prs/oversized-change.json`
+- Create: `tests/fixtures/prs/stale-approval-change.json`
+- Create: `tests/fixtures/prs/untrusted-comment-injection.json`
+- Create: `tests/fixtures/prs/paginated-github-read.json`
 
-**Verification:** fixtures parse into `PullRequestContext`.
+**Verification:** fixtures parse into `PullRequestContext` with comments, review threads, base/head SHAs, merge-base SHAs, diff basis, trust metadata, and stable review target metadata.
+
+### Task 5: Build PR conversation memory
+
+**Objective:** Convert fixture comments and review threads into structured graph memory with trusted author metadata, seen/resolved status, and passive untrusted-memory handling.
+
+**Files:**
+- Create: `src/reviewgraph/memory.py`
+- Test: `tests/test_memory.py`
+
+**Verification:** resolved and unresolved threads are preserved, trusted/untrusted authors are distinguished, reviewer-visible memory is deterministic, and untrusted comments cannot become instructions, routing triggers, verdict evidence, approval input, or public payload text.
+
+### Task 6: Add review target and context budget contracts
+
+**Objective:** Bind every run to immutable base/head/diff target metadata and bounded reviewer context.
+
+**Files:**
+- Create: `src/reviewgraph/targets.py`
+- Create: `src/reviewgraph/context_budget.py`
+- Test: `tests/test_targets.py`
+- Test: `tests/test_context_budget.py`
+
+**Verification:** oversized fixtures receive truncation markers and stale target metadata prevents post eligibility.
 
 ## Phase 2 — Routing and policy
 
-### Task 5: Implement reviewer selection
+### Task 7: Implement staged reviewer selection
 
-**Objective:** Select reviewers based on always/path/label/diff/risk triggers.
+**Objective:** Select reviewers based on stage, always/path/label/diff/conversation/risk triggers.
 
 **Files:**
 - Create: `src/reviewgraph/routing.py`
 - Test: `tests/test_routing.py`
 
-**Verification:** each fixture selects expected reviewers and records reasons.
+**Verification:** each fixture selects expected reviewers and records stage plus reasons. `conversation_patterns` match only trusted actionable memory and untrusted comments cannot select reviewers.
 
-### Task 6: Implement finding normalization
+### Task 8: Implement reviewer output normalization
 
-**Objective:** Convert reviewer JSON into validated finding objects.
+**Objective:** Convert reviewer JSON into validated finding objects or clarification requests.
 
 **Files:**
 - Create: `src/reviewgraph/findings.py`
@@ -77,19 +108,41 @@
 
 **Verification:** malformed findings are rejected or repaired according to policy.
 
-### Task 7: Implement dedupe and verdict policy
+### Task 9: Implement review quality classification
 
-**Objective:** Merge duplicate findings and recommend comment/request-changes/dry-run verdict.
+**Objective:** Classify normalized reviewer output into postable findings, local notes, clarification requests, or suppressed non-findings.
+
+**Files:**
+- Create: `src/reviewgraph/quality.py`
+- Test: `tests/test_quality.py`
+
+**Verification:** Codex-inspired eligibility rules suppress generic, speculative, pre-existing, self-declared blocking, and locationless postable findings.
+
+### Task 10: Implement ranking and verdict policy
+
+**Objective:** Rank quality-classified findings and recommend local comment/request-changes/dry-run verdict.
 
 **Files:**
 - Create: `src/reviewgraph/policy.py`
 - Test: `tests/test_policy.py`
 
-**Verification:** low-confidence findings cannot request changes.
+**Verification:** low-confidence and ambiguous findings cannot request changes; local request-changes does not imply GitHub `REQUEST_CHANGES`.
+
+### Task 11: Add posting plan and approval proof models
+
+**Objective:** Build item-level posting plans, candidate payload hashes, approved payload hashes, and public/private verdict separation before any live adapter exists.
+
+**Files:**
+- Create: `src/reviewgraph/posting.py`
+- Create: `src/reviewgraph/approval.py`
+- Test: `tests/test_posting.py`
+- Test: `tests/test_approval.py`
+
+**Verification:** dry-run output renders candidate payloads; rejected approval calls no writer; request-changes wording is excluded from public markdown unless explicitly approved.
 
 ## Phase 3 — Graph and adapters
 
-### Task 8: Add fake GitHub adapter
+### Task 12: Add fake GitHub adapter
 
 **Objective:** Let graph runs use fixture PRs as GitHub context.
 
@@ -99,7 +152,7 @@
 
 **Verification:** adapter returns fixture context by PR ref.
 
-### Task 9: Add fake LLM reviewer adapter
+### Task 13: Add fake reviewer adapter
 
 **Objective:** Run reviewers deterministically for tests.
 
@@ -107,23 +160,23 @@
 - Create: `src/reviewgraph/reviewers.py`
 - Test: `tests/test_reviewers_fake.py`
 
-**Verification:** fake reviewer results normalize into expected findings.
+**Verification:** fake reviewer results normalize and classify into expected postable findings, local notes, suppressed outputs, suggested replies, non-findings, malformed JSON, optional failures, required failures, or clarification requests. Reviewer adapters receive only scoped reviewer context packages and no GitHub transports.
 
-### Task 10: Build LangGraph workflow
+### Task 14: Build LangGraph workflow
 
-**Objective:** Wire fetch, route, review, normalize, dedupe, render, approve, and emit nodes.
+**Objective:** Wire fetch, memory, target resolution, context budgeting, staged routing, review, normalization, quality classification, clarification, ranking, posting plan, render, approve, and emit nodes.
 
 **Files:**
 - Create: `src/reviewgraph/graph.py`
 - Test: `tests/test_graph.py`
 
-**Verification:** full fixture run reaches dry-run output with no side effects.
+**Verification:** full fixture run reaches dry-run output with no side effects; dry-run mode cannot reach writer branch; ambiguous fixture stops with a clarification request; stale target fixture prevents posting.
 
 ## Phase 4 — CLI and live-read
 
-### Task 11: Add dry-run CLI
+### Task 15: Add dry-run CLI
 
-**Objective:** Review a PR fixture or live PR and emit markdown/JSON.
+**Objective:** Review a PR fixture or live PR and emit markdown/JSON postable findings, local notes, suppressed counts, selected reviewers, conversation memory summary, and clarification requests.
 
 **Files:**
 - Create: `src/reviewgraph/cli.py`
@@ -131,17 +184,17 @@
 
 **Verification:** CLI dry run writes expected outputs and never calls writer.
 
-### Task 12: Add live GitHub read adapter
+### Task 16: Add live GitHub read adapter
 
-**Objective:** Fetch PR metadata/files/diff via GitHub API or `gh`.
+**Objective:** Fetch PR metadata/files/diff/comments/review threads via GitHub API or `gh`, including pagination, trusted author, resolved-thread, authenticated actor, and required permission data.
 
 **Files:**
 - Modify: `src/reviewgraph/github.py`
 - Test: `tests/test_github_live_read_contract.py`
 
-**Verification:** live tests are opt-in and skipped by default.
+**Verification:** live tests are opt-in and skipped by default; fake transport tests prove all pages are fetched for files, issue comments, review comments, reviews, and thread state before truncation is applied; unknown actor or insufficient/unknown permissions fail closed.
 
-### Task 13: Add live LLM adapter
+### Task 17: Add live LLM adapter
 
 **Objective:** Use configured API provider for real reviewer calls.
 
@@ -149,26 +202,26 @@
 - Create: `src/reviewgraph/llm.py`
 - Modify: `src/reviewgraph/reviewers.py`
 
-**Verification:** fake adapter remains default for tests; live adapter is opt-in.
+**Verification:** fake adapter remains default for tests; live adapter is opt-in; provider/model are recorded; provider-bound payloads are minimized/redacted by default; redaction tests cover live LLM request payloads, logs, traces, JSON errors, and default output.
 
 ## Phase 5 — Approval-gated posting
 
-### Task 14: Add approval gate
+### Task 18: Add clarification resume gate
 
-**Objective:** Require explicit approval before side effects.
+**Objective:** Stop for human clarification when needed and resume only affected reviewers after answers are supplied.
 
 **Files:**
-- Create: `src/reviewgraph/approval.py`
-- Test: `tests/test_approval.py`
+- Create: `src/reviewgraph/clarification.py`
+- Test: `tests/test_clarification.py`
 
-**Verification:** rejection never calls writer; approval passes exact payload.
+**Verification:** clarification request prevents posting; answered clarification resumes the recorded reviewer/stage; unanswered ambiguity cannot produce a blocking verdict.
 
-### Task 15: Add GitHub comment writer
+### Task 19: Add idempotent GitHub comment writer
 
-**Objective:** Post a top-level review comment only after approval.
+**Objective:** Post a top-level PR comment only after fresh-target, actor/permission, redaction, marker-reconciliation, and final-payload-hash approval checks.
 
 **Files:**
 - Modify: `src/reviewgraph/github.py`
 - Test: `tests/test_github_writer.py`
 
-**Verification:** writer tests use a fake transport; live post smoke is manual only.
+**Verification:** writer tests use a fake transport; live post smoke is manual only; `COMMENT` reviews, `REQUEST_CHANGES`, and `APPROVE` remain unsupported; approval fails if the GitHub actor changes before write; target freshness includes merge-base SHA when available; marker reconciliation trusts only approved actor/configured bot comments; retry after timeout or process restart discovers the embedded ReviewGraph marker and creates at most one top-level comment for the approved payload.

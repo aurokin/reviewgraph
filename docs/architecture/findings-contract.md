@@ -1,22 +1,125 @@
 # Findings Contract
 
-Reviewers return structured findings. Markdown is rendered later.
+Reviewers return structured findings or structured clarification requests. Markdown is rendered later.
 
-## Finding schema
+Reviewer output is not automatically postable. The graph first classifies each item according to `review-quality.md`.
+
+## Raw reviewer finding schema
+
+Reviewers may propose findings, but they do not decide postability, blocking status, or final priority. The graph owns those decisions in `classify_review_quality`.
 
 ```json
 {
   "id": "stable-or-generated-id",
   "reviewer": "security",
+  "stage": "specialized_review",
   "severity": "critical | warning | suggestion | nit",
   "confidence": "high | medium | low",
+  "confidence_score": 0.91,
   "path": "src/example.ts",
   "line": 42,
+  "line_end": 42,
   "title": "User-controlled path reaches file read",
   "rationale": "The new code joins user input into a filesystem path without normalization.",
   "evidence": "diff excerpt or PR context reference",
+  "suggested_fix": "Normalize and validate path under an allowed root before reading."
+}
+```
+
+## Classified finding schema
+
+```json
+{
+  "id": "stable-or-generated-id",
+  "source_reviewer": "security",
+  "source_stage": "specialized_review",
+  "classification": "postable_finding",
+  "priority": 1,
+  "severity": "critical",
+  "confidence": "high",
+  "confidence_score": 0.91,
+  "path": "src/example.ts",
+  "line": 42,
+  "line_end": 42,
+  "diff_anchor": {
+    "path": "src/example.ts",
+    "old_path": null,
+    "file_status": "modified",
+    "hunk_id": "src/example.ts:40-45",
+    "side": "RIGHT",
+    "start_side": "RIGHT",
+    "line": 42,
+    "start_line": 42,
+    "target_commit_sha": "abc123"
+  },
+  "title": "User-controlled path reaches file read",
+  "body": "When the route parameter contains `../`, this joins user input into a filesystem path without constraining it to the allowed root.",
+  "evidence": "diff excerpt or PR context reference",
   "suggested_fix": "Normalize and validate path under an allowed root before reading.",
-  "blocking": true
+  "blocking": true,
+  "fingerprint": "stable-finding-fingerprint"
+}
+```
+
+## Clarification request schema
+
+If a reviewer cannot make a high-confidence mergeability recommendation without human context, it should return a clarification request instead of inflating confidence.
+
+```json
+{
+  "id": "stable-or-generated-id",
+  "reviewer": "logic",
+  "source_stage": "logic_review",
+  "source_run_key": {
+    "target_hash": "sha256:...",
+    "config_hash": "sha256:...",
+    "stage": "logic_review",
+    "reviewer": "logic",
+    "attempt": 1,
+    "clarification_id": null
+  },
+  "status": "pending",
+  "resume_target": {
+    "stage": "clarification_review",
+    "reviewers": ["logic"]
+  },
+  "path": "src/example.ts",
+  "line": 42,
+  "question": "Is this endpoint intentionally allowed to bypass the normal authorization path?",
+  "why_it_matters": "If not intentional, the change may expose data across tenants.",
+  "blocks_verdict": true
+}
+```
+
+## Local note schema
+
+Local notes are useful to the user but should not become GitHub comments.
+
+```json
+{
+  "id": "stable-or-generated-id",
+  "reviewer": "change_size",
+  "stage": "initial_triage",
+  "classification": "local_note",
+  "title": "PR may be difficult to review as one change",
+  "body": "The diff changes config loading, CLI behavior, and output rendering. Consider splitting the config loader first.",
+  "evidence": "changed files summary"
+}
+```
+
+## Suggested reply schema
+
+Suggested replies are local-only output for human-authored PR comments or review threads.
+
+```json
+{
+  "id": "stable-or-generated-id",
+  "classification": "suggested_reply",
+  "source_comment_id": "123456",
+  "source_thread_id": "thread-1",
+  "source_author": "octocat",
+  "source_author_trusted": true,
+  "proposed_body": "I think this is already covered by the new guard in `validatePath`, but I would wait for maintainer confirmation before replying."
 }
 ```
 
@@ -33,6 +136,16 @@ Reviewers return structured findings. Markdown is rendered later.
 - `medium`: likely issue but needs maintainer judgment.
 - `low`: speculative; cannot block.
 
-## Dedupe policy
+## Filtering policy
 
-Merge findings when they share the same root cause even if multiple reviewers found them. Preserve reviewer names in merged metadata.
+Suppress findings when they are generic, unsupported by the PR context, duplicate the existing PR conversation without adding new analysis, lack an actionable fix, cannot identify a scenario where the issue occurs, or attempt to self-declare postability/blocking without evidence. Semantic deduplication across reviewer outputs is deferred until a deterministic policy is designed and tested.
+
+## Location policy
+
+Postable findings should include a changed-file location with the shortest practical line range. Inline candidates must overlap the diff. Findings without a precise location should remain local notes unless a top-level post format is explicitly approved.
+
+`DiffAnchor` is separate from user-facing location. It exists to support future inline comments and must include path, old path when renamed, file status, hunk ID, side/start side, line/start line, and target commit SHA. MVP does not post inline comments; it may render inline candidates in dry-run output only.
+
+## Priority policy
+
+`priority` is stored as an integer from `0` to `3`. Renderers may display this as `P0` through `P3`, but schemas and policy use the integer.
