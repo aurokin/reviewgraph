@@ -142,6 +142,16 @@ def test_runner_does_not_call_raising_writer_sentinel() -> None:
     assert result.json_data["side_effects"]["writer_called"] is False
 
 
+def test_writer_proof_uses_per_run_delta() -> None:
+    class ReusedWriter:
+        call_count = 3
+
+    result = run_fixture_dry_run(fixture_ref="basic-pr", writer_sentinel=ReusedWriter())
+
+    assert result.writer_call_count == 0
+    assert result.json_data["side_effects"] == {"writer_called": False, "writer_call_count": 0}
+
+
 def test_fixture_run_redacts_secret_like_content(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GITHUB_TOKEN", "ghs_abcdefghijklmnopqrstuvwxyz123456")
     markdown_path = tmp_path / "review.md"
@@ -152,6 +162,22 @@ def test_fixture_run_redacts_secret_like_content(tmp_path: Path, monkeypatch: py
     serialized = markdown_path.read_text() + json_path.read_text()
     for leaked in ("sk_live", "ghp_", "ghs_", "abcdefghijklmnopqrstuvwxyz", "SECRET_TOKEN"):
         assert leaked not in serialized
+    assert "[REDACTED]" in serialized
+
+
+def test_top_level_json_envelope_redacts_fixture_strings(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "secret-ref.json"
+    fixture = _basic_fixture()
+    fixture["id"] = "ghp_abcdefghijklmnopqrstuvwxyz123456"
+    fixture["pr_ref"] = "fixture:ghp_abcdefghijklmnopqrstuvwxyz123456"
+    fixture_path.write_text(json.dumps(fixture))
+    json_path = tmp_path / "review.json"
+
+    assert main(["--fixture-pr", str(fixture_path), "--json-out", str(json_path)]) == 0
+
+    serialized = json_path.read_text()
+    assert "ghp_" not in serialized
+    assert "abcdefghijklmnopqrstuvwxyz" not in serialized
     assert "[REDACTED]" in serialized
 
 
@@ -251,6 +277,67 @@ def test_malformed_raw_output_field_returns_nonzero(
     assert "postable_finding.path is required" in capsys.readouterr().err
 
 
+def test_non_string_raw_output_type_returns_nonzero(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fixture_path = tmp_path / "bad-raw-type.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["items"][0]["type"] = {"not": "string"}
+    fixture_path.write_text(json.dumps(fixture))
+
+    assert main(["--fixture-pr", str(fixture_path)]) == 2
+    assert "raw reviewer output item.type is required" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected_stderr"),
+    (
+        ("title", {"oops": "dict"}, "postable_finding.title is required"),
+        ("body", ["not", "string"], "postable_finding.body is required"),
+        ("fingerprint", 123, "postable_finding.fingerprint is required"),
+    ),
+)
+def test_non_string_raw_finding_fields_return_nonzero(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    field: str,
+    value: object,
+    expected_stderr: str,
+) -> None:
+    fixture_path = tmp_path / "bad-raw-string.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["items"][0][field] = value
+    fixture_path.write_text(json.dumps(fixture))
+
+    assert main(["--fixture-pr", str(fixture_path)]) == 2
+    assert expected_stderr in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("item_index", "field", "value", "expected_stderr"),
+    (
+        (1, "body", ["not", "string"], "local_note.body is required"),
+        (2, "reason", {"not": "string"}, "suppressed.reason is required"),
+    ),
+)
+def test_non_string_raw_local_fields_return_nonzero(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    item_index: int,
+    field: str,
+    value: object,
+    expected_stderr: str,
+) -> None:
+    fixture_path = tmp_path / "bad-raw-local-string.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["items"][item_index][field] = value
+    fixture_path.write_text(json.dumps(fixture))
+
+    assert main(["--fixture-pr", str(fixture_path)]) == 2
+    assert expected_stderr in capsys.readouterr().err
+
+
 @pytest.mark.parametrize(
     ("field", "nested_field", "expected_stderr"),
     (
@@ -272,6 +359,32 @@ def test_malformed_nested_fixture_field_returns_nonzero(
 
     assert main(["--fixture-pr", str(fixture_path)]) == 2
     assert expected_stderr in capsys.readouterr().err
+
+
+def test_invalid_truncation_boolean_returns_nonzero(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fixture_path = tmp_path / "bad-truncation-bool.json"
+    fixture = _basic_fixture()
+    fixture["truncation"][0]["truncated"] = "false"
+    fixture_path.write_text(json.dumps(fixture))
+
+    assert main(["--fixture-pr", str(fixture_path)]) == 2
+    assert "truncation.truncated must be a boolean" in capsys.readouterr().err
+
+
+def test_invalid_truncation_optional_count_returns_nonzero(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fixture_path = tmp_path / "bad-truncation-count.json"
+    fixture = _basic_fixture()
+    fixture["truncation"][0]["original_count"] = True
+    fixture_path.write_text(json.dumps(fixture))
+
+    assert main(["--fixture-pr", str(fixture_path)]) == 2
+    assert "truncation.original_count must be an integer or null" in capsys.readouterr().err
 
 
 def test_invalid_memory_body_type_returns_nonzero(

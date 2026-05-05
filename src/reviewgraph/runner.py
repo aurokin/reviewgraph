@@ -10,6 +10,7 @@ from reviewgraph.fixtures import (
     assert_changed_line,
     load_fixture_pr,
     load_reviewer_config,
+    redact_for_error,
 )
 from reviewgraph.models import (
     ClarificationRequest,
@@ -80,6 +81,7 @@ def run_fixture_dry_run(
         posting_plan=posting_plan,
         findings=classified["findings"],
     )
+    writer_call_count_before = _writer_call_count(writer_sentinel)
     rendered = render_review(
         review_target=review_target,
         selected_reviewers=selected_reviewers,
@@ -93,7 +95,7 @@ def run_fixture_dry_run(
         memory_references=memory_references,
         truncation_notices=truncation_notices,
     )
-    writer_call_count = _writer_call_count(writer_sentinel)
+    writer_call_count = _writer_call_count(writer_sentinel) - writer_call_count_before
     envelope = _json_envelope(
         fixture=fixture,
         post_enabled=post_enabled,
@@ -164,10 +166,10 @@ def _memory_references(fixture: FixturePR) -> tuple[MemoryReference, ...]:
             raise RunnerError("memory.body must be a string or null")
         memory_references.append(
             MemoryReference(
-                id=str(item["id"]),
-                trust_label=str(item["trust_label"]),
-                resolved_status=str(item["resolved_status"]),
-                source_type=str(item["source_type"]),
+                id=_required_str(item, "id", "memory"),
+                trust_label=_required_str(item, "trust_label", "memory"),
+                resolved_status=_required_str(item, "resolved_status", "memory"),
+                source_type=_required_str(item, "source_type", "memory"),
                 body=body,
             )
         )
@@ -180,13 +182,13 @@ def _truncation_notices(fixture: FixturePR) -> tuple[TruncationNotice, ...]:
         _require_fields(item, ("resource", "truncated", "note"), "truncation")
         notices.append(
             TruncationNotice(
-                resource=str(item["resource"]),
-                truncated=bool(item["truncated"]),
-                note=str(item["note"]),
-                original_count=item.get("original_count"),
-                retained_count=item.get("retained_count"),
-                original_bytes=item.get("original_bytes"),
-                retained_bytes=item.get("retained_bytes"),
+                resource=_required_str(item, "resource", "truncation"),
+                truncated=_required_bool(item, "truncated", "truncation"),
+                note=_required_str(item, "note", "truncation"),
+                original_count=_optional_int(item, "original_count", "truncation"),
+                retained_count=_optional_int(item, "retained_count", "truncation"),
+                original_bytes=_optional_int(item, "original_bytes", "truncation"),
+                retained_bytes=_optional_int(item, "retained_bytes", "truncation"),
             )
         )
     return tuple(notices)
@@ -219,7 +221,7 @@ def _classify_raw_outputs(
         for item in items:
             if not isinstance(item, dict):
                 raise RunnerError("raw reviewer output items must be objects")
-            item_type = item.get("type")
+            item_type = _required_str(item, "type", "raw reviewer output item")
             if item_type == "postable_finding":
                 finding = _classified_finding(fixture, reviewer=reviewer, stage=stage, item=item)
                 findings.append(finding)
@@ -227,25 +229,30 @@ def _classify_raw_outputs(
                 _require_fields(item, ("id", "title", "body", "evidence"), "local_note")
                 local_notes.append(
                     LocalNote(
-                        id=str(item["id"]),
-                        title=str(item["title"]),
-                        body=str(item["body"]),
-                        evidence=str(item["evidence"]),
+                        id=_required_str(item, "id", "local_note"),
+                        title=_required_str(item, "title", "local_note"),
+                        body=_required_str(item, "body", "local_note"),
+                        evidence=_required_str(item, "evidence", "local_note"),
                     )
                 )
             elif item_type == "clarification_request":
                 _require_fields(item, ("id", "question", "why_it_matters"), "clarification_request")
                 clarification_requests.append(
                     ClarificationRequest(
-                        id=str(item["id"]),
+                        id=_required_str(item, "id", "clarification_request"),
                         reviewer=reviewer,
-                        question=str(item["question"]),
-                        why_it_matters=str(item["why_it_matters"]),
+                        question=_required_str(item, "question", "clarification_request"),
+                        why_it_matters=_required_str(item, "why_it_matters", "clarification_request"),
                     )
                 )
             elif item_type == "suppressed":
                 _require_fields(item, ("id", "reason"), "suppressed")
-                suppressed_outputs.append(SuppressedOutput(id=str(item["id"]), reason=str(item["reason"])))
+                suppressed_outputs.append(
+                    SuppressedOutput(
+                        id=_required_str(item, "id", "suppressed"),
+                        reason=_required_str(item, "reason", "suppressed"),
+                    )
+                )
             else:
                 raise RunnerError(f"unsupported raw reviewer output type: {item_type}")
     missing_keys = sorted(selected_keys - seen_keys)
@@ -283,22 +290,22 @@ def _classified_finding(
         ),
         "postable_finding",
     )
-    path = str(item["path"])
+    path = _required_str(item, "path", "postable_finding")
     line = _required_int(item, "line", "postable_finding")
     assert_changed_line(fixture, path=path, line=line)
     return ClassifiedFinding(
-        id=str(item["id"]),
+        id=_required_str(item, "id", "postable_finding"),
         source_reviewer=reviewer,
         source_stage=stage,
-        title=str(item["title"]),
-        body=str(item["body"]),
-        evidence=str(item["evidence"]),
+        title=_required_str(item, "title", "postable_finding"),
+        body=_required_str(item, "body", "postable_finding"),
+        evidence=_required_str(item, "evidence", "postable_finding"),
         path=path,
         line=line,
         priority=_required_int(item, "priority", "postable_finding"),
-        severity=Severity(str(item["severity"])),
-        confidence=Confidence(str(item["confidence"])),
-        fingerprint=str(item["fingerprint"]),
+        severity=Severity(_required_str(item, "severity", "postable_finding")),
+        confidence=Confidence(_required_str(item, "confidence", "postable_finding")),
+        fingerprint=_required_str(item, "fingerprint", "postable_finding"),
     )
 
 
@@ -319,6 +326,13 @@ def _required_int(data: dict[str, Any], field: str, label: str) -> int:
     value = data.get(field)
     if type(value) is not int:
         raise RunnerError(f"{label}.{field} must be an integer")
+    return value
+
+
+def _required_bool(data: dict[str, Any], field: str, label: str) -> bool:
+    value = data.get(field)
+    if type(value) is not bool:
+        raise RunnerError(f"{label}.{field} must be a boolean")
     return value
 
 
@@ -372,7 +386,7 @@ def _writer_call_count(writer_sentinel: object | None) -> int:
     if writer_sentinel is None:
         return 0
     value = getattr(writer_sentinel, "call_count", 0)
-    if not isinstance(value, int):
+    if type(value) is not int:
         return 0
     return value
 
@@ -387,7 +401,7 @@ def _json_envelope(
     writer_call_count: int,
     rendered: RenderedReview,
 ) -> dict[str, Any]:
-    return {
+    return _redact_json_value({
         "run_mode": "dry_run",
         "post_enabled": post_enabled,
         "fixture_id": fixture.id,
@@ -403,4 +417,23 @@ def _json_envelope(
             "writer_call_count": writer_call_count,
         },
         "review": rendered.json_data,
-    }
+    })
+
+
+def _optional_int(data: dict[str, Any], field: str, label: str) -> int | None:
+    value = data.get(field)
+    if value is None:
+        return None
+    if type(value) is not int:
+        raise RunnerError(f"{label}.{field} must be an integer or null")
+    return value
+
+
+def _redact_json_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return redact_for_error(value)
+    if isinstance(value, list):
+        return [_redact_json_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _redact_json_value(item) for key, item in value.items()}
+    return value
