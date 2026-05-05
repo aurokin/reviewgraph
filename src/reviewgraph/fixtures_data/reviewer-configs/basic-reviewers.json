@@ -1,0 +1,14 @@
+{
+  "agents": {
+    "correctness": {
+      "description": "Checks deterministic fixture logic and changed-code behavior.",
+      "stages": ["initial_triage"],
+      "triggers": {
+        "always": true
+      },
+      "required": true,
+      "verdict_power": "comment",
+      "capabilities": ["diff_context"]
+    }
+  }
+}

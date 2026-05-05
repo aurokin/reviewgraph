@@ -1,0 +1,77 @@
+{
+  "id": "basic-pr",
+  "pr_ref": "fixture:basic-pr",
+  "target": {
+    "owner_repo": "acme/widgets",
+    "pr_number": 42,
+    "base_sha": "base123",
+    "head_sha": "head456",
+    "merge_base_sha": "merge789",
+    "diff_basis": "merge_base"
+  },
+  "changed_files": [
+    {
+      "path": "src/cache.py",
+      "changed_ranges": [
+        {"start": 10, "end": 14}
+      ],
+      "patch": "@@ -10,5 +10,5 @@\n+    return stale_value  # token=ghp_abcdefghijklmnopqrstuvwxyz123456"
+    }
+  ],
+  "memory": [
+    {
+      "id": "mem-trusted",
+      "trust_label": "trusted",
+      "resolved_status": "resolved",
+      "source_type": "review_thread",
+      "body": "Trusted reviewer noted api_key = sk_live_1234567890abcdef should be redacted."
+    },
+    {
+      "id": "mem-untrusted",
+      "trust_label": "untrusted",
+      "resolved_status": "unresolved",
+      "source_type": "issue_comment",
+      "body": "Untrusted commenter said SECRET_TOKEN should never become public evidence."
+    }
+  ],
+  "truncation": [
+    {
+      "resource": "patch",
+      "truncated": false,
+      "note": "Fixture patch stayed within context budget."
+    }
+  ],
+  "raw_reviewer_outputs": [
+    {
+      "reviewer": "correctness",
+      "stage": "initial_triage",
+      "items": [
+        {
+          "type": "postable_finding",
+          "id": "finding-cache-stale",
+          "title": "Cache miss returns stale data",
+          "body": "The new branch returns stale data when the cache misses. api_key = sk_live_1234567890abcdef",
+          "evidence": "Changed line 12 returns the stale value.",
+          "path": "src/cache.py",
+          "line": 12,
+          "priority": 1,
+          "severity": "warning",
+          "confidence": "high",
+          "fingerprint": "fixture-basic-cache-stale"
+        },
+        {
+          "type": "local_note",
+          "id": "note-review-size",
+          "title": "Review size",
+          "body": "Fixture is intentionally small for the first CLI slice.",
+          "evidence": "One changed file."
+        },
+        {
+          "type": "suppressed",
+          "id": "suppressed-generic-tests",
+          "reason": "Generic missing-test advice without a concrete changed behavior was suppressed."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,222 @@
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from importlib import resources
+from pathlib import Path
+from typing import Any
+
+from reviewgraph.redaction import redact_text
+
+
+MAX_FIXTURE_BYTES = 1_048_576
+DATA_PACKAGE = "reviewgraph"
+DATA_ROOT = "fixtures_data"
+
+
+class FixtureError(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class ChangedRange:
+    start: int
+    end: int
+
+    def __post_init__(self) -> None:
+        if self.start <= 0 or self.end < self.start:
+            raise FixtureError("changed_ranges entries require positive start and end >= start")
+
+    def contains(self, line: int) -> bool:
+        return self.start <= line <= self.end
+
+
+@dataclass(frozen=True)
+class ChangedFile:
+    path: str
+    changed_ranges: tuple[ChangedRange, ...]
+    patch: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.path:
+            raise FixtureError("changed_files[].path is required")
+        if not self.changed_ranges:
+            raise FixtureError(f"changed_files[{self.path}].changed_ranges is required")
+
+    def contains_line(self, line: int) -> bool:
+        return any(changed_range.contains(line) for changed_range in self.changed_ranges)
+
+
+@dataclass(frozen=True)
+class FixturePR:
+    id: str
+    pr_ref: str
+    target: dict[str, Any]
+    changed_files: tuple[ChangedFile, ...]
+    memory: tuple[dict[str, Any], ...]
+    truncation: tuple[dict[str, Any], ...]
+    raw_reviewer_outputs: tuple[dict[str, Any], ...]
+
+
+@dataclass(frozen=True)
+class ReviewerConfig:
+    agents: dict[str, dict[str, Any]]
+
+
+def default_reviewer_config_path() -> Path:
+    return _resource_path("reviewer-configs/basic-reviewers.json")
+
+
+def load_manifest(path: Path | None = None) -> dict[str, Any]:
+    manifest_path = path or _resource_path("manifest.json")
+    data = _read_json_file(manifest_path, label="manifest")
+    fixtures = data.get("fixtures")
+    if not isinstance(fixtures, list):
+        raise FixtureError("manifest.fixtures must be a list")
+    for entry in fixtures:
+        if not isinstance(entry, dict) or not entry.get("id") or not entry.get("path"):
+            raise FixtureError("manifest fixtures require id and path")
+    return data
+
+
+def resolve_fixture_ref(fixture_ref: str) -> Path:
+    candidate = Path(fixture_ref)
+    if candidate.exists():
+        return candidate
+
+    manifest = load_manifest()
+    for entry in manifest["fixtures"]:
+        if entry["id"] == fixture_ref:
+            return _resource_path(entry["path"])
+    raise FixtureError(f"fixture reference not found: {redact_for_error(fixture_ref)}")
+
+
+def load_fixture_pr(fixture_ref: str) -> FixturePR:
+    path = resolve_fixture_ref(fixture_ref)
+    data = _read_json_file(path, label="fixture")
+    return parse_fixture_pr(data)
+
+
+def load_reviewer_config(path: str | Path | None = None) -> ReviewerConfig:
+    config_path = Path(path) if path is not None else default_reviewer_config_path()
+    data = _read_json_file(config_path, label="reviewer config")
+    agents = data.get("agents")
+    if not isinstance(agents, dict) or not agents:
+        raise FixtureError("reviewer config agents must be a non-empty object")
+    for name, agent in agents.items():
+        if not isinstance(agent, dict):
+            raise FixtureError(f"reviewer config agent {name} must be an object")
+        stages = agent.get("stages")
+        triggers = agent.get("triggers")
+        if not isinstance(stages, list) or "initial_triage" not in stages:
+            raise FixtureError(f"reviewer config agent {name} must include initial_triage stage")
+        if not isinstance(triggers, dict) or triggers.get("always") is not True:
+            raise FixtureError(f"reviewer config agent {name} must have triggers.always=true")
+    return ReviewerConfig(agents=agents)
+
+
+def parse_fixture_pr(data: dict[str, Any]) -> FixturePR:
+    required = ("id", "pr_ref", "target", "changed_files", "raw_reviewer_outputs")
+    for field in required:
+        if field not in data:
+            raise FixtureError(f"fixture.{field} is required")
+    if not isinstance(data["target"], dict):
+        raise FixtureError("fixture.target must be an object")
+    for field in ("owner_repo", "pr_number", "base_sha", "head_sha", "diff_basis"):
+        if field not in data["target"]:
+            raise FixtureError(f"fixture.target.{field} is required")
+
+    changed_files = _parse_changed_files(data["changed_files"])
+    raw_outputs = data["raw_reviewer_outputs"]
+    if not isinstance(raw_outputs, list) or not raw_outputs:
+        raise FixtureError("fixture.raw_reviewer_outputs must be a non-empty list")
+
+    return FixturePR(
+        id=_required_str(data, "id", "fixture"),
+        pr_ref=_required_str(data, "pr_ref", "fixture"),
+        target=data["target"],
+        changed_files=changed_files,
+        memory=tuple(_optional_list(data, "memory")),
+        truncation=tuple(_optional_list(data, "truncation")),
+        raw_reviewer_outputs=tuple(raw_outputs),
+    )
+
+
+def assert_changed_line(fixture: FixturePR, *, path: str, line: int) -> None:
+    for changed_file in fixture.changed_files:
+        if changed_file.path == path and changed_file.contains_line(line):
+            return
+    raise FixtureError(f"postable finding {path}:{line} does not overlap fixture changed lines")
+
+
+def redact_for_error(value: str) -> str:
+    return redact_text(value).text
+
+
+def _resource_path(relative: str) -> Path:
+    return Path(str(resources.files(DATA_PACKAGE).joinpath(DATA_ROOT, relative)))
+
+
+def _read_json_file(path: Path, *, label: str) -> dict[str, Any]:
+    try:
+        size = path.stat().st_size
+    except OSError as exc:
+        raise FixtureError(f"{label} file is not readable: {redact_for_error(str(path))}") from exc
+    if size > MAX_FIXTURE_BYTES:
+        raise FixtureError(f"{label} file exceeds {MAX_FIXTURE_BYTES} bytes: {redact_for_error(str(path))}")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise FixtureError(f"{label} JSON is invalid at line {exc.lineno}: {exc.msg}") from exc
+    except OSError as exc:
+        raise FixtureError(f"{label} file is not readable: {redact_for_error(str(path))}") from exc
+    if not isinstance(data, dict):
+        raise FixtureError(f"{label} JSON must be an object")
+    return data
+
+
+def _parse_changed_files(value: object) -> tuple[ChangedFile, ...]:
+    if not isinstance(value, list) or not value:
+        raise FixtureError("fixture.changed_files must be a non-empty list")
+    changed_files: list[ChangedFile] = []
+    for entry in value:
+        if not isinstance(entry, dict):
+            raise FixtureError("fixture.changed_files entries must be objects")
+        ranges = entry.get("changed_ranges")
+        if not isinstance(ranges, list) or not ranges:
+            raise FixtureError("fixture.changed_files[].changed_ranges must be a non-empty list")
+        changed_files.append(
+            ChangedFile(
+                path=_required_str(entry, "path", "changed_files[]"),
+                changed_ranges=tuple(
+                    ChangedRange(start=_required_int(item, "start"), end=_required_int(item, "end"))
+                    for item in ranges
+                    if isinstance(item, dict)
+                ),
+                patch=str(entry.get("patch", "")),
+            )
+        )
+    return tuple(changed_files)
+
+
+def _optional_list(data: dict[str, Any], field: str) -> list[dict[str, Any]]:
+    value = data.get(field, [])
+    if not isinstance(value, list):
+        raise FixtureError(f"fixture.{field} must be a list")
+    if not all(isinstance(item, dict) for item in value):
+        raise FixtureError(f"fixture.{field} entries must be objects")
+    return value
+
+
+def _required_str(data: dict[str, Any], field: str, label: str) -> str:
+    value = data.get(field)
+    if not isinstance(value, str) or not value:
+        raise FixtureError(f"{label}.{field} is required")
+    return value
+
+
+def _required_int(data: dict[str, Any], field: str) -> int:
+    value = data.get(field)
+    if not isinstance(value, int):
+        raise FixtureError(f"changed range {field} must be an integer")
+    return value

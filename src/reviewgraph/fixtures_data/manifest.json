@@ -1,0 +1,18 @@
+{
+  "fixtures": [
+    {
+      "id": "basic-pr",
+      "path": "prs/basic-pr.json",
+      "behavior": "fixture dry run with one postable finding, one local note, trusted and untrusted memory, redaction, and writer-unreachable proof",
+      "consumed_by": ["tests/test_cli.py"]
+    }
+  ],
+  "reviewer_configs": [
+    {
+      "id": "basic-reviewers",
+      "path": "reviewer-configs/basic-reviewers.json",
+      "behavior": "minimal always-on initial_triage reviewer config",
+      "consumed_by": ["tests/test_cli.py"]
+    }
+  ]
+}
