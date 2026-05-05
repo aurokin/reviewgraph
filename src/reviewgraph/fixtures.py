@@ -12,6 +12,31 @@ from reviewgraph.redaction import redact_text
 MAX_FIXTURE_BYTES = 1_048_576
 DATA_PACKAGE = "reviewgraph"
 DATA_ROOT = "fixtures_data"
+ALLOWED_AGENT_FIELDS = {
+    "capabilities",
+    "context",
+    "description",
+    "model",
+    "required",
+    "stages",
+    "tools",
+    "triggers",
+    "verdict_power",
+}
+ALLOWED_CAPABILITIES = {"none", "diff_context"}
+ALLOWED_STAGES = {"initial_triage", "specialized_review", "logic_review"}
+ALLOWED_TRIGGER_FIELDS = {
+    "always",
+    "changed_files_min",
+    "changed_lines_min",
+    "conversation_patterns",
+    "diff_patterns",
+    "labels",
+    "max_files",
+    "paths",
+    "risk_min",
+}
+ALLOWED_VERDICT_POWERS = {"comment", "request_changes"}
 
 
 class FixtureError(ValueError):
@@ -100,18 +125,18 @@ def load_fixture_pr(fixture_ref: str) -> FixturePR:
 def load_reviewer_config(path: str | Path | None = None) -> ReviewerConfig:
     config_path = Path(path) if path is not None else default_reviewer_config_path()
     data = _read_json_file(config_path, label="reviewer config")
+    unknown_config_fields = set(data) - {"agents"}
+    if unknown_config_fields:
+        raise FixtureError(f"reviewer config has unsupported fields: {', '.join(sorted(unknown_config_fields))}")
     agents = data.get("agents")
     if not isinstance(agents, dict) or not agents:
         raise FixtureError("reviewer config agents must be a non-empty object")
     for name, agent in agents.items():
+        if not isinstance(name, str) or not name:
+            raise FixtureError("reviewer config agent names must be non-empty strings")
         if not isinstance(agent, dict):
             raise FixtureError(f"reviewer config agent {name} must be an object")
-        stages = agent.get("stages")
-        triggers = agent.get("triggers")
-        if not isinstance(stages, list) or not stages:
-            raise FixtureError(f"reviewer config agent {name} must include stages")
-        if not isinstance(triggers, dict):
-            raise FixtureError(f"reviewer config agent {name} must include triggers")
+        _validate_reviewer_agent(name, agent)
     return ReviewerConfig(agents=agents)
 
 
@@ -183,6 +208,72 @@ def _read_json_file(path: Path, *, label: str) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise FixtureError(f"{label} JSON must be an object")
     return data
+
+
+def _validate_reviewer_agent(name: str, agent: dict[str, Any]) -> None:
+    unknown_fields = set(agent) - ALLOWED_AGENT_FIELDS
+    if unknown_fields:
+        raise FixtureError(f"reviewer config agent {name} has unsupported fields: {', '.join(sorted(unknown_fields))}")
+    _validate_optional_str(agent, "description", name)
+    stages = agent.get("stages")
+    if not isinstance(stages, list) or not stages:
+        raise FixtureError(f"reviewer config agent {name} must include stages")
+    if not all(isinstance(stage, str) and stage in ALLOWED_STAGES for stage in stages):
+        raise FixtureError(f"reviewer config agent {name} has unsupported stage")
+    if len(set(stages)) != len(stages):
+        raise FixtureError(f"reviewer config agent {name} has duplicate stages")
+    triggers = agent.get("triggers")
+    if not isinstance(triggers, dict):
+        raise FixtureError(f"reviewer config agent {name} must include triggers")
+    _validate_triggers(name, triggers)
+    if "required" in agent and type(agent["required"]) is not bool:
+        raise FixtureError(f"reviewer config agent {name}.required must be a boolean")
+    verdict_power = agent.get("verdict_power", "comment")
+    if not isinstance(verdict_power, str) or verdict_power not in ALLOWED_VERDICT_POWERS:
+        raise FixtureError(f"reviewer config agent {name} has unsupported verdict_power")
+    capabilities = agent.get("capabilities", ["diff_context"])
+    if not isinstance(capabilities, list) or not capabilities:
+        raise FixtureError(f"reviewer config agent {name}.capabilities must be a non-empty list")
+    if not all(isinstance(capability, str) and capability in ALLOWED_CAPABILITIES for capability in capabilities):
+        raise FixtureError(f"reviewer config agent {name} has unsupported capabilities")
+    _validate_optional_str(agent, "model", name)
+    _validate_optional_list_of_str(agent, "tools", name)
+    if "context" in agent and not isinstance(agent["context"], (str, dict)):
+        raise FixtureError(f"reviewer config agent {name}.context must be a string or object")
+
+
+def _validate_triggers(name: str, triggers: dict[str, Any]) -> None:
+    if not triggers:
+        raise FixtureError(f"reviewer config agent {name}.triggers must be non-empty")
+    unknown_trigger_fields = set(triggers) - ALLOWED_TRIGGER_FIELDS
+    if unknown_trigger_fields:
+        raise FixtureError(
+            f"reviewer config agent {name} has unsupported trigger fields: "
+            f"{', '.join(sorted(unknown_trigger_fields))}"
+        )
+    if "always" in triggers and type(triggers["always"]) is not bool:
+        raise FixtureError(f"reviewer config agent {name}.triggers.always must be a boolean")
+    for field in ("paths", "labels", "diff_patterns", "conversation_patterns"):
+        _validate_optional_list_of_str(triggers, field, f"{name}.triggers")
+    for field in ("max_files", "changed_lines_min", "changed_files_min"):
+        if field in triggers and (type(triggers[field]) is not int or triggers[field] <= 0):
+            raise FixtureError(f"reviewer config agent {name}.triggers.{field} must be a positive integer")
+    _validate_optional_str(triggers, "risk_min", f"{name}.triggers")
+
+
+def _validate_optional_str(data: dict[str, Any], field: str, label: str) -> None:
+    if field in data and (not isinstance(data[field], str) or not data[field]):
+        raise FixtureError(f"reviewer config agent {label}.{field} must be a non-empty string")
+
+
+def _validate_optional_list_of_str(data: dict[str, Any], field: str, label: str) -> None:
+    if field not in data:
+        return
+    value = data[field]
+    if not isinstance(value, list) or not value:
+        raise FixtureError(f"reviewer config agent {label}.{field} must be a non-empty list")
+    if not all(isinstance(item, str) and item for item in value):
+        raise FixtureError(f"reviewer config agent {label}.{field} must contain non-empty strings")
 
 
 def _parse_changed_files(value: object) -> tuple[ChangedFile, ...]:

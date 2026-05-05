@@ -91,11 +91,11 @@ def render_json(*, inputs: "_RenderInputs", context: "_RenderContext | None" = N
         context,
     )
     return {
-        "review_target": inputs.review_target.to_ordered_dict(),
+        "review_target": _review_target_json(inputs.review_target, context),
         "selected_reviewers": [
             {
-                "name": reviewer.name,
-                "stage": reviewer.stage,
+                "name": context.redact(reviewer.name),
+                "stage": context.redact(reviewer.stage),
                 "reasons": [context.redact(reason) for reason in reviewer.reasons],
             }
             for reviewer in inputs.selected_reviewers
@@ -264,7 +264,7 @@ def _candidate_payload_preview(
     context.absorb_candidate_payload_status(candidate_payload.redaction_status)
     return {
         "artifact_kind": candidate_payload.artifact_kind.value,
-        "review_target": candidate_payload.review_target.to_ordered_dict(),
+        "review_target": _review_target_json(candidate_payload.review_target, context),
         "body": body,
         "visible_body_hash": candidate_payload.visible_body_hash,
         "full_body_hash": candidate_payload.full_body_hash,
@@ -275,6 +275,17 @@ def _candidate_payload_preview(
             "replacement_count": candidate_payload.redaction_status.replacement_count,
             "categories": list(candidate_payload.redaction_status.categories),
         },
+    }
+
+
+def _review_target_json(review_target: ReviewTarget, context: "_RenderContext") -> dict[str, Any]:
+    return {
+        "owner_repo": context.redact(review_target.owner_repo),
+        "pr_number": review_target.pr_number,
+        "base_sha": context.redact(review_target.base_sha),
+        "head_sha": context.redact(review_target.head_sha),
+        "merge_base_sha": context.redact(review_target.merge_base_sha) if review_target.merge_base_sha else None,
+        "diff_basis": context.redact(review_target.diff_basis),
     }
 
 
@@ -392,9 +403,9 @@ def _normalize_memory_text(value: str) -> str:
 
 def _finding_json(finding: ClassifiedFinding, context: "_RenderContext") -> dict[str, Any]:
     return {
-        "id": finding.id,
-        "source_reviewer": finding.source_reviewer,
-        "source_stage": finding.source_stage,
+        "id": context.redact(finding.id),
+        "source_reviewer": context.redact(finding.source_reviewer),
+        "source_stage": context.redact(finding.source_stage),
         "classification": finding.classification.value,
         "priority": finding.priority,
         "severity": finding.severity.value,
@@ -402,15 +413,15 @@ def _finding_json(finding: ClassifiedFinding, context: "_RenderContext") -> dict
         "title": context.redact(finding.title),
         "body": context.redact(finding.body),
         "evidence": context.redact(finding.evidence),
-        "path": finding.path,
+        "path": context.redact(finding.path),
         "line": finding.line,
-        "fingerprint": finding.fingerprint,
+        "fingerprint": context.redact(finding.fingerprint),
     }
 
 
 def _local_note_json(note: LocalNote, context: "_RenderContext") -> dict[str, Any]:
     return {
-        "id": note.id,
+        "id": context.redact(note.id),
         "classification": note.classification.value,
         "title": context.redact(note.title),
         "body": context.redact(note.body),
@@ -420,9 +431,9 @@ def _local_note_json(note: LocalNote, context: "_RenderContext") -> dict[str, An
 
 def _clarification_json(request: ClarificationRequest, context: "_RenderContext") -> dict[str, Any]:
     return {
-        "id": request.id,
+        "id": context.redact(request.id),
         "classification": request.classification.value,
-        "reviewer": request.reviewer,
+        "reviewer": context.redact(request.reviewer),
         "question": context.redact(request.question),
         "why_it_matters": context.redact(request.why_it_matters),
         "blocks_verdict": request.blocks_verdict,
@@ -431,16 +442,16 @@ def _clarification_json(request: ClarificationRequest, context: "_RenderContext"
 
 def _suggested_reply_json(reply: SuggestedReply, context: "_RenderContext") -> dict[str, Any]:
     return {
-        "id": reply.id,
+        "id": context.redact(reply.id),
         "classification": reply.classification.value,
-        "source_comment_id": reply.source_comment_id,
+        "source_comment_id": context.redact(reply.source_comment_id),
         "proposed_body": context.redact(reply.proposed_body),
     }
 
 
 def _suppressed_json(output: SuppressedOutput, context: "_RenderContext") -> dict[str, Any]:
     return {
-        "id": output.id,
+        "id": context.redact(output.id),
         "classification": output.classification.value,
         "reason": context.redact(output.reason),
     }
@@ -454,28 +465,28 @@ def _posting_plan_json(posting_plan: PostingPlan | None, context: "_RenderContex
 
 def _posting_plan_item_json(item: PostingPlanItem, context: "_RenderContext") -> dict[str, Any]:
     return {
-        "id": item.id,
+        "id": context.redact(item.id),
         "source_classification": item.source_classification,
         "destination": item.destination.value,
         "public_payload_eligible": item.public_payload_eligible,
-        "fingerprint": item.fingerprint,
+        "fingerprint": context.redact(item.fingerprint) if item.fingerprint is not None else None,
         "body": context.redact(item.body) if item.body is not None else None,
     }
 
 
 def _memory_json(memory: MemoryReference, context: "_RenderContext") -> dict[str, Any]:
     return {
-        "id": memory.id,
-        "trust_label": memory.trust_label,
-        "resolved_status": memory.resolved_status,
-        "source_type": memory.source_type,
+        "id": context.redact(memory.id),
+        "trust_label": context.redact(memory.trust_label),
+        "resolved_status": context.redact(memory.resolved_status),
+        "source_type": context.redact(memory.source_type),
         "body": context.redact(memory.body) if memory.body and not _is_unsafe_memory(memory) else None,
     }
 
 
 def _truncation_json(notice: TruncationNotice, context: "_RenderContext") -> dict[str, Any]:
     return {
-        "resource": notice.resource,
+        "resource": context.redact(notice.resource),
         "truncated": notice.truncated,
         "note": context.redact(notice.note),
         "original_count": notice.original_count,

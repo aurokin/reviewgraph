@@ -77,6 +77,24 @@ def test_cli_prints_markdown(capsys: pytest.CaptureFixture[str]) -> None:
     assert captured.err == ""
 
 
+def test_cli_prints_markdown_by_default(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["--fixture-pr", "basic-pr"]) == 0
+
+    captured = capsys.readouterr()
+    assert "# ReviewGraph Dry Run" in captured.out
+    assert captured.err == ""
+
+
+def test_cli_parse_errors_are_redacted(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["--unknown", "ghp_abcdefghijklmnopqrstuvwxyz123456"]) == 2
+
+    captured = capsys.readouterr()
+    assert "unrecognized arguments" in captured.err
+    assert "ghp_" not in captured.err
+    assert "abcdefghijklmnopqrstuvwxyz" not in captured.err
+    assert "[REDACTED]" in captured.err
+
+
 def test_explicit_fixture_path_works(tmp_path: Path) -> None:
     fixture_path = tmp_path / "fixture.json"
     fixture_path.write_text(_basic_fixture_text())
@@ -197,7 +215,7 @@ def test_top_level_json_envelope_redacts_fixture_strings(tmp_path: Path) -> None
     assert "[REDACTED]" in serialized
 
 
-def test_markdown_redacts_secret_like_target_and_path_metadata(tmp_path: Path) -> None:
+def test_renderer_outputs_redact_secret_like_target_and_path_metadata(tmp_path: Path) -> None:
     fixture_path = tmp_path / "secret-markdown.json"
     fixture = _basic_fixture()
     fixture["target"]["owner_repo"] = "ghp_abcdefghijklmnopqrstuvwxyz123456/repo"
@@ -205,15 +223,14 @@ def test_markdown_redacts_secret_like_target_and_path_metadata(tmp_path: Path) -
     fixture["changed_files"][0]["path"] = "src/ghp_abcdefghijklmnopqrstuvwxyz123456.py"
     fixture["raw_reviewer_outputs"][0]["items"][0]["path"] = "src/ghp_abcdefghijklmnopqrstuvwxyz123456.py"
     fixture_path.write_text(json.dumps(fixture))
-    markdown_path = tmp_path / "review.md"
 
-    assert main(["--fixture-pr", str(fixture_path), "--markdown-out", str(markdown_path)]) == 0
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path))
 
-    markdown = markdown_path.read_text()
-    assert "ghp_" not in markdown
-    assert "ghs_" not in markdown
-    assert "abcdefghijklmnopqrstuvwxyz" not in markdown
-    assert "[REDACTED]" in markdown
+    serialized = result.markdown + json.dumps(result.rendered.json_data) + json.dumps(result.json_data)
+    assert "ghp_" not in serialized
+    assert "ghs_" not in serialized
+    assert "abcdefghijklmnopqrstuvwxyz" not in serialized
+    assert "[REDACTED]" in serialized
 
 
 def test_clarification_only_fixture_is_not_post_enabled(tmp_path: Path) -> None:
@@ -477,6 +494,42 @@ def test_invalid_reviewer_config_returns_nonzero(tmp_path: Path, capsys: pytest.
 
     assert main(["--fixture-pr", "basic-pr", "--reviewer-config", str(config_path)]) == 2
     assert "reviewer config agents" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_stderr"),
+    (
+        (
+            lambda agent: agent["triggers"].update({"stages": ["initial_triage"]}),
+            "unsupported trigger fields",
+        ),
+        (lambda agent: agent.update({"verdict_power": "approve"}), "unsupported verdict_power"),
+        (lambda agent: agent.update({"capabilities": ["github_write"]}), "unsupported capabilities"),
+        (lambda agent: agent.update({"unknown": True}), "unsupported fields"),
+    ),
+)
+def test_unsupported_reviewer_config_fields_return_nonzero(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    mutation,
+    expected_stderr: str,
+) -> None:
+    config = {
+        "agents": {
+            "correctness": {
+                "stages": ["initial_triage"],
+                "triggers": {"always": True},
+                "verdict_power": "comment",
+                "capabilities": ["diff_context"],
+            }
+        }
+    }
+    mutation(config["agents"]["correctness"])
+    config_path = tmp_path / "reviewers.json"
+    config_path.write_text(json.dumps(config))
+
+    assert main(["--fixture-pr", "basic-pr", "--reviewer-config", str(config_path)]) == 2
+    assert expected_stderr in capsys.readouterr().err
 
 
 def test_broader_reviewer_config_with_one_eligible_reviewer_works(tmp_path: Path) -> None:

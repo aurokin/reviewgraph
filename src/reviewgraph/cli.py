@@ -10,6 +10,12 @@ from reviewgraph.fixtures import FixtureError, redact_for_error
 from reviewgraph.runner import RunnerError, run_fixture_dry_run
 
 
+class _RedactingArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        self.print_usage(sys.stderr)
+        self.exit(2, f"{self.prog}: error: {redact_for_error(message)}\n")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _parser()
     try:
@@ -25,7 +31,7 @@ def main(argv: list[str] | None = None) -> int:
             _write_text(Path(args.markdown_out), result.markdown)
         if args.json_out is not None:
             _write_text(Path(args.json_out), _stable_json(result.json_data))
-        if args.print_markdown:
+        if args.print_markdown or _has_no_output_target(args):
             sys.stdout.write(result.markdown)
         return 0
     except (FixtureError, RunnerError, OSError, ValueError) as exc:
@@ -34,7 +40,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run a ReviewGraph fixture dry-run.")
+    parser = _RedactingArgumentParser(description="Run a ReviewGraph fixture dry-run.")
     parser.add_argument(
         "--fixture-pr",
         default="basic-pr",
@@ -61,6 +67,10 @@ def _write_text(path: Path, text: str) -> None:
 
 def _stable_json(data: dict[str, object]) -> str:
     return json.dumps(data, sort_keys=True, indent=2) + "\n"
+
+
+def _has_no_output_target(args: argparse.Namespace) -> bool:
+    return not args.print_markdown and args.markdown_out is None and args.json_out is None
 
 
 def _print_error(message: str, stderr: TextIO) -> None:
