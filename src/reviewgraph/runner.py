@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -358,9 +359,13 @@ def _classified_finding(
 def _is_postable_finding(finding: ClassifiedFinding) -> bool:
     if finding.confidence != Confidence.HIGH:
         return False
+    if not _has_concrete_finding_evidence(finding.evidence):
+        return False
     text = f"{finding.title}\n{finding.body}\n{finding.evidence}".casefold()
-    generic_test_advice = (
+    generic_advice = (
         "add tests",
+        "clean this up",
+        "could be refactored",
         "missing tests",
         "needs tests",
         "no regression coverage",
@@ -368,9 +373,15 @@ def _is_postable_finding(finding: ClassifiedFinding) -> bool:
         "no tests",
         "please add tests",
         "regression coverage",
+        "simplify this code",
         "test coverage",
     )
-    return not any(phrase in text for phrase in generic_test_advice)
+    return not any(phrase in text for phrase in generic_advice)
+
+
+def _has_concrete_finding_evidence(evidence: str) -> bool:
+    normalized = evidence.casefold().strip()
+    return not bool(re.fullmatch(r"changed line \d+\.?", normalized))
 
 
 def _require_fields(data: dict[str, Any], fields: tuple[str, ...], label: str) -> None:

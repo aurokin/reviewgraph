@@ -386,7 +386,9 @@ def _meaningful_memory_fragments(memory_body: str) -> tuple[str, ...]:
             fragments.add(word)
     for index, raw_token in enumerate(raw_tokens):
         compact_token = _compact_raw_token(raw_token)
-        if compact_token and _raw_token_has_high_signal_context(raw_tokens, index):
+        if compact_token and (
+            _raw_token_has_high_signal_context(raw_tokens, index) or _raw_token_has_delimiter_digit_signal(raw_token)
+        ):
             fragments.add(compact_token)
     for size in range(2, min(5, len(words)) + 1):
         for index in range(0, len(words) - size + 1):
@@ -463,6 +465,10 @@ def _raw_token_has_high_signal_context(raw_tokens: list[str], index: int) -> boo
     context_tokens = raw_tokens[max(0, index - 2) : index] + raw_tokens[index + 1 : index + 3]
     context = _normalize_memory_text(" ".join(context_tokens)).split()
     return any(word in _HIGH_SIGNAL_CONTEXT_WORDS for word in context)
+
+
+def _raw_token_has_delimiter_digit_signal(raw_token: str) -> bool:
+    return bool(re.search(r"[A-Za-z0-9]+[-_][A-Za-z0-9]*\d|\d[-_][A-Za-z0-9]+", raw_token))
 
 
 def _normalize_memory_text(value: str) -> str:
