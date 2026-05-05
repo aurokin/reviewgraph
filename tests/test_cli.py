@@ -683,6 +683,55 @@ def test_concrete_helper_finding_is_postable(tmp_path: Path) -> None:
     assert review["classified_output"]["suppressed"] == []
 
 
+@pytest.mark.parametrize(
+    ("title", "body", "evidence"),
+    (
+        (
+            "Extract helper drops auth headers",
+            "The new extract helper drops authorization headers when the request has no body.",
+            "Changed line 12 drops authorization headers when the request has no body.",
+        ),
+        (
+            "Parser rejects v2 response",
+            "The parser cannot understand the new response format when callers send v2 requests.",
+            "Changed line 12 cannot understand the new response format when callers send v2 requests.",
+        ),
+    ),
+)
+def test_concrete_findings_with_helper_or_understand_wording_are_postable(
+    tmp_path: Path,
+    title: str,
+    body: str,
+    evidence: str,
+) -> None:
+    fixture_path = tmp_path / "concrete-helper-wording.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["items"] = [
+        {
+            "type": "postable_finding",
+            "id": "finding-concrete-helper-wording",
+            "title": title,
+            "body": body,
+            "evidence": evidence,
+            "path": "src/cache.py",
+            "line": 12,
+            "priority": 1,
+            "severity": "warning",
+            "confidence": "high",
+            "fingerprint": "fixture-concrete-helper-wording",
+        }
+    ]
+    fixture_path.write_text(json.dumps(fixture))
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path))
+    review = result.json_data["review"]
+
+    assert result.json_data["local_verdict"] == "comment"
+    assert result.json_data["post_enabled"] is True
+    assert review["classified_output"]["postable_findings"][0]["id"] == "finding-concrete-helper-wording"
+    assert review["classified_output"]["suppressed"] == []
+
+
 def test_concrete_security_finding_with_normal_review_language_is_postable(tmp_path: Path) -> None:
     fixture_path = tmp_path / "open-redirect.json"
     fixture = _basic_fixture()
@@ -786,6 +835,9 @@ def test_concrete_security_and_privacy_finding_wording_is_postable(
             "Changed line 12 allows future maintainers to understand the cache code.",
         ),
         ("This accepts better structure in this module.", "Changed line 12 accepts better structure in this module."),
+        ("This allows better modularity in this module.", "Changed line 12 allows better modularity in this module."),
+        ("This allows better decoupling in this module.", "Changed line 12 allows better decoupling in this module."),
+        ("This improves testability in this module.", "Changed line 12 improves testability in this module."),
     ),
 )
 def test_generic_maintenance_finding_with_broad_verb_is_suppressed(

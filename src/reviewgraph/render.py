@@ -335,7 +335,10 @@ def _memory_body_overlaps_candidate(memory_body: str | None, candidate_body: str
         return False
     normalized_memory = _normalize_memory_text(memory_body)
     normalized_candidate = _normalize_memory_text(candidate_body)
-    if _exact_memory_body_is_meaningful(normalized_memory) and normalized_memory in normalized_candidate:
+    if _exact_memory_body_is_meaningful(normalized_memory) and _normalized_phrase_in_text(
+        normalized_memory,
+        normalized_candidate,
+    ):
         return True
     candidate_words = set(normalized_candidate.split())
     compact_candidate = normalized_candidate.replace(" ", "")
@@ -391,7 +394,9 @@ def _meaningful_memory_fragments(memory_body: str) -> tuple[str, ...]:
     for index, raw_token in enumerate(raw_tokens):
         compact_token = _compact_raw_token(raw_token)
         if compact_token and (
-            _raw_token_has_high_signal_context(raw_tokens, index) or _raw_token_has_delimiter_digit_signal(raw_token)
+            _raw_token_has_high_signal_context(raw_tokens, index)
+            or _raw_token_has_delimiter_digit_signal(raw_token)
+            or _raw_token_has_delimiter_signal(raw_token)
         ) and _has_meaningful_compact_raw_token_signal(compact_token, words, index):
             fragments.add(compact_token)
     for size in range(2, min(5, len(words)) + 1):
@@ -435,6 +440,13 @@ def _exact_memory_body_is_meaningful(normalized: str) -> bool:
         word = words[0]
         return word not in _COMMON_MEMORY_WORDS and len(word) >= 4 and len(set(word)) >= 4
     return len(normalized) >= 4 and len(set(normalized.replace(" ", ""))) >= 4
+
+
+def _normalized_phrase_in_text(phrase: str, text: str) -> bool:
+    words = phrase.split()
+    if len(words) == 1:
+        return words[0] in set(text.split())
+    return f" {phrase} " in f" {text} "
 
 
 def _full_memory_fragment_is_meaningful(normalized: str) -> bool:
@@ -503,6 +515,10 @@ def _raw_token_has_high_signal_context(raw_tokens: list[str], index: int) -> boo
     return any(word in _HIGH_SIGNAL_CONTEXT_WORDS for word in context)
 
 
+def _raw_token_has_delimiter_signal(raw_token: str) -> bool:
+    return bool(re.search(r"[A-Za-z0-9]+[^\w\s][A-Za-z0-9]+", raw_token))
+
+
 def _raw_token_has_delimiter_digit_signal(raw_token: str) -> bool:
     return bool(re.search(r"[A-Za-z0-9]+[^\w\s][A-Za-z0-9]*\d|\d[^\w\s][A-Za-z0-9]+", raw_token))
 
@@ -518,7 +534,7 @@ def _has_meaningful_compact_raw_token_signal(compact_token: str, words: list[str
         )
     if compact_token.isdigit():
         return any(token in _HIGH_SIGNAL_CONTEXT_WORDS for token in context_window)
-    return True
+    return _looks_mixed_identifier_like(compact_token) or len(compact_token) >= 5
 
 
 def _common_word_numeric_prefix(compact_token: str) -> str | None:
@@ -586,6 +602,7 @@ _HIGH_SIGNAL_CONTEXT_WORDS = {
 }
 
 _COMMON_TECH_TOKENS = {
+    "go122",
     "http2",
     "node18",
     "python3",

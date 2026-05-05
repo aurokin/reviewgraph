@@ -715,10 +715,10 @@ def test_common_long_domain_word_in_untrusted_memory_does_not_block_candidate_pa
 
 @pytest.mark.parametrize(
     "token",
-    ("python3", "python-3", "node18", "node-18", "sha256", "react19", "http2"),
+    ("python3", "python-3", "node18", "node-18", "sha256", "react19", "http2", "go1.22"),
 )
 def test_common_tech_tokens_in_untrusted_memory_do_not_block_candidate_payload_preview(token: str) -> None:
-    finding_token = token.replace("-", "")
+    finding_token = token.replace("-", "").replace(".", "")
     findings = [finding(title="Runtime regression", body=f"The {finding_token} runtime path now fails.")]
     plan = build_posting_plan(findings=findings)
     payload = build_candidate_issue_comment_payload(
@@ -1111,6 +1111,35 @@ def test_exact_short_untrusted_memory_body_cannot_enter_candidate_payload_previe
         )
 
 
+def test_exact_short_untrusted_memory_uses_word_boundaries_for_candidate_payload_preview() -> None:
+    findings = [finding(body="This allows unauthenticated access when login expires.")]
+    plan = build_posting_plan(findings=findings)
+    payload = build_candidate_issue_comment_payload(
+        review_target=target(),
+        posting_plan=plan,
+        findings=findings,
+    )
+
+    rendered = render_review(
+        review_target=target(),
+        selected_reviewers=selected_reviewers(),
+        findings=findings,
+        posting_plan=plan,
+        candidate_payload=payload,
+        memory_references=[
+            MemoryReference(
+                "mem-auth-word",
+                "untrusted",
+                "unresolved",
+                "issue_comment",
+                "auth",
+            )
+        ],
+    )
+
+    assert rendered.json_data["candidate_payload_preview"]["body"] == payload.body
+
+
 def test_punctuation_normalized_untrusted_memory_cannot_enter_candidate_payload_preview() -> None:
     untrusted_body = "The reviewer wrote Ship-it now in an unresolved comment."
     findings = [finding(body="Copied: Ship it now")]
@@ -1214,7 +1243,7 @@ def test_compacted_delimiter_untrusted_memory_cannot_enter_candidate_payload_pre
         ("The unresolved thread said O-R-I-O-N.", "Copied: orion"),
     ),
 )
-def test_low_signal_compacted_untrusted_memory_fragments_do_not_block_candidate_payload_preview(
+def test_non_allowlisted_compacted_untrusted_memory_fragments_cannot_enter_candidate_payload_preview(
     untrusted_body: str,
     finding_body: str,
 ) -> None:
@@ -1226,24 +1255,23 @@ def test_low_signal_compacted_untrusted_memory_fragments_do_not_block_candidate_
         findings=findings,
     )
 
-    rendered = render_review(
-        review_target=target(),
-        selected_reviewers=selected_reviewers(),
-        findings=findings,
-        posting_plan=plan,
-        candidate_payload=payload,
-        memory_references=[
-            MemoryReference(
-                "mem-compact-low-signal",
-                "untrusted",
-                "unresolved",
-                "issue_comment",
-                untrusted_body,
-            )
-        ],
-    )
-
-    assert rendered.json_data["candidate_payload_preview"]["body"] == payload.body
+    with pytest.raises(RenderError, match="untrusted memory"):
+        render_review(
+            review_target=target(),
+            selected_reviewers=selected_reviewers(),
+            findings=findings,
+            posting_plan=plan,
+            candidate_payload=payload,
+            memory_references=[
+                MemoryReference(
+                    "mem-compact-low-signal",
+                    "untrusted",
+                    "unresolved",
+                    "issue_comment",
+                    untrusted_body,
+                )
+            ],
+        )
 
 
 def test_render_json_is_deterministic_and_primitive_serializable() -> None:
