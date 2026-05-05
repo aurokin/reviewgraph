@@ -655,6 +655,64 @@ def test_common_domain_words_in_untrusted_memory_do_not_block_candidate_payload_
     assert rendered.json_data["candidate_payload_preview"]["body"] == payload.body
 
 
+def test_common_long_domain_word_in_untrusted_memory_does_not_block_candidate_payload_preview() -> None:
+    findings = [finding(title="Authentication regression", body="Authentication now fails for valid sessions.")]
+    plan = build_posting_plan(findings=findings)
+    payload = build_candidate_issue_comment_payload(
+        review_target=target(),
+        posting_plan=plan,
+        findings=findings,
+    )
+
+    rendered = render_review(
+        review_target=target(),
+        selected_reviewers=selected_reviewers(),
+        findings=findings,
+        posting_plan=plan,
+        candidate_payload=payload,
+        memory_references=[
+            MemoryReference(
+                "mem-auth",
+                "untrusted",
+                "unresolved",
+                "issue_comment",
+                "I saw authentication fail locally too.",
+            )
+        ],
+    )
+
+    assert rendered.json_data["candidate_payload_preview"]["body"] == payload.body
+
+
+def test_identifier_like_single_token_untrusted_memory_cannot_enter_candidate_payload_preview() -> None:
+    untrusted_body = "The customer mentioned account abc12345 during the thread."
+    findings = [finding(body="Copied: abc12345")]
+    plan = build_posting_plan(findings=findings)
+    payload = build_candidate_issue_comment_payload(
+        review_target=target(),
+        posting_plan=plan,
+        findings=findings,
+    )
+
+    with pytest.raises(RenderError, match="untrusted memory"):
+        render_review(
+            review_target=target(),
+            selected_reviewers=selected_reviewers(),
+            findings=findings,
+            posting_plan=plan,
+            candidate_payload=payload,
+            memory_references=[
+                MemoryReference(
+                    "mem-identifier",
+                    "untrusted",
+                    "unresolved",
+                    "issue_comment",
+                    untrusted_body,
+                )
+            ],
+        )
+
+
 def test_untrusted_memory_fragment_in_title_cannot_enter_candidate_payload_preview() -> None:
     untrusted_body = "Customer mentioned codename orion in the review thread."
     findings = [finding(title="Customer codename orion", body="Generic public body.")]

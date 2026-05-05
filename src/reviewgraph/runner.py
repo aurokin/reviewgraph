@@ -63,6 +63,7 @@ def run_fixture_dry_run(
     memory_references = _memory_references(fixture)
     truncation_notices = _truncation_notices(fixture)
     classified = _classify_raw_outputs(fixture, selected_reviewers=selected_reviewers)
+    _validate_output_item_ids(classified)
     _validate_finding_fingerprints(classified["findings"])
     local_verdict = _local_verdict(
         findings=classified["findings"],
@@ -290,6 +291,16 @@ def _validate_finding_fingerprints(findings: tuple[ClassifiedFinding, ...]) -> N
         if finding.fingerprint in seen:
             raise RunnerError("postable_finding.fingerprint must be unique")
         seen.add(finding.fingerprint)
+
+
+def _validate_output_item_ids(classified: dict[str, tuple[Any, ...]]) -> None:
+    seen: set[str] = set()
+    for collection in classified.values():
+        for item in collection:
+            item_id = item.id
+            if item_id in seen:
+                raise RunnerError("classified output item ids must be unique")
+            seen.add(item_id)
 
 
 def _classified_finding(

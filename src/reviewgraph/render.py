@@ -412,10 +412,14 @@ def _has_enough_word_signal(word: str, words: list[str], index: int) -> bool:
         return False
     if len(words) == 1:
         return len(word) >= 5 and len(set(word)) >= 4
-    if len(word) >= 8 and len(set(word)) >= 5:
+    if _looks_identifier_like(word):
         return True
     context_window = words[max(0, index - 2) : index] + words[index + 1 : index + 3]
     return len(word) >= 5 and len(set(word)) >= 4 and any(token in _HIGH_SIGNAL_CONTEXT_WORDS for token in context_window)
+
+
+def _looks_identifier_like(word: str) -> bool:
+    return any(char.isdigit() for char in word) and len(word) >= 6 and len(set(word)) >= 4
 
 
 def _has_enough_compact_fragment_signal(fragment: str) -> bool:

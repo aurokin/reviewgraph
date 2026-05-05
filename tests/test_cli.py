@@ -295,6 +295,29 @@ def test_duplicate_fingerprints_with_clarification_fail_closed(
     assert "postable_finding.fingerprint must be unique" in capsys.readouterr().err
 
 
+def test_duplicate_output_item_ids_with_clarification_fail_closed(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fixture_path = tmp_path / "duplicate-item-id-with-clarification.json"
+    fixture = _basic_fixture()
+    duplicate = dict(fixture["raw_reviewer_outputs"][0]["items"][0])
+    duplicate["fingerprint"] = "fixture-basic-cache-stale-copy"
+    fixture["raw_reviewer_outputs"][0]["items"].append(duplicate)
+    fixture["raw_reviewer_outputs"][0]["items"].append(
+        {
+            "type": "clarification_request",
+            "id": "clarify-intent",
+            "question": "Is this behavior intentional?",
+            "why_it_matters": "The mergeability decision depends on product intent.",
+        }
+    )
+    fixture_path.write_text(json.dumps(fixture))
+
+    assert main(["--fixture-pr", str(fixture_path)]) == 2
+    assert "classified output item ids must be unique" in capsys.readouterr().err
+
+
 def test_suggested_reply_fixture_is_local_only(tmp_path: Path) -> None:
     fixture_path = tmp_path / "suggested-reply.json"
     fixture = _basic_fixture()
