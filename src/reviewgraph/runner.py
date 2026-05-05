@@ -146,12 +146,12 @@ def _initial_triage_trace() -> dict[str, Any]:
 def _review_target(fixture: FixturePR) -> ReviewTarget:
     target = fixture.target
     return ReviewTarget(
-        owner_repo=str(target["owner_repo"]),
-        pr_number=int(target["pr_number"]),
-        base_sha=str(target["base_sha"]),
-        head_sha=str(target["head_sha"]),
+        owner_repo=target["owner_repo"],
+        pr_number=target["pr_number"],
+        base_sha=target["base_sha"],
+        head_sha=target["head_sha"],
         merge_base_sha=target.get("merge_base_sha"),
-        diff_basis=str(target["diff_basis"]),
+        diff_basis=target["diff_basis"],
     )
 
 
@@ -199,11 +199,17 @@ def _classify_raw_outputs(
     clarification_requests: list[ClarificationRequest] = []
     suppressed_outputs: list[SuppressedOutput] = []
     selected_keys = {(reviewer.name, reviewer.stage) for reviewer in selected_reviewers}
+    seen_keys: set[tuple[str, str]] = set()
     for reviewer_output in fixture.raw_reviewer_outputs:
+        if not isinstance(reviewer_output, dict):
+            raise RunnerError("raw_reviewer_outputs entries must be objects")
         reviewer = _required_str(reviewer_output, "reviewer", "raw_reviewer_outputs[]")
         stage = _required_str(reviewer_output, "stage", "raw_reviewer_outputs[]")
         if (reviewer, stage) not in selected_keys:
             raise RunnerError(f"raw reviewer output {reviewer}/{stage} was not selected")
+        if (reviewer, stage) in seen_keys:
+            raise RunnerError(f"raw reviewer output {reviewer}/{stage} is duplicated")
+        seen_keys.add((reviewer, stage))
         items = reviewer_output.get("items")
         if not reviewer or not stage or not isinstance(items, list):
             raise RunnerError("raw reviewer output requires reviewer, stage, and items")
@@ -239,6 +245,10 @@ def _classify_raw_outputs(
                 suppressed_outputs.append(SuppressedOutput(id=str(item["id"]), reason=str(item["reason"])))
             else:
                 raise RunnerError(f"unsupported raw reviewer output type: {item_type}")
+    missing_keys = sorted(selected_keys - seen_keys)
+    if missing_keys:
+        missing = ", ".join(f"{reviewer}/{stage}" for reviewer, stage in missing_keys)
+        raise RunnerError(f"missing raw reviewer output for selected reviewer: {missing}")
     return {
         "findings": tuple(findings),
         "local_notes": tuple(local_notes),

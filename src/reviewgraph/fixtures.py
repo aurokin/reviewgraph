@@ -108,10 +108,10 @@ def load_reviewer_config(path: str | Path | None = None) -> ReviewerConfig:
             raise FixtureError(f"reviewer config agent {name} must be an object")
         stages = agent.get("stages")
         triggers = agent.get("triggers")
-        if not isinstance(stages, list) or "initial_triage" not in stages:
-            raise FixtureError(f"reviewer config agent {name} must include initial_triage stage")
-        if not isinstance(triggers, dict) or triggers.get("always") is not True:
-            raise FixtureError(f"reviewer config agent {name} must have triggers.always=true")
+        if not isinstance(stages, list) or not stages:
+            raise FixtureError(f"reviewer config agent {name} must include stages")
+        if not isinstance(triggers, dict):
+            raise FixtureError(f"reviewer config agent {name} must include triggers")
     return ReviewerConfig(agents=agents)
 
 
@@ -122,9 +122,14 @@ def parse_fixture_pr(data: dict[str, Any]) -> FixturePR:
             raise FixtureError(f"fixture.{field} is required")
     if not isinstance(data["target"], dict):
         raise FixtureError("fixture.target must be an object")
-    for field in ("owner_repo", "pr_number", "base_sha", "head_sha", "diff_basis"):
-        if field not in data["target"]:
-            raise FixtureError(f"fixture.target.{field} is required")
+    target = data["target"]
+    for field in ("owner_repo", "base_sha", "head_sha", "diff_basis"):
+        if not isinstance(target.get(field), str) or not target[field]:
+            raise FixtureError(f"fixture.target.{field} must be a non-empty string")
+    if not isinstance(target.get("pr_number"), int) or target["pr_number"] <= 0:
+        raise FixtureError("fixture.target.pr_number must be a positive integer")
+    if target.get("merge_base_sha") is not None and not isinstance(target.get("merge_base_sha"), str):
+        raise FixtureError("fixture.target.merge_base_sha must be a string or null")
 
     changed_files = _parse_changed_files(data["changed_files"])
     raw_outputs = data["raw_reviewer_outputs"]
@@ -185,13 +190,15 @@ def _parse_changed_files(value: object) -> tuple[ChangedFile, ...]:
         ranges = entry.get("changed_ranges")
         if not isinstance(ranges, list) or not ranges:
             raise FixtureError("fixture.changed_files[].changed_ranges must be a non-empty list")
+        for item in ranges:
+            if not isinstance(item, dict):
+                raise FixtureError("fixture.changed_files[].changed_ranges entries must be objects")
         changed_files.append(
             ChangedFile(
                 path=_required_str(entry, "path", "changed_files[]"),
                 changed_ranges=tuple(
                     ChangedRange(start=_required_int(item, "start"), end=_required_int(item, "end"))
                     for item in ranges
-                    if isinstance(item, dict)
                 ),
                 patch=str(entry.get("patch", "")),
             )

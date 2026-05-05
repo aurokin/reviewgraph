@@ -289,6 +289,30 @@ def test_invalid_reviewer_config_returns_nonzero(tmp_path: Path, capsys: pytest.
     assert "reviewer config agents" in capsys.readouterr().err
 
 
+def test_broader_reviewer_config_with_one_eligible_reviewer_works(tmp_path: Path) -> None:
+    config_path = tmp_path / "reviewers.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "agents": {
+                    "correctness": {
+                        "stages": ["initial_triage"],
+                        "triggers": {"always": True},
+                    },
+                    "security": {
+                        "stages": ["specialized_review"],
+                        "triggers": {"paths": ["src/auth/**"]},
+                    },
+                }
+            }
+        )
+    )
+
+    result = run_fixture_dry_run(fixture_ref="basic-pr", reviewer_config_path=str(config_path))
+
+    assert [reviewer["name"] for reviewer in result.json_data["selected_reviewers"]] == ["correctness"]
+
+
 def test_no_eligible_reviewer_returns_nonzero(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     config_path = tmp_path / "reviewers.json"
     config_path.write_text(
@@ -306,6 +330,89 @@ def test_no_eligible_reviewer_returns_nonzero(tmp_path: Path, capsys: pytest.Cap
 
     assert main(["--fixture-pr", "basic-pr", "--reviewer-config", str(config_path)]) == 2
     assert "initial_triage" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected_stderr"),
+    (
+        ("base_sha", None, "fixture.target.base_sha must be a non-empty string"),
+        ("head_sha", "", "fixture.target.head_sha must be a non-empty string"),
+        ("pr_number", "42", "fixture.target.pr_number must be a positive integer"),
+    ),
+)
+def test_invalid_target_metadata_returns_nonzero(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    field: str,
+    value: object,
+    expected_stderr: str,
+) -> None:
+    fixture_path = tmp_path / "bad-target.json"
+    fixture = _basic_fixture()
+    fixture["target"][field] = value
+    fixture_path.write_text(json.dumps(fixture))
+
+    assert main(["--fixture-pr", str(fixture_path)]) == 2
+    assert expected_stderr in capsys.readouterr().err
+
+
+def test_missing_raw_output_for_selected_reviewer_returns_nonzero(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "reviewers.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "agents": {
+                    "correctness": {
+                        "stages": ["initial_triage"],
+                        "triggers": {"always": True},
+                    },
+                    "security": {
+                        "stages": ["initial_triage"],
+                        "triggers": {"always": True},
+                    },
+                }
+            }
+        )
+    )
+
+    assert main(["--fixture-pr", "basic-pr", "--reviewer-config", str(config_path)]) == 2
+    assert "missing raw reviewer output" in capsys.readouterr().err
+
+
+def test_duplicate_raw_output_for_selected_reviewer_returns_nonzero(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fixture_path = tmp_path / "duplicate-output.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"].append(fixture["raw_reviewer_outputs"][0])
+    fixture_path.write_text(json.dumps(fixture))
+
+    assert main(["--fixture-pr", str(fixture_path)]) == 2
+    assert "duplicated" in capsys.readouterr().err
+
+
+def test_non_object_nested_fixture_entries_return_nonzero(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fixture_path = tmp_path / "bad-nested-entry.json"
+    fixture = _basic_fixture()
+    fixture["changed_files"][0]["changed_ranges"] = ["not-an-object"]
+    fixture_path.write_text(json.dumps(fixture))
+
+    assert main(["--fixture-pr", str(fixture_path)]) == 2
+    assert "changed_ranges entries must be objects" in capsys.readouterr().err
+
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"] = ["not-an-object"]
+    fixture_path.write_text(json.dumps(fixture))
+
+    assert main(["--fixture-pr", str(fixture_path)]) == 2
+    assert "raw_reviewer_outputs entries must be objects" in capsys.readouterr().err
 
 
 def test_oversized_fixture_returns_nonzero(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
