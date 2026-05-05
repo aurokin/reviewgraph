@@ -1,0 +1,38 @@
+agents:
+  security:
+    description: Finds auth, injection, secrets, SSRF, unsafe eval, path traversal.
+    triggers:
+      paths: ["src/auth/**", "src/api/**", "server/**"]
+      diff_patterns: ["password", "token", "jwt", "eval", "exec", "secret"]
+      risk_min: medium
+    required: false
+    verdict_power: request_changes
+
+  correctness:
+    description: Reviews logic, edge cases, error handling, and API behavior.
+    triggers:
+      always: true
+    required: true
+    verdict_power: request_changes
+
+  frontend_state:
+    description: Reviews React/Vue state, async flows, loading/error states, and UI regressions.
+    triggers:
+      paths: ["apps/web/**", "src/**/*.tsx", "src/**/*.jsx", "src/**/*.vue"]
+      labels: ["frontend"]
+    required: false
+    verdict_power: comment
+
+  tests:
+    description: Checks test coverage, missing edge cases, and flaky patterns.
+    triggers:
+      always: true
+    required: true
+    verdict_power: comment
+
+  docs_api:
+    description: Checks docs, public API changes, migration notes, and contract drift.
+    triggers:
+      paths: ["docs/**", "README.md", "packages/*/src/**"]
+    required: false
+    verdict_power: comment
