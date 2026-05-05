@@ -96,7 +96,7 @@ def visible_body_hash(text: str) -> str:
 
 
 def full_body_hash(full_body: str) -> str:
-    return sha256_text(canonical_full_body(full_body))
+    return sha256_text(full_body)
 
 
 def canonical_json_hash(data: object) -> str:

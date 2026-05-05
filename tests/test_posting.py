@@ -147,6 +147,22 @@ def test_inline_candidates_require_changed_target_diff_anchor() -> None:
             inline_candidate_ids={"finding-1"},
         )
 
+    bad_start_line_anchor = DiffAnchor(
+        path="src/cache.py",
+        line=12,
+        hunk_start=10,
+        hunk_end=14,
+        hunk_id="src/cache.py:10-14",
+        start_line=13,
+        target_commit_sha="head456",
+    )
+    with pytest.raises(PostingPlanError, match="diff anchor"):
+        build_posting_plan(
+            findings=[finding(diff_anchor=bad_start_line_anchor)],
+            review_target=target(),
+            inline_candidate_ids={"finding-1"},
+        )
+
     valid_anchor = DiffAnchor(
         path="src/cache.py",
         line=12,
@@ -182,6 +198,18 @@ def test_diff_anchor_requires_durable_inline_metadata() -> None:
             hunk_start=10,
             hunk_end=14,
             hunk_id="src/cache.py:10-14",
+            target_commit_sha="head456",
+        )
+
+    with pytest.raises(ValueError, match="start_side"):
+        DiffAnchor(
+            path="src/cache.py",
+            line=12,
+            hunk_start=10,
+            hunk_end=14,
+            hunk_id="src/cache.py:10-14",
+            start_line=12,
+            start_side="LEFT",
             target_commit_sha="head456",
         )
 
@@ -336,7 +364,7 @@ def test_candidate_payload_has_fingerprints_and_canonical_hashes() -> None:
     assert payload.visible_body_hash == visible_body_hash(payload.body)
     assert payload.full_body_hash == full_body_hash(payload.body)
     assert canonical_visible_body("a\r\nb\n\n") == "a\nb\n"
-    assert full_body_hash("a\r\nb\n\n") == full_body_hash("a\nb\n")
+    assert full_body_hash("a\r\nb\n\n") != full_body_hash("a\nb\n")
     assert visible_body_hash("a\n<!-- reviewgraph:payload -->\n") == visible_body_hash("a\n")
     assert visible_body_hash("a\n<!-- reviewgraph:payload -->\nb\n") != visible_body_hash("a\nb\n")
     assert visible_body_hash("a\n<!-- reviewgraph:payload") != visible_body_hash("a\n")

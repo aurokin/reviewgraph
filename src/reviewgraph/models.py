@@ -91,6 +91,8 @@ class DiffAnchor:
             raise ValueError("diff anchor path is required")
         if self.line <= 0:
             raise ValueError("diff anchor line must be positive")
+        if self.side != "RIGHT":
+            raise ValueError("diff anchor side must be RIGHT for MVP inline candidates")
         if self.hunk_start <= 0 or self.hunk_end < self.hunk_start:
             raise ValueError("diff anchor hunk bounds are invalid")
         if not self.target_commit_sha:
@@ -99,8 +101,8 @@ class DiffAnchor:
             raise ValueError("diff anchor hunk_id is required")
         if self.start_line is None or self.start_line <= 0:
             raise ValueError("diff anchor start_line is required")
-        if not self.start_side:
-            raise ValueError("diff anchor start_side is required")
+        if self.start_side != "RIGHT":
+            raise ValueError("diff anchor start_side must be RIGHT for MVP inline candidates")
 
     @property
     def overlaps_changed_target(self) -> bool:
@@ -111,6 +113,9 @@ class DiffAnchor:
             self.path == path
             and self.line == line
             and self.target_commit_sha == target_commit_sha
+            and self.start_line is not None
+            and self.hunk_start <= self.start_line <= self.line <= self.hunk_end
+            and self.start_side == "RIGHT"
             and self.overlaps_changed_target
         )
 
