@@ -80,11 +80,11 @@ class DiffAnchor:
     hunk_start: int
     hunk_end: int
     side: str = "RIGHT"
-    old_path: str | None = None
     file_status: str = "modified"
+    hunk_id: str = ""
     start_line: int | None = None
-    start_side: str | None = None
-    hunk_id: str | None = None
+    start_side: str = "RIGHT"
+    old_path: str | None = None
 
     def __post_init__(self) -> None:
         if not self.path:
@@ -95,6 +95,12 @@ class DiffAnchor:
             raise ValueError("diff anchor hunk bounds are invalid")
         if not self.target_commit_sha:
             raise ValueError("diff anchor target_commit_sha is required")
+        if not self.hunk_id:
+            raise ValueError("diff anchor hunk_id is required")
+        if self.start_line is None or self.start_line <= 0:
+            raise ValueError("diff anchor start_line is required")
+        if not self.start_side:
+            raise ValueError("diff anchor start_side is required")
 
     @property
     def overlaps_changed_target(self) -> bool:

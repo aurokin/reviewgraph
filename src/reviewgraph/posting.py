@@ -66,12 +66,20 @@ class CandidateIssueCommentPayload:
 
 
 MARKER_PREFIX = "<!-- reviewgraph:"
+MARKER_SUFFIX = " -->"
 
 
 def canonical_visible_body(text: str) -> str:
     normalized = text.replace("\r\n", "\n").replace("\r", "\n")
-    visible_lines = [line for line in normalized.split("\n") if not line.startswith(MARKER_PREFIX)]
-    return "\n".join(visible_lines).rstrip("\n") + "\n"
+    canonical = canonical_full_body(normalized)
+    lines = canonical.split("\n")
+    if len(lines) >= 2 and _is_marker_line(lines[-2]):
+        canonical = "\n".join(lines[:-2]).rstrip("\n") + "\n"
+    return canonical
+
+
+def _is_marker_line(line: str) -> bool:
+    return line.startswith(MARKER_PREFIX) and line.endswith(MARKER_SUFFIX)
 
 
 def canonical_full_body(text: str) -> str:
@@ -121,6 +129,7 @@ def build_posting_plan(
     include_summary: bool = False,
 ) -> PostingPlan:
     inline_candidate_ids = inline_candidate_ids or set()
+    matched_inline_ids: set[str] = set()
     items: list[PostingPlanItem] = []
 
     if include_summary:
@@ -135,6 +144,7 @@ def build_posting_plan(
 
     for finding in findings:
         if finding.id in inline_candidate_ids:
+            matched_inline_ids.add(finding.id)
             if finding.diff_anchor is None:
                 raise PostingPlanError("inline candidates require a diff anchor overlapping changed target code")
             if review_target is None:
@@ -178,6 +188,10 @@ def build_posting_plan(
     for output in suppressed_outputs:
         items.append(_local_item(output.id, output.classification.value, output.reason))
 
+    unknown_inline_ids = inline_candidate_ids - matched_inline_ids
+    if unknown_inline_ids:
+        raise PostingPlanError(f"unknown inline candidate ids: {', '.join(sorted(unknown_inline_ids))}")
+
     return PostingPlan(items=tuple(items))
 
 
@@ -201,7 +215,11 @@ def build_candidate_issue_comment_payload(
     artifact_kind: str | ArtifactKind = ArtifactKind.ISSUE_COMMENT,
 ) -> CandidateIssueCommentPayload:
     kind = validate_mvp_artifact_kind(artifact_kind)
-    findings_by_id = {finding.id: finding for finding in findings}
+    findings_by_id: dict[str, ClassifiedFinding] = {}
+    for finding in findings:
+        if finding.id in findings_by_id:
+            raise PostingPlanError(f"duplicate finding id: {finding.id}")
+        findings_by_id[finding.id] = finding
     public_items = posting_plan.public_payload_items
     _validate_public_payload_items(public_items)
     missing = [item.id for item in public_items if item.id != "summary" and item.id not in findings_by_id]
@@ -227,6 +245,8 @@ def build_candidate_issue_comment_payload(
             body_parts.append("- Summary item reserved for renderer output.")
             continue
         finding = findings_by_id[item.id]
+        if item.fingerprint != finding.fingerprint:
+            raise PostingPlanError(f"posting plan fingerprint mismatch for {item.id}")
         finding_fingerprints.append(finding.fingerprint)
         body_parts.append(
             f"- P{finding.priority} {finding.title}: {finding.body} ({finding.path}:{finding.line})"

@@ -73,6 +73,8 @@ def test_posting_plan_supports_all_destinations() -> None:
         line=12,
         hunk_start=10,
         hunk_end=14,
+        hunk_id="src/cache.py:10-14",
+        start_line=12,
         target_commit_sha="head456",
     )
     plan = build_posting_plan(
@@ -102,6 +104,8 @@ def test_inline_candidates_require_changed_target_diff_anchor() -> None:
         line=20,
         hunk_start=10,
         hunk_end=14,
+        hunk_id="src/cache.py:10-14",
+        start_line=20,
         target_commit_sha="head456",
     )
     with pytest.raises(PostingPlanError, match="diff anchor"):
@@ -116,6 +120,8 @@ def test_inline_candidates_require_changed_target_diff_anchor() -> None:
         line=12,
         hunk_start=10,
         hunk_end=14,
+        hunk_id="src/other.py:10-14",
+        start_line=12,
         target_commit_sha="head456",
     )
     with pytest.raises(PostingPlanError, match="diff anchor"):
@@ -130,6 +136,8 @@ def test_inline_candidates_require_changed_target_diff_anchor() -> None:
         line=12,
         hunk_start=10,
         hunk_end=14,
+        hunk_id="src/cache.py:10-14",
+        start_line=12,
         target_commit_sha="oldhead",
     )
     with pytest.raises(PostingPlanError, match="diff anchor"):
@@ -137,6 +145,44 @@ def test_inline_candidates_require_changed_target_diff_anchor() -> None:
             findings=[finding(diff_anchor=stale_anchor)],
             review_target=target(),
             inline_candidate_ids={"finding-1"},
+        )
+
+    valid_anchor = DiffAnchor(
+        path="src/cache.py",
+        line=12,
+        hunk_start=10,
+        hunk_end=14,
+        hunk_id="src/cache.py:10-14",
+        start_line=12,
+        target_commit_sha="head456",
+    )
+    with pytest.raises(PostingPlanError, match="unknown inline"):
+        build_posting_plan(
+            findings=[finding(diff_anchor=valid_anchor)],
+            review_target=target(),
+            inline_candidate_ids={"finding-1", "missing-finding"},
+        )
+
+
+def test_diff_anchor_requires_durable_inline_metadata() -> None:
+    with pytest.raises(ValueError, match="hunk_id"):
+        DiffAnchor(
+            path="src/cache.py",
+            line=12,
+            hunk_start=10,
+            hunk_end=14,
+            start_line=12,
+            target_commit_sha="head456",
+        )
+
+    with pytest.raises(ValueError, match="start_line"):
+        DiffAnchor(
+            path="src/cache.py",
+            line=12,
+            hunk_start=10,
+            hunk_end=14,
+            hunk_id="src/cache.py:10-14",
+            target_commit_sha="head456",
         )
 
 
@@ -251,6 +297,31 @@ def test_candidate_payload_rejects_tampered_public_plan_items() -> None:
             findings=[finding()],
         )
 
+    stale_fingerprint = PostingPlan(
+        items=(
+            PostingPlanItem(
+                id="finding-1",
+                source_classification="postable_finding",
+                destination=PostingDestination.REVIEW_BODY_ITEM,
+                public_payload_eligible=True,
+                fingerprint="fp-old",
+            ),
+        )
+    )
+    with pytest.raises(PostingPlanError, match="fingerprint mismatch"):
+        build_candidate_issue_comment_payload(
+            review_target=target(),
+            posting_plan=stale_fingerprint,
+            findings=[finding()],
+        )
+
+    with pytest.raises(PostingPlanError, match="duplicate finding id"):
+        build_candidate_issue_comment_payload(
+            review_target=target(),
+            posting_plan=build_posting_plan(findings=[finding()]),
+            findings=[finding(), finding()],
+        )
+
 
 def test_candidate_payload_has_fingerprints_and_canonical_hashes() -> None:
     second = finding("finding-2", body="Another concrete issue.", fingerprint="fp-0")
@@ -267,6 +338,8 @@ def test_candidate_payload_has_fingerprints_and_canonical_hashes() -> None:
     assert canonical_visible_body("a\r\nb\n\n") == "a\nb\n"
     assert full_body_hash("a\r\nb\n\n") == full_body_hash("a\nb\n")
     assert visible_body_hash("a\n<!-- reviewgraph:payload -->\n") == visible_body_hash("a\n")
+    assert visible_body_hash("a\n<!-- reviewgraph:payload -->\nb\n") != visible_body_hash("a\nb\n")
+    assert visible_body_hash("a\n<!-- reviewgraph:payload") != visible_body_hash("a\n")
 
     duplicate = finding("finding-3", fingerprint="fp-1")
     duplicate_plan = build_posting_plan(findings=[finding(), duplicate])
