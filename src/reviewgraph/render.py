@@ -338,12 +338,15 @@ def _memory_body_overlaps_candidate(memory_body: str | None, candidate_body: str
     compact_candidate = normalized_candidate.replace(" ", "")
     meaningful_fragments = _meaningful_memory_fragments(memory_body)
     for fragment in meaningful_fragments:
-        if " " in fragment and fragment in normalized_candidate:
-            return True
-        if " " not in fragment and fragment in candidate_words:
+        if " " in fragment and _has_enough_fragment_signal(fragment) and fragment in normalized_candidate:
             return True
         compact_fragment = fragment.replace(" ", "")
-        if _has_enough_compact_fragment_signal(compact_fragment) and compact_fragment in compact_candidate:
+        if (
+            " " in fragment
+            and _has_enough_fragment_signal(fragment)
+            and _has_enough_compact_fragment_signal(compact_fragment)
+            and compact_fragment in compact_candidate
+        ):
             return True
     return False
 
@@ -370,9 +373,6 @@ def _meaningful_memory_fragments(memory_body: str) -> tuple[str, ...]:
         if len(sentence) >= 16:
             fragments.add(sentence)
     words = normalized.split()
-    for word in words:
-        if _has_enough_word_signal(word):
-            fragments.add(word)
     for size in range(2, min(5, len(words)) + 1):
         for index in range(0, len(words) - size + 1):
             fragment = " ".join(words[index : index + size])
@@ -388,12 +388,18 @@ def _meaningful_memory_fragments(memory_body: str) -> tuple[str, ...]:
 
 
 def _has_enough_fragment_signal(fragment: str) -> bool:
+    words = fragment.split()
+    if len(words) >= 3:
+        return len(fragment) >= 10 and len(set(fragment.replace(" ", ""))) >= 5
+    if len(words) == 2:
+        sensitive_words = {"secret", "token", "password", "key"}
+        return (
+            len(fragment) >= 10
+            and len(set(fragment.replace(" ", ""))) >= 5
+            and (any(word in sensitive_words for word in words) or max(len(word) for word in words) >= 8)
+        )
     compact = fragment.replace(" ", "")
     return len(fragment) >= 7 and len(set(compact)) >= 5
-
-
-def _has_enough_word_signal(word: str) -> bool:
-    return len(word) >= 5 and len(set(word)) >= 4
 
 
 def _has_enough_compact_fragment_signal(fragment: str) -> bool:

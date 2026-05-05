@@ -63,6 +63,7 @@ def run_fixture_dry_run(
     memory_references = _memory_references(fixture)
     truncation_notices = _truncation_notices(fixture)
     classified = _classify_raw_outputs(fixture, selected_reviewers=selected_reviewers)
+    _validate_finding_fingerprints(classified["findings"])
     local_verdict = _local_verdict(
         findings=classified["findings"],
         clarification_requests=classified["clarification_requests"],
@@ -279,6 +280,12 @@ def _classify_raw_outputs(
         "suggested_replies": tuple(suggested_replies),
         "suppressed_outputs": tuple(suppressed_outputs),
     }
+
+
+def _validate_finding_fingerprints(findings: tuple[ClassifiedFinding, ...]) -> None:
+    for finding in findings:
+        if redact_for_error(finding.fingerprint) != finding.fingerprint:
+            raise RunnerError("postable_finding.fingerprint requires a non-secret stable identity")
 
 
 def _classified_finding(

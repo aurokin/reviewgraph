@@ -242,7 +242,32 @@ def test_secret_like_candidate_fingerprint_fails_closed(tmp_path: Path, capsys: 
     assert main(["--fixture-pr", str(fixture_path)]) == 2
 
     stderr = capsys.readouterr().err
-    assert "item fingerprints require redaction" in stderr
+    assert "postable_finding.fingerprint requires a non-secret stable identity" in stderr
+    assert "ghp_" not in stderr
+    assert "abcdefghijklmnopqrstuvwxyz" not in stderr
+
+
+def test_secret_like_fingerprint_with_clarification_fails_closed(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fixture_path = tmp_path / "secret-fingerprint-with-clarification.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["items"][0]["fingerprint"] = "ghp_abcdefghijklmnopqrstuvwxyz123456"
+    fixture["raw_reviewer_outputs"][0]["items"].append(
+        {
+            "type": "clarification_request",
+            "id": "clarify-intent",
+            "question": "Is this behavior intentional?",
+            "why_it_matters": "The mergeability decision depends on product intent.",
+        }
+    )
+    fixture_path.write_text(json.dumps(fixture))
+
+    assert main(["--fixture-pr", str(fixture_path)]) == 2
+
+    stderr = capsys.readouterr().err
+    assert "postable_finding.fingerprint requires a non-secret stable identity" in stderr
     assert "ghp_" not in stderr
     assert "abcdefghijklmnopqrstuvwxyz" not in stderr
 

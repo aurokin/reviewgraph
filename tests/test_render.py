@@ -597,7 +597,7 @@ def test_short_partial_untrusted_memory_fragment_cannot_enter_candidate_payload_
         )
 
 
-def test_single_token_untrusted_memory_fragment_cannot_enter_candidate_payload_preview() -> None:
+def test_single_token_untrusted_memory_fragment_does_not_block_candidate_payload_preview() -> None:
     untrusted_body = "The customer mentioned codename orion during the thread."
     findings = [finding(body="Copied: orion")]
     plan = build_posting_plan(findings=findings)
@@ -607,23 +607,53 @@ def test_single_token_untrusted_memory_fragment_cannot_enter_candidate_payload_p
         findings=findings,
     )
 
-    with pytest.raises(RenderError, match="untrusted memory"):
-        render_review(
-            review_target=target(),
-            selected_reviewers=selected_reviewers(),
-            findings=findings,
-            posting_plan=plan,
-            candidate_payload=payload,
-            memory_references=[
-                MemoryReference(
-                    "mem-token",
-                    "untrusted",
-                    "unresolved",
-                    "issue_comment",
-                    untrusted_body,
-                )
-            ],
-        )
+    rendered = render_review(
+        review_target=target(),
+        selected_reviewers=selected_reviewers(),
+        findings=findings,
+        posting_plan=plan,
+        candidate_payload=payload,
+        memory_references=[
+            MemoryReference(
+                "mem-token",
+                "untrusted",
+                "unresolved",
+                "issue_comment",
+                untrusted_body,
+            )
+        ],
+    )
+
+    assert rendered.json_data["candidate_payload_preview"]["body"] == payload.body
+
+
+def test_common_domain_words_in_untrusted_memory_do_not_block_candidate_payload_preview() -> None:
+    findings = [finding(title="Cache issue", body="The cache returns stale data on miss.")]
+    plan = build_posting_plan(findings=findings)
+    payload = build_candidate_issue_comment_payload(
+        review_target=target(),
+        posting_plan=plan,
+        findings=findings,
+    )
+
+    rendered = render_review(
+        review_target=target(),
+        selected_reviewers=selected_reviewers(),
+        findings=findings,
+        posting_plan=plan,
+        candidate_payload=payload,
+        memory_references=[
+            MemoryReference(
+                "mem-cache",
+                "untrusted",
+                "unresolved",
+                "issue_comment",
+                "I saw a cache issue in this PR.",
+            )
+        ],
+    )
+
+    assert rendered.json_data["candidate_payload_preview"]["body"] == payload.body
 
 
 def test_untrusted_memory_fragment_in_title_cannot_enter_candidate_payload_preview() -> None:
@@ -747,8 +777,6 @@ def test_underscore_normalized_untrusted_memory_cannot_enter_candidate_payload_p
     (
         ("The unresolved thread referenced SECRET_TOKEN.", "Copied: SECRETTOKEN"),
         ("The unresolved thread referenced codename-orion.", "Copied: codenameorion"),
-        ("The unresolved thread said Ship-it now.", "Copied: Shipit"),
-        ("The unresolved thread said O-R-I-O-N.", "Copied: orion"),
     ),
 )
 def test_compacted_delimiter_untrusted_memory_cannot_enter_candidate_payload_preview(
@@ -780,6 +808,45 @@ def test_compacted_delimiter_untrusted_memory_cannot_enter_candidate_payload_pre
                 )
             ],
         )
+
+
+@pytest.mark.parametrize(
+    ("untrusted_body", "finding_body"),
+    (
+        ("The unresolved thread said Ship-it now.", "Copied: Shipit"),
+        ("The unresolved thread said O-R-I-O-N.", "Copied: orion"),
+    ),
+)
+def test_low_signal_compacted_untrusted_memory_fragments_do_not_block_candidate_payload_preview(
+    untrusted_body: str,
+    finding_body: str,
+) -> None:
+    findings = [finding(body=finding_body)]
+    plan = build_posting_plan(findings=findings)
+    payload = build_candidate_issue_comment_payload(
+        review_target=target(),
+        posting_plan=plan,
+        findings=findings,
+    )
+
+    rendered = render_review(
+        review_target=target(),
+        selected_reviewers=selected_reviewers(),
+        findings=findings,
+        posting_plan=plan,
+        candidate_payload=payload,
+        memory_references=[
+            MemoryReference(
+                "mem-compact-low-signal",
+                "untrusted",
+                "unresolved",
+                "issue_comment",
+                untrusted_body,
+            )
+        ],
+    )
+
+    assert rendered.json_data["candidate_payload_preview"]["body"] == payload.body
 
 
 def test_render_json_is_deterministic_and_primitive_serializable() -> None:
