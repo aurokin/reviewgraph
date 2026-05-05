@@ -159,13 +159,16 @@ def _memory_references(fixture: FixturePR) -> tuple[MemoryReference, ...]:
     memory_references: list[MemoryReference] = []
     for item in fixture.memory:
         _require_fields(item, ("id", "trust_label", "resolved_status", "source_type"), "memory")
+        body = item.get("body")
+        if body is not None and not isinstance(body, str):
+            raise RunnerError("memory.body must be a string or null")
         memory_references.append(
             MemoryReference(
                 id=str(item["id"]),
                 trust_label=str(item["trust_label"]),
                 resolved_status=str(item["resolved_status"]),
                 source_type=str(item["source_type"]),
-                body=item.get("body"),
+                body=body,
             )
         )
     return tuple(memory_references)

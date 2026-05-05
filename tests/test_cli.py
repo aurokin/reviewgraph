@@ -274,6 +274,19 @@ def test_malformed_nested_fixture_field_returns_nonzero(
     assert expected_stderr in capsys.readouterr().err
 
 
+def test_invalid_memory_body_type_returns_nonzero(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fixture_path = tmp_path / "bad-memory-body.json"
+    fixture = _basic_fixture()
+    fixture["memory"][0]["body"] = ["not", "a", "string"]
+    fixture_path.write_text(json.dumps(fixture))
+
+    assert main(["--fixture-pr", str(fixture_path)]) == 2
+    assert "memory.body must be a string or null" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize(
     ("fixture_mutation", "expected_stderr"),
     (
