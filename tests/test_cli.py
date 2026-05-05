@@ -505,6 +505,9 @@ def test_invalid_reviewer_config_returns_nonzero(tmp_path: Path, capsys: pytest.
         ),
         (lambda agent: agent.update({"verdict_power": "approve"}), "unsupported verdict_power"),
         (lambda agent: agent.update({"capabilities": ["github_write"]}), "unsupported capabilities"),
+        (lambda agent: agent.update({"tools": ["github_write"]}), "unsupported tools"),
+        (lambda agent: agent.update({"tools": ["env"]}), "unsupported tools"),
+        (lambda agent: agent.update({"tools": ["llm"]}), "unsupported tools"),
         (lambda agent: agent.update({"unknown": True}), "unsupported fields"),
     ),
 )

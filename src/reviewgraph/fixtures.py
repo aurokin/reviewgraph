@@ -237,7 +237,8 @@ def _validate_reviewer_agent(name: str, agent: dict[str, Any]) -> None:
     if not all(isinstance(capability, str) and capability in ALLOWED_CAPABILITIES for capability in capabilities):
         raise FixtureError(f"reviewer config agent {name} has unsupported capabilities")
     _validate_optional_str(agent, "model", name)
-    _validate_optional_list_of_str(agent, "tools", name)
+    if "tools" in agent:
+        raise FixtureError(f"reviewer config agent {name} has unsupported tools")
     if "context" in agent and not isinstance(agent["context"], (str, dict)):
         raise FixtureError(f"reviewer config agent {name}.context must be a string or object")
 
