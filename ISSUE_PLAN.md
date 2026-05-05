@@ -1,12 +1,11 @@
 # ISSUE PLAN: AUR-229 Keep PRDs Architecture And Plan In Sync
 
-Historical execution artifact for this issue. Linear remains the durable source for issue status, blockers, and handoff details; if this file conflicts with Linear, Linear wins.
+Historical execution artifact for this issue. Linear remains the durable source for issue status, blockers, and handoff details; if this file conflicts with Linear, Linear wins. Fetch current state from Linear before acting on this plan.
 
-## Linear issue
+## Linear issue snapshot
 
 - Issue: `AUR-229` / `RG-040: Keep PRDs Architecture And Plan In Sync`
 - Milestone: `PRD 0001: North Star`
-- Current status: `In Progress`
 
 ## Acceptance criteria mapping
 
@@ -83,7 +82,7 @@ Historical execution artifact for this issue. Linear remains the durable source 
 - Do not mirror the full Linear backlog into the repo.
 - Do not close `AUR-253` until after `AUR-229` is done and the milestone audit passes.
 
-## Review plan
+## Review approach
 
 - Get fresh subagent plan review before implementation.
 - After implementation, move `AUR-229` to `In Review`, run fresh code/docs review subagents, fix material issues, and commit after each review cycle.

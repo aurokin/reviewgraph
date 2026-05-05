@@ -14,6 +14,8 @@ Linear is the durable source for implementation issues, milestone sequencing, is
 
 Docs should not duplicate the full Linear issue list. They should explain the invariant, proof strategy, and narrow behavior contract that implementation issues reference.
 
+If an active execution workflow requires committed planning artifacts such as `MILESTONE_PLAN.md` or `ISSUE_PLAN.md`, those files are historical execution artifacts only. They must say Linear wins for current status, blockers, issue relationships, milestone order, and handoff details.
+
 ## Consequences
 
 - Implementation agents should start from Linear for concrete tasks.

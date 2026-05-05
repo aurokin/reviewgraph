@@ -1,8 +1,8 @@
 # MILESTONE PLAN: PRD 0001 North Star
 
-Historical execution artifact for this milestone. Linear remains the durable source for issue status, milestone order, blockers, and handoff details; if this file conflicts with Linear, Linear wins.
+Historical execution artifact for this milestone. Linear remains the durable source for issue status, milestone order, blockers, and handoff details; if this file conflicts with Linear, Linear wins. Fetch current milestone state from Linear before acting on this plan.
 
-## Linear scope
+## Linear scope snapshot
 
 - Milestone: `PRD 0001: North Star`
 - Implementation issue: `AUR-229` / `RG-040: Keep PRDs Architecture And Plan In Sync`
@@ -12,7 +12,7 @@ Historical execution artifact for this milestone. Linear remains the durable sou
 
 PRD 0001 is not runtime implementation. It makes the repository safe for later implementation agents by ensuring the durable documentation contract is easy to find, aligned with the PRD set, and explicit about where process guidance belongs.
 
-## Current evidence
+## Pre-implementation evidence snapshot
 
 - `docs/README.md` already points to product, architecture, PRDs, decisions, harness engineering, and the implementation plan.
 - `docs/plans/implementation-plan.md` already states the MVP constraints and says Linear is the executable backlog.
