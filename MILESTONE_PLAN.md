@@ -16,18 +16,19 @@ PRD 0001 is not runtime implementation. It makes the repository safe for later i
 - `docs/plans/implementation-plan.md` already states the MVP constraints and says Linear is the executable backlog.
 - `AGENTS.md` already instructs agents to update the narrowest durable doc when behavior changes.
 - `docs/decisions/README.md` and `docs/decisions/0004-linear-backlog-docs-are-contracts.md` already make the source-of-truth boundary durable.
-- Missing or weak evidence: there is no documented command or script that checks the Linear backlog queue is dependency-ordered.
+- Missing evidence: there is no documented command or script that checks a Linear backlog queue export is dependency-ordered with auditable output.
 
 ## Plan
 
 1. Review `AUR-229`, `AUR-253`, PRD 0001, and the current repository docs before making changes.
-2. Add a lightweight repository validation command that proves the durable documentation links exist and records the Linear backlog dependency-order check as an explicit external verification step.
+2. Add a lightweight repository validation script that proves the durable documentation links exist and checks a Linear backlog queue export for dependency-order violations with auditable output.
 3. Update the narrowest docs so implementation agents can find the validation command without reading the whole repo.
-4. Create `ISSUE_PLAN.md` for `AUR-229`, get a fresh plan review, then implement the smallest doc/check changes needed to satisfy the issue.
+4. Create `ISSUE_PLAN.md` for `AUR-229`, get a fresh plan review, then implement the smallest doc/check changes needed to satisfy the issue. `ISSUE_PLAN.md` is a per-issue historical plan artifact and does not replace Linear.
 5. Run the documented validation command and any relevant markdown/link checks available locally.
-6. Use fresh subagents for code/docs review, fix until no material issues remain, then move `AUR-229` to `Done`.
-7. Close the milestone gate `AUR-253` only after an audit maps every `AUR-229` acceptance criterion to concrete repository evidence.
-8. Perform the milestone-end documentation audit required by the thread goal. If docs need refactoring after the issue is complete, do it in separate commits before considering PRD 0001 complete.
+6. Move `AUR-229` to `In Review` when implementation is ready for review. Use fresh subagents for code/docs review, fix until no material issues remain, then move `AUR-229` to `Done`.
+7. Before touching `AUR-253`, re-fetch the current PRD 0001 milestone membership from Linear and verify all non-canceled, non-gate implementation issues in the milestone are complete.
+8. Perform the milestone-end documentation audit required by the thread goal before closing `AUR-253`. If docs need refactoring after the issue is complete, do it in separate commits before considering PRD 0001 complete.
+9. Close the milestone gate `AUR-253` only after the membership re-check, `AUR-229` audit, and milestone-end documentation audit all pass.
 
 ## Non-goals
 
@@ -42,6 +43,7 @@ The milestone is complete when:
 
 - `AUR-229` is done.
 - `AUR-253` is done.
-- The repo contains a documented validation command or script covering documentation links and the backlog dependency-order verification expectation.
+- The repo contains a documented validation command or script covering documentation links and Linear backlog dependency-order verification from an explicit export/input format.
+- The backlog-order check reports which issues and dependency edges were evaluated and fails on missing references, duplicate issue IDs, cycles, or dependency inversions.
 - `git diff --check` passes.
 - The milestone-end documentation audit finds no missing PRD 0001 contract details.
