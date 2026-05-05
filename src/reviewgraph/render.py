@@ -269,7 +269,7 @@ def _candidate_payload_preview(
         "visible_body_hash": candidate_payload.visible_body_hash,
         "full_body_hash": candidate_payload.full_body_hash,
         "findings_hash": candidate_payload.findings_hash,
-        "item_fingerprints": list(candidate_payload.item_fingerprints),
+        "item_fingerprints": [context.redact(fingerprint) for fingerprint in candidate_payload.item_fingerprints],
         "redaction_status": {
             "redacted": candidate_payload.redaction_status.redacted,
             "replacement_count": candidate_payload.redaction_status.replacement_count,

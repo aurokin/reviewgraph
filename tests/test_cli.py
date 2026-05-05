@@ -233,6 +233,20 @@ def test_renderer_outputs_redact_secret_like_target_and_path_metadata(tmp_path: 
     assert "[REDACTED]" in serialized
 
 
+def test_renderer_candidate_preview_redacts_secret_like_fingerprints(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "secret-fingerprint.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["items"][0]["fingerprint"] = "ghp_abcdefghijklmnopqrstuvwxyz123456"
+    fixture_path.write_text(json.dumps(fixture))
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path))
+
+    serialized = json.dumps(result.rendered.json_data) + json.dumps(result.json_data)
+    assert "ghp_" not in serialized
+    assert "abcdefghijklmnopqrstuvwxyz" not in serialized
+    assert "[REDACTED]" in serialized
+
+
 def test_fixture_run_redacts_standalone_underscore_api_key(tmp_path: Path) -> None:
     fixture_path = tmp_path / "standalone-secret.json"
     fixture = _basic_fixture()
