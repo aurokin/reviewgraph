@@ -345,7 +345,7 @@ def _memory_body_overlaps_candidate(memory_body: str | None, candidate_body: str
         compact_fragment = fragment.replace(" ", "")
         if (
             " " in fragment
-            and _has_enough_fragment_signal(fragment)
+            and (_has_enough_fragment_signal(fragment) or _looks_identifier_like(compact_fragment))
             and _has_enough_compact_fragment_signal(compact_fragment)
             and compact_fragment in compact_candidate
         ):
@@ -397,7 +397,7 @@ def _has_enough_fragment_signal(fragment: str) -> bool:
     if len(words) >= 3:
         return len(fragment) >= 10 and len(set(fragment.replace(" ", ""))) >= 5
     if len(words) == 2:
-        sensitive_words = {"secret", "token", "password", "key"}
+        sensitive_words = {"account", "codename", "identifier", "key", "password", "secret", "ticket", "token"}
         return (
             len(fragment) >= 10
             and len(set(fragment.replace(" ", ""))) >= 5
@@ -423,7 +423,7 @@ def _looks_identifier_like(word: str) -> bool:
 
 
 def _has_enough_compact_fragment_signal(fragment: str) -> bool:
-    return len(fragment) >= 5 and len(set(fragment)) >= 4
+    return _looks_identifier_like(fragment) or (len(fragment) >= 8 and len(set(fragment)) >= 5)
 
 
 def _normalize_memory_text(value: str) -> str:
@@ -449,9 +449,7 @@ _COMMON_MEMORY_WORDS = {
 _HIGH_SIGNAL_CONTEXT_WORDS = {
     "account",
     "codename",
-    "customer",
     "identifier",
-    "issue",
     "key",
     "secret",
     "ticket",
