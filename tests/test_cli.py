@@ -233,18 +233,58 @@ def test_renderer_outputs_redact_secret_like_target_and_path_metadata(tmp_path: 
     assert "[REDACTED]" in serialized
 
 
-def test_renderer_candidate_preview_redacts_secret_like_fingerprints(tmp_path: Path) -> None:
+def test_secret_like_candidate_fingerprint_fails_closed(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     fixture_path = tmp_path / "secret-fingerprint.json"
     fixture = _basic_fixture()
     fixture["raw_reviewer_outputs"][0]["items"][0]["fingerprint"] = "ghp_abcdefghijklmnopqrstuvwxyz123456"
     fixture_path.write_text(json.dumps(fixture))
 
-    result = run_fixture_dry_run(fixture_ref=str(fixture_path))
+    assert main(["--fixture-pr", str(fixture_path)]) == 2
 
-    serialized = json.dumps(result.rendered.json_data) + json.dumps(result.json_data)
-    assert "ghp_" not in serialized
-    assert "abcdefghijklmnopqrstuvwxyz" not in serialized
-    assert "[REDACTED]" in serialized
+    stderr = capsys.readouterr().err
+    assert "item fingerprints require redaction" in stderr
+    assert "ghp_" not in stderr
+    assert "abcdefghijklmnopqrstuvwxyz" not in stderr
+
+
+def test_suggested_reply_fixture_is_local_only(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "suggested-reply.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["items"] = [
+        {
+            "type": "suggested_reply",
+            "id": "reply-cache-question",
+            "source_comment_id": "comment-1",
+            "proposed_body": "Could you confirm the cache miss behavior?",
+        }
+    ]
+    fixture_path.write_text(json.dumps(fixture))
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path))
+    review = result.json_data["review"]
+
+    assert result.json_data["local_verdict"] == "no_findings"
+    assert result.json_data["post_enabled"] is False
+    assert result.json_data["side_effects"] == {"writer_called": False, "writer_call_count": 0}
+    assert review["candidate_payload_preview"] is None
+    assert review["classified_output"]["suggested_replies"] == [
+        {
+            "id": "reply-cache-question",
+            "classification": "suggested_reply",
+            "source_comment_id": "comment-1",
+            "proposed_body": "Could you confirm the cache miss behavior?",
+        }
+    ]
+    assert review["posting_plan"]["items"] == [
+        {
+            "id": "reply-cache-question",
+            "source_classification": "suggested_reply",
+            "destination": "suggested_reply",
+            "public_payload_eligible": False,
+            "fingerprint": None,
+            "body": "Could you confirm the cache miss behavior?",
+        }
+    ]
 
 
 def test_fixture_run_redacts_standalone_underscore_api_key(tmp_path: Path) -> None:

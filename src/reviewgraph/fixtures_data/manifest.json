@@ -12,7 +12,7 @@
       "id": "basic-reviewers",
       "path": "reviewer-configs/basic-reviewers.json",
       "behavior": "minimal always-on initial_triage reviewer config",
-      "consumed_by": ["tests/test_cli.py"]
+      "consumed_by": ["tests/test_cli.py", "tests/test_tracer_fixture_run.py"]
     }
   ]
 }

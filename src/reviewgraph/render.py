@@ -261,6 +261,9 @@ def _candidate_payload_preview(
             _public_finding_text(posting_plan, findings),
         ):
             raise RenderError(f"candidate payload contains untrusted memory body: {memory.id}")
+    item_fingerprints = [context.redact(fingerprint) for fingerprint in candidate_payload.item_fingerprints]
+    if item_fingerprints != list(candidate_payload.item_fingerprints):
+        raise RenderError("candidate payload item fingerprints require redaction after hash binding")
     context.absorb_candidate_payload_status(candidate_payload.redaction_status)
     return {
         "artifact_kind": candidate_payload.artifact_kind.value,
@@ -269,7 +272,7 @@ def _candidate_payload_preview(
         "visible_body_hash": candidate_payload.visible_body_hash,
         "full_body_hash": candidate_payload.full_body_hash,
         "findings_hash": candidate_payload.findings_hash,
-        "item_fingerprints": [context.redact(fingerprint) for fingerprint in candidate_payload.item_fingerprints],
+        "item_fingerprints": item_fingerprints,
         "redaction_status": {
             "redacted": candidate_payload.redaction_status.redacted,
             "replacement_count": candidate_payload.redaction_status.replacement_count,

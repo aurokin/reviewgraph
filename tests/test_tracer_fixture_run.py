@@ -236,7 +236,9 @@ def _assert_secret_like_fixture_content_absent(result) -> None:
 def _assert_manifest_consumes_tracer_harness() -> None:
     manifest = load_manifest()
     basic_pr = next(entry for entry in manifest["fixtures"] if entry["id"] == "basic-pr")
+    basic_reviewers = next(entry for entry in manifest["reviewer_configs"] if entry["id"] == "basic-reviewers")
     assert set(basic_pr["consumed_by"]) >= {"tests/test_cli.py", "tests/test_tracer_fixture_run.py"}
+    assert set(basic_reviewers["consumed_by"]) >= {"tests/test_cli.py", "tests/test_tracer_fixture_run.py"}
 
 
 def _stable_json(data: dict[str, object]) -> str:

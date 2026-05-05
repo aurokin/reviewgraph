@@ -22,6 +22,7 @@ from reviewgraph.models import (
     ReviewVerdict,
     SelectedReviewer,
     Severity,
+    SuggestedReply,
     SuppressedOutput,
     TruncationNotice,
 )
@@ -70,6 +71,7 @@ def run_fixture_dry_run(
     posting_plan = build_posting_plan(
         findings=classified["findings"],
         local_notes=classified["local_notes"],
+        suggested_replies=classified["suggested_replies"],
         clarification_requests=classified["clarification_requests"],
         suppressed_outputs=classified["suppressed_outputs"],
     )
@@ -88,6 +90,7 @@ def run_fixture_dry_run(
         findings=classified["findings"],
         local_notes=classified["local_notes"],
         clarification_requests=classified["clarification_requests"],
+        suggested_replies=classified["suggested_replies"],
         suppressed_outputs=classified["suppressed_outputs"],
         local_verdict=local_verdict,
         posting_plan=posting_plan,
@@ -202,6 +205,7 @@ def _classify_raw_outputs(
     findings: list[ClassifiedFinding] = []
     local_notes: list[LocalNote] = []
     clarification_requests: list[ClarificationRequest] = []
+    suggested_replies: list[SuggestedReply] = []
     suppressed_outputs: list[SuppressedOutput] = []
     selected_keys = {(reviewer.name, reviewer.stage) for reviewer in selected_reviewers}
     seen_keys: set[tuple[str, str]] = set()
@@ -245,6 +249,15 @@ def _classify_raw_outputs(
                         why_it_matters=_required_str(item, "why_it_matters", "clarification_request"),
                     )
                 )
+            elif item_type == "suggested_reply":
+                _require_fields(item, ("id", "source_comment_id", "proposed_body"), "suggested_reply")
+                suggested_replies.append(
+                    SuggestedReply(
+                        id=_required_str(item, "id", "suggested_reply"),
+                        source_comment_id=_required_str(item, "source_comment_id", "suggested_reply"),
+                        proposed_body=_required_str(item, "proposed_body", "suggested_reply"),
+                    )
+                )
             elif item_type == "suppressed":
                 _require_fields(item, ("id", "reason"), "suppressed")
                 suppressed_outputs.append(
@@ -263,6 +276,7 @@ def _classify_raw_outputs(
         "findings": tuple(findings),
         "local_notes": tuple(local_notes),
         "clarification_requests": tuple(clarification_requests),
+        "suggested_replies": tuple(suggested_replies),
         "suppressed_outputs": tuple(suppressed_outputs),
     }
 
