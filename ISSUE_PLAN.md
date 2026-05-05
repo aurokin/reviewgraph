@@ -59,24 +59,33 @@ The harness should assert these stable facts:
 - Raw fake output to classified output:
   - fixture raw output contains `finding-cache-stale`, `note-review-size`, and `suppressed-generic-tests`
   - rendered JSON classifies `finding-cache-stale` as `postable_finding`
-  - rendered JSON includes one local note and suppressed count `1`
+  - rendered JSON exact selected finding fields match fixture expectations: `id`, `source_reviewer`, `source_stage`, `classification`, `priority`, `severity`, `confidence`, `title`, redacted `body`, `evidence`, `path`, `line`, and `fingerprint`
+  - rendered JSON exact selected local-note fields match fixture expectations: `id`, `classification`, `title`, `body`, and `evidence`
+  - rendered JSON exact selected suppressed-output fields match fixture expectations, and `suppressed_count == 1`
+  - rendered JSON includes empty `clarification_requests` and `suggested_replies` arrays so the durable output shape distinguishes these categories even when the baseline has none
   - postable finding path/line is `src/cache.py:12` and already proves changed-line anchoring through the runner
 - Memory/context budget:
   - memory IDs are `mem-trusted` and `mem-untrusted`
   - untrusted memory body is not rendered into public/body JSON
   - truncation includes `resource="patch"` and `truncated=false`
+- Review target metadata:
+  - exact target metadata is asserted in `review.review_target`
+  - exact target metadata is asserted again in `candidate_payload_preview.review_target`
+  - expected target is `owner_repo="acme/widgets"`, `pr_number=42`, `base_sha="base123"`, `head_sha="head456"`, `merge_base_sha="merge789"`, and `diff_basis="merge_base"`
 - Posting plan and candidate preview:
-  - `finding-cache-stale` is a public `review_body_item`
-  - `note-review-size` and `suppressed-generic-tests` are local-only
+  - exact selected posting-plan item fields are asserted for `finding-cache-stale`, `note-review-size`, and `suppressed-generic-tests`
   - candidate preview kind is `issue_comment`
-  - candidate preview has stable hash-shaped `visible_body_hash`, `full_body_hash`, and `findings_hash`
-  - candidate preview includes the expected finding fingerprint after renderer redaction policy is applied
+  - candidate preview body contains the expected fixture finding text after redaction
+  - candidate preview `visible_body_hash`, `full_body_hash`, and `findings_hash` are recomputed from the rendered body/fingerprint using posting helpers and must match exactly
+  - candidate preview `item_fingerprints == ["fixture-basic-cache-stale"]`
 - Markdown:
   - contains `# ReviewGraph Dry Run`
-  - contains `## Target`, `## Selected Reviewers`, `## Postable Findings`, `## Local Notes`, `## Suppressed Outputs`, `## Memory`, `## Truncation`, `## Posting Plan`, and `## Candidate Payload Preview`
+  - contains `## Target`, `## Selected Reviewers`, `## Postable Findings`, `## Local Notes`, `## Clarification Requests`, `## Suggested Replies`, `## Suppressed Outputs`, `## Memory`, `## Truncation`, `## Posting Plan`, and `## Candidate Payload Preview`
   - contains selected stable snippets such as `Cache miss returns stale data`, `Review size`, `suppressed-generic-tests`, and `issue_comment`
 - Redaction:
   - serialized markdown plus top-level and renderer JSON contains no `sk_live`, `ghp_`, `ghs_`, `SECRET_TOKEN`, or private token fragments from the fixture.
+- Fixture registry:
+  - the `basic-pr` manifest entry lists both `tests/test_cli.py` and `tests/test_tracer_fixture_run.py` in `consumed_by`.
 
 ## Implementation plan
 
@@ -88,13 +97,14 @@ The harness should assert these stable facts:
 3. Add `test_basic_fixture_tracer_golden_run()`:
    - load raw fixture via `load_fixture_pr("basic-pr")`;
    - run `run_fixture_dry_run(fixture_ref="basic-pr", writer_sentinel=RaisingWriter())`;
-   - compare raw fake output IDs/types to classified/rendered outputs;
-   - verify envelope, trace, reviewers, memory, truncation, posting plan, candidate preview, markdown snippets, and side-effect proof.
-4. Add `test_basic_fixture_tracer_json_is_stable()` if not redundant:
+   - compare raw fake output IDs/types and exact selected machine fields to classified/rendered outputs;
+   - verify exact target metadata, envelope, trace, reviewers, memory, truncation, posting plan, recomputed candidate preview hashes/body/fingerprints, empty output categories, markdown snippets, and side-effect proof.
+4. Update `src/reviewgraph/fixtures_data/manifest.json` so `basic-pr.consumed_by` includes `tests/test_tracer_fixture_run.py`.
+5. Add `test_basic_fixture_tracer_json_is_stable()` if not redundant:
    - run the fixture twice;
    - compare `json.dumps(result.json_data, sort_keys=True, indent=2)` across runs.
-5. Keep existing AUR-210 malformed-input tests in `tests/test_cli.py`; do not duplicate every CLI validation case in this tracer harness.
-6. Run validation:
+6. Keep existing AUR-210 malformed-input tests in `tests/test_cli.py`; do not duplicate every CLI validation case in this tracer harness.
+7. Run validation:
    - `python -m pytest tests/test_tracer_fixture_run.py`
    - `python -m pytest`
    - `python -m py_compile src/reviewgraph/*.py`
