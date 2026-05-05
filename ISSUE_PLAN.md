@@ -1,88 +1,87 @@
-# ISSUE PLAN: AUR-229 Keep PRDs Architecture And Plan In Sync
+# ISSUE PLAN: AUR-208 Build Posting Plan For Dry Run
 
 Historical execution artifact for this issue. Linear remains the durable source for issue status, blockers, and handoff details; if this file conflicts with Linear, Linear wins. Fetch current state from Linear before acting on this plan.
 
 ## Linear issue snapshot
 
-- Issue: `AUR-229` / `RG-040: Keep PRDs Architecture And Plan In Sync`
-- Milestone: `PRD 0001: North Star`
+- Issue: `AUR-208` / `RG-019: Build Posting Plan For Dry Run`
+- Milestone: `PRD 0002: MVP Tracer Bullet`
+- Status at planning: `In Progress`
 
 ## Acceptance criteria mapping
 
-1. Docs index points to PRDs and architecture docs.
-   - Evidence target: `docs/README.md` read order and task index.
-   - Validation target: script verifies linked docs exist.
-2. Implementation plan references the same MVP constraints as PRDs.
-   - Evidence target: `docs/plans/implementation-plan.md` goal/posture plus PRD index dependency shape.
-   - Validation target: script checks implementation plan mentions core MVP constraints: dry-run default, item-level approval, top-level issue comments, no formal PR review/request-changes writes in MVP, target freshness, actor/permission proof, redaction, idempotency markers, local verdict separation, structured findings, fake fixtures/adapters, live opt-in, side effects last, and Linear as executable backlog.
-3. `AGENTS.md` or equivalent says behavior-changing implementation PRs update the narrowest durable doc.
-   - Evidence target: `AGENTS.md` documentation update section.
-   - Validation target: script checks the durable-doc update rule exists.
-4. `docs/decisions/` is linked from the docs index for durable side-effect tradeoffs.
-   - Evidence target: `docs/README.md` links `decisions/README.md`, and decisions include dry-run/source-of-truth records.
-   - Validation target: script checks decisions index exists and is linked.
-5. A documented command or script checks that the issue backlog queue is dependency-ordered.
-   - Evidence target: `scripts/check_docs.py` or equivalent, documented in `docs/implementation/README.md` and/or `docs/harnesses/harness-engineering.md`.
-   - Validation target: command accepts a Linear backlog export JSON, reports checked issues/edges, and fails on duplicate active issue IDs, missing references, cycles, or dependency inversions.
+1. Posting plan supports local only, top-level summary item, review body item, inline candidate, and suggested reply.
+   - Evidence target: typed destination enum/model and tests that assign each supported destination.
+2. MVP artifact kind is `issue_comment`.
+   - Evidence target: candidate payload model stores `artifact_kind="issue_comment"` and top-level PR comment target metadata.
+3. Formal PR review payloads are rejected.
+   - Evidence target: construction/validation rejects `pull_request_review`, `inline_comment`, `approve`, `request_changes`, or `COMMENT` review-event style payload kinds.
+4. Local notes and suggested replies are excluded from postable payload items.
+   - Evidence target: posting plan tests include findings, local notes, and suggested replies; only postable findings enter candidate public payload items.
+5. Candidate payload includes review target metadata and idempotency fingerprints.
+   - Evidence target: candidate payload includes owner/repo, PR number, base SHA, head SHA, merge-base SHA, diff basis, item fingerprints, and body hash/finding hash primitives.
+
+## Minimal foundation ownership
+
+This issue is the first runtime issue in a scaffold-only repo. It may add only the foundation needed by posting-plan tests:
+
+- `pyproject.toml` with package/test tooling and a runnable `python -m pytest` path.
+- `src/reviewgraph/__init__.py` and minimal modules for models, posting, redaction, and side-effect sentinel types.
+- `tests/` with focused posting tests and a placeholder/default test path if needed.
+- Minimal shared dataclasses/enums for review targets, classified findings, local notes, suggested replies, suppressed outputs, clarification requests, local verdict, redaction status, posting destinations, posting plan items, candidate issue-comment payload, and writer sentinel state.
+- A small redaction primitive used by candidate payload body construction so token-like text is not introduced into payload previews before `AUR-209`.
+- A no-op/sentinel writer port or state object that tests can assert remains uncalled in dry-run planning. This is not a GitHub writer adapter.
+
+Do not implement the graph shell, CLI, reviewer config loader, fake reviewer adapter, rich quality classifier, approval storage, marker reconciliation, live reads, live LLM, or real writer behavior in this issue.
 
 ## Implementation plan
 
-1. Add `scripts/check_docs.py` using only the Python standard library.
-2. Make the script validate explicit required docs-index links, not only link existence:
-   - `architecture/overview.md`
-   - `architecture/state-graph.md`
-   - `prds/README.md`
-   - `decisions/README.md`
-   - `harnesses/harness-engineering.md`
-   - `plans/implementation-plan.md`
-3. Make the script validate required MVP/doc-sync phrases from the implementation plan, `AGENTS.md`, decisions index, and docs index.
-4. Make the script optionally accept `--backlog-export PATH` and validate a canonical queue-shaped Linear export.
-   Canonical schema:
-   ```json
-   {
-     "source": "Linear",
-     "project": "ReviewGraph",
-     "milestone": "PRD 0001: North Star",
-     "exported_at": "2026-05-05T00:00:00Z",
-     "issues": [
-       {
-         "id": "AUR-229",
-         "title": "RG-040: Keep PRDs Architecture And Plan In Sync",
-         "status_type": "backlog",
-         "blocked_by": []
-       }
-     ]
-   }
-   ```
-   Rules:
-   - Ordered issues are taken from the JSON array order.
-   - Dependency edges are `blocked_by` only. Parent, related, duplicate, and canceled relationships are ignored unless represented as `blocked_by`.
-   - Issues whose `status_type` is `canceled` are filtered before dependency checks.
-   - Duplicate active issue IDs fail after canceled issues are filtered.
-   - Missing blockers, cycles, and blocker-after-dependent inversions fail.
-   - `source` must be `Linear` so hand-shaped generic JSON is not mistaken for canonical evidence.
-   - Output reports source, project, milestone, exported timestamp, checked issue count, edge count, skipped canceled count, and concise failing edges. Add a `--verbose` flag for full order if useful.
-5. Add small synthetic fixture exports under `docs/plans/fixtures/` so the command is executable in a fresh clone:
-   - valid order fixture.
-   - invalid duplicate or inversion fixture.
-   These fixtures must be labeled synthetic and non-authoritative; they are parser/checker examples, not the ReviewGraph backlog.
-6. Document the command in the narrowest docs:
-   - `docs/implementation/README.md` for implementation-agent usage.
-   - `docs/harnesses/harness-engineering.md` for proof strategy.
+1. Add the Python project skeleton with conservative dependencies. Prefer stdlib dataclasses/enums unless a dependency is already justified by tests.
+2. Define minimal model contracts in `src/reviewgraph/models.py`:
+   - `ReviewTarget`
+   - `ClassifiedFinding`
+   - `LocalNote`
+   - `SuggestedReply`
+   - `SuppressedOutput`
+   - `ClarificationRequest`
+   - `ReviewVerdict`
+   - `RedactionStatus`
+   - strict literal/enum values for severity, confidence, priority, classification, and artifact kind
+3. Add `src/reviewgraph/redaction.py` with deterministic token-like redaction for API keys, bearer/GitHub tokens, authorization headers, `.env` assignments, and private key blocks. Keep it small; broader live-LLM redaction coverage remains later scope.
+4. Add `src/reviewgraph/posting.py`:
+   - `PostingDestination`
+   - `PostingPlanItem`
+   - `PostingPlan`
+   - `CandidateIssueCommentPayload`
+   - `build_posting_plan(...)`
+   - `build_candidate_issue_comment_payload(...)`
+   - `validate_mvp_artifact_kind(...)`
+   - stable hash/fingerprint helpers
+5. Add `src/reviewgraph/side_effects.py` only if needed for a sentinel/no-op writer interface that records whether it was called. Keep real transport behavior absent.
+6. Add `tests/test_posting.py` covering:
+   - every destination enum value;
+   - candidate payload kind is `issue_comment`;
+   - invalid formal PR review/inline/request-changes/approve artifact kinds fail;
+   - local notes and suggested replies are excluded from public payload items;
+   - review target metadata and fingerprints are present;
+   - hashes are deterministic;
+   - token-like finding text is redacted before candidate body/hash creation;
+   - dry-run posting-plan construction does not call the sentinel writer.
 7. Run:
+   - `python -m pytest tests/test_posting.py`
+   - `python -m pytest`
    - `python scripts/check_docs.py`
-   - `python scripts/check_docs.py --backlog-export docs/plans/fixtures/linear-backlog-valid.example.json`
-   - `python scripts/check_docs.py --backlog-export docs/plans/fixtures/linear-backlog-invalid-duplicate.example.json` and verify it fails
    - `git diff --check`
 
 ## Out of scope
 
-- Do not query Linear live from the script in this slice.
-- Do not add runtime ReviewGraph implementation.
-- Do not mirror the full Linear backlog into the repo.
-- Do not close `AUR-253` until after `AUR-229` is done and the milestone audit passes.
+- No real GitHub writer adapter.
+- No approval model beyond payload/hash primitives needed by posting-plan metadata.
+- No full PR fixture schema, graph shell, CLI, reviewer config validation, fake reviewer adapter, or live integrations.
+- No formal PR review, inline comment, approval, or request-changes GitHub payload construction.
+- No semantic deduplication.
 
 ## Review approach
 
 - Get fresh subagent plan review before implementation.
-- After implementation, move `AUR-229` to `In Review`, run fresh code/docs review subagents, fix material issues, and commit after each review cycle.
+- After implementation, move `AUR-208` to `In Review`, run fresh code review subagents, fix material issues, and commit after each review cycle.
