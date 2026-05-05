@@ -4,7 +4,7 @@
       "id": "basic-pr",
       "path": "prs/basic-pr.json",
       "behavior": "fixture dry run with one postable finding, one local note, trusted and untrusted memory, redaction, and writer-unreachable proof",
-      "consumed_by": ["tests/test_cli.py"]
+      "consumed_by": ["tests/test_cli.py", "tests/test_tracer_fixture_run.py"]
     }
   ],
   "reviewer_configs": [

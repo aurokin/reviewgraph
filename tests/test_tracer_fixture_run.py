@@ -1,0 +1,243 @@
+import json
+
+from reviewgraph.fixtures import load_fixture_pr, load_manifest
+from reviewgraph.posting import findings_hash, full_body_hash, visible_body_hash
+from reviewgraph.runner import run_fixture_dry_run
+
+
+EXPECTED_TARGET = {
+    "owner_repo": "acme/widgets",
+    "pr_number": 42,
+    "base_sha": "base123",
+    "head_sha": "head456",
+    "merge_base_sha": "merge789",
+    "diff_basis": "merge_base",
+}
+
+EXPECTED_FINDING = {
+    "id": "finding-cache-stale",
+    "source_reviewer": "correctness",
+    "source_stage": "initial_triage",
+    "classification": "postable_finding",
+    "priority": 1,
+    "severity": "warning",
+    "confidence": "high",
+    "title": "Cache miss returns stale data",
+    "body": "The new branch returns stale data when the cache misses. api_key = [REDACTED]",
+    "evidence": "Changed line 12 returns the stale value.",
+    "path": "src/cache.py",
+    "line": 12,
+    "fingerprint": "fixture-basic-cache-stale",
+}
+
+EXPECTED_LOCAL_NOTE = {
+    "id": "note-review-size",
+    "classification": "local_note",
+    "title": "Review size",
+    "body": "Fixture is intentionally small for the first CLI slice.",
+    "evidence": "One changed file.",
+}
+
+EXPECTED_SUPPRESSED = {
+    "id": "suppressed-generic-tests",
+    "classification": "non_finding",
+    "reason": "Generic missing-test advice without a concrete changed behavior was suppressed.",
+}
+
+EXPECTED_TRACE = {
+    "active_stage_before": None,
+    "active_stage_after": "initial_triage",
+    "suspended_stage_before": None,
+    "suspended_stage_after": None,
+    "stage_queue_before": ["initial_triage", "specialized_review", "logic_review"],
+    "stage_queue_after": ["specialized_review", "logic_review"],
+    "transition_reason": "start_initial_triage",
+}
+
+EXPECTED_REVIEWER = {
+    "name": "correctness",
+    "stage": "initial_triage",
+    "reasons": ["initial_triage triggers.always=true"],
+}
+
+
+def test_basic_fixture_tracer_golden_run() -> None:
+    fixture = load_fixture_pr("basic-pr")
+    raw_items = fixture.raw_reviewer_outputs[0]["items"]
+
+    result = run_fixture_dry_run(fixture_ref="basic-pr", writer_sentinel=RaisingWriter())
+    data = result.json_data
+    review = data["review"]
+    classified = review["classified_output"]
+
+    assert result.writer_call_count == 0
+    assert data["run_mode"] == "dry_run"
+    assert data["post_enabled"] is True
+    assert data["fixture_id"] == "basic-pr"
+    assert data["fixture_ref"] == "fixture:basic-pr"
+    assert data["local_verdict"] == "comment"
+    assert data["side_effects"] == {"writer_called": False, "writer_call_count": 0}
+    assert data["graph_trace"] == [EXPECTED_TRACE]
+    assert data["selected_reviewers"] == [EXPECTED_REVIEWER]
+    assert review["selected_reviewers"] == [EXPECTED_REVIEWER]
+
+    assert [item["id"] for item in raw_items] == [
+        "finding-cache-stale",
+        "note-review-size",
+        "suppressed-generic-tests",
+    ]
+    assert [item["type"] for item in raw_items] == [
+        "postable_finding",
+        "local_note",
+        "suppressed",
+    ]
+    assert classified["postable_findings"] == [EXPECTED_FINDING]
+    assert classified["local_notes"] == [EXPECTED_LOCAL_NOTE]
+    assert classified["suppressed"] == [EXPECTED_SUPPRESSED]
+    assert classified["suppressed_count"] == 1
+    assert classified["clarification_requests"] == []
+    assert classified["suggested_replies"] == []
+
+    assert review["review_target"] == EXPECTED_TARGET
+    assert review["local_verdict"] == "comment"
+    assert review["memory"] == [
+        {
+            "id": "mem-trusted",
+            "trust_label": "trusted",
+            "resolved_status": "resolved",
+            "source_type": "review_thread",
+            "body": "Trusted reviewer noted api_key = [REDACTED] should be redacted.",
+        },
+        {
+            "id": "mem-untrusted",
+            "trust_label": "untrusted",
+            "resolved_status": "unresolved",
+            "source_type": "issue_comment",
+            "body": None,
+        },
+    ]
+    assert review["truncation"] == [
+        {
+            "resource": "patch",
+            "truncated": False,
+            "note": "Fixture patch stayed within context budget.",
+            "original_count": None,
+            "retained_count": None,
+            "original_bytes": None,
+            "retained_bytes": None,
+        }
+    ]
+
+    assert review["posting_plan"]["items"] == [
+        {
+            "id": "finding-cache-stale",
+            "source_classification": "postable_finding",
+            "destination": "review_body_item",
+            "public_payload_eligible": True,
+            "fingerprint": "fixture-basic-cache-stale",
+            "body": "The new branch returns stale data when the cache misses. api_key = [REDACTED]",
+        },
+        {
+            "id": "note-review-size",
+            "source_classification": "local_note",
+            "destination": "local_only",
+            "public_payload_eligible": False,
+            "fingerprint": None,
+            "body": "Fixture is intentionally small for the first CLI slice.",
+        },
+        {
+            "id": "suppressed-generic-tests",
+            "source_classification": "non_finding",
+            "destination": "local_only",
+            "public_payload_eligible": False,
+            "fingerprint": None,
+            "body": "Generic missing-test advice without a concrete changed behavior was suppressed.",
+        },
+    ]
+
+    preview = review["candidate_payload_preview"]
+    assert preview["artifact_kind"] == "issue_comment"
+    assert preview["review_target"] == EXPECTED_TARGET
+    assert preview["body"] == (
+        "ReviewGraph dry-run candidate\n"
+        "Target: acme/widgets#42\n"
+        "Head: head456\n"
+        "\n"
+        "Postable findings:\n"
+        "- P1 Cache miss returns stale data: The new branch returns stale data when the cache misses. "
+        "api_key = [REDACTED] (src/cache.py:12)\n"
+    )
+    assert preview["item_fingerprints"] == ["fixture-basic-cache-stale"]
+    assert preview["visible_body_hash"] == visible_body_hash(preview["body"])
+    assert preview["full_body_hash"] == full_body_hash(preview["body"])
+    assert preview["findings_hash"] == findings_hash(preview["item_fingerprints"])
+    assert preview["redaction_status"] == {
+        "redacted": True,
+        "replacement_count": 1,
+        "categories": ["api_key"],
+    }
+
+    assert review["redaction_status"]["redacted"] is True
+    assert review["redaction_status"]["replacement_count"] > 0
+    assert "api_key" in review["redaction_status"]["categories"]
+    _assert_markdown_sections(result.markdown)
+    _assert_secret_like_fixture_content_absent(result)
+    _assert_manifest_consumes_tracer_harness()
+
+
+def test_basic_fixture_tracer_json_is_stable() -> None:
+    first = run_fixture_dry_run(fixture_ref="basic-pr")
+    second = run_fixture_dry_run(fixture_ref="basic-pr")
+
+    assert _stable_json(first.json_data) == _stable_json(second.json_data)
+
+
+class RaisingWriter:
+    call_count = 0
+
+    def __call__(self) -> None:
+        self.call_count += 1
+        raise AssertionError("writer must not be called")
+
+
+def _assert_markdown_sections(markdown: str) -> None:
+    for section in (
+        "# ReviewGraph Dry Run",
+        "## Target",
+        "## Selected Reviewers",
+        "## Postable Findings",
+        "## Local Notes",
+        "## Clarification Requests",
+        "## Suggested Replies",
+        "## Suppressed Outputs",
+        "## Memory",
+        "## Truncation",
+        "## Posting Plan",
+        "## Candidate Payload Preview",
+    ):
+        assert section in markdown
+    for snippet in (
+        "Cache miss returns stale data",
+        "Review size",
+        "suppressed-generic-tests",
+        "issue_comment",
+        "- None",
+    ):
+        assert snippet in markdown
+
+
+def _assert_secret_like_fixture_content_absent(result) -> None:
+    serialized = result.markdown + _stable_json(result.rendered.json_data) + _stable_json(result.json_data)
+    for leaked in ("sk_live", "ghp_", "ghs_", "SECRET_TOKEN", "abcdefghijklmnopqrstuvwxyz"):
+        assert leaked not in serialized
+    assert "[REDACTED]" in serialized
+
+
+def _assert_manifest_consumes_tracer_harness() -> None:
+    manifest = load_manifest()
+    basic_pr = next(entry for entry in manifest["fixtures"] if entry["id"] == "basic-pr")
+    assert set(basic_pr["consumed_by"]) >= {"tests/test_cli.py", "tests/test_tracer_fixture_run.py"}
+
+
+def _stable_json(data: dict[str, object]) -> str:
+    return json.dumps(data, sort_keys=True, indent=2)
