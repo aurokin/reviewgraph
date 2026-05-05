@@ -369,6 +369,7 @@ def _public_finding_text(posting_plan: PostingPlan | None, findings: tuple[Class
 
 def _meaningful_memory_fragments(memory_body: str) -> tuple[str, ...]:
     normalized = _normalize_memory_text(memory_body)
+    raw_tokens = [token for token in re.split(r"\s+", memory_body.strip()) if token]
     fragments = {normalized} if normalized else set()
     for sentence in normalized.replace("!", ".").replace("?", ".").split("."):
         sentence = sentence.strip()
@@ -378,11 +379,17 @@ def _meaningful_memory_fragments(memory_body: str) -> tuple[str, ...]:
     for index, word in enumerate(words):
         if _has_enough_word_signal(word, words, index):
             fragments.add(word)
+    for index, raw_token in enumerate(raw_tokens):
+        compact_token = _compact_raw_token(raw_token)
+        if compact_token and _raw_token_has_high_signal_context(raw_tokens, index):
+            fragments.add(compact_token)
     for size in range(2, min(5, len(words)) + 1):
         for index in range(0, len(words) - size + 1):
             fragment = " ".join(words[index : index + size])
+            raw_fragment = " ".join(raw_tokens[index : index + size])
             if _has_enough_fragment_signal(fragment) or _has_enough_compact_fragment_signal(
-                fragment.replace(" ", "")
+                fragment,
+                raw_fragment,
             ):
                 fragments.add(fragment)
     for index in range(0, max(len(words) - 5, 0)):
@@ -422,8 +429,33 @@ def _looks_identifier_like(word: str) -> bool:
     return any(char.isdigit() for char in word) and len(word) >= 6 and len(set(word)) >= 4
 
 
-def _has_enough_compact_fragment_signal(fragment: str) -> bool:
-    return _looks_identifier_like(fragment) or (len(fragment) >= 8 and len(set(fragment)) >= 5)
+def _has_enough_compact_fragment_signal(fragment: str, raw_fragment: str = "") -> bool:
+    compact = fragment.replace(" ", "")
+    return _looks_identifier_like(compact) and _has_high_signal_context(fragment.split(), raw_fragment)
+
+
+def _has_high_signal_context(words: list[str], raw_fragment: str) -> bool:
+    return any(word in _HIGH_SIGNAL_CONTEXT_WORDS for word in words) or bool(
+        re.search(r"[A-Za-z]+[-_][A-Za-z0-9]*\d|\d[-_][A-Za-z0-9]+|[A-Za-z]+[-_][A-Za-z]+", raw_fragment)
+    )
+
+
+def _compact_raw_token(raw_token: str) -> str | None:
+    if "-" not in raw_token and "_" not in raw_token:
+        return None
+    compact = _normalize_memory_text(raw_token).replace(" ", "")
+    if len(compact) < 5 or len(set(compact)) < 4:
+        return None
+    return compact
+
+
+def _raw_token_has_high_signal_context(raw_tokens: list[str], index: int) -> bool:
+    token = _normalize_memory_text(raw_tokens[index])
+    if any(word in _HIGH_SIGNAL_CONTEXT_WORDS for word in token.split()):
+        return True
+    context_tokens = raw_tokens[max(0, index - 2) : index] + raw_tokens[index + 1 : index + 3]
+    context = _normalize_memory_text(" ".join(context_tokens)).split()
+    return any(word in _HIGH_SIGNAL_CONTEXT_WORDS for word in context)
 
 
 def _normalize_memory_text(value: str) -> str:

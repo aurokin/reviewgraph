@@ -318,6 +318,20 @@ def test_duplicate_output_item_ids_with_clarification_fail_closed(
     assert "classified output item ids must be unique" in capsys.readouterr().err
 
 
+def test_secret_like_output_item_id_fails_closed(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    fixture_path = tmp_path / "secret-item-id.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["items"][0]["id"] = "finding-ghp_abcdefghijklmnopqrstuvwxyz123456"
+    fixture_path.write_text(json.dumps(fixture))
+
+    assert main(["--fixture-pr", str(fixture_path)]) == 2
+
+    stderr = capsys.readouterr().err
+    assert "classified output item ids require non-secret stable identities" in stderr
+    assert "ghp_" not in stderr
+    assert "abcdefghijklmnopqrstuvwxyz" not in stderr
+
+
 def test_suggested_reply_fixture_is_local_only(tmp_path: Path) -> None:
     fixture_path = tmp_path / "suggested-reply.json"
     fixture = _basic_fixture()

@@ -298,6 +298,8 @@ def _validate_output_item_ids(classified: dict[str, tuple[Any, ...]]) -> None:
     for collection in classified.values():
         for item in collection:
             item_id = item.id
+            if redact_for_error(item_id) != item_id:
+                raise RunnerError("classified output item ids require non-secret stable identities")
             if item_id in seen:
                 raise RunnerError("classified output item ids must be unique")
             seen.add(item_id)

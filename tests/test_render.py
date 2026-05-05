@@ -684,6 +684,45 @@ def test_common_long_domain_word_in_untrusted_memory_does_not_block_candidate_pa
     assert rendered.json_data["candidate_payload_preview"]["body"] == payload.body
 
 
+@pytest.mark.parametrize(
+    ("untrusted_body", "finding_body"),
+    (
+        ("I think line 12 is wrong.", "Changed line 12 returns stale data."),
+        ("I saw cache 1234 in this PR.", "Cache 1234 is handled by the new branch."),
+    ),
+)
+def test_common_word_number_untrusted_memory_does_not_block_candidate_payload_preview(
+    untrusted_body: str,
+    finding_body: str,
+) -> None:
+    findings = [finding(body=finding_body)]
+    plan = build_posting_plan(findings=findings)
+    payload = build_candidate_issue_comment_payload(
+        review_target=target(),
+        posting_plan=plan,
+        findings=findings,
+    )
+
+    rendered = render_review(
+        review_target=target(),
+        selected_reviewers=selected_reviewers(),
+        findings=findings,
+        posting_plan=plan,
+        candidate_payload=payload,
+        memory_references=[
+            MemoryReference(
+                "mem-common-number",
+                "untrusted",
+                "unresolved",
+                "issue_comment",
+                untrusted_body,
+            )
+        ],
+    )
+
+    assert rendered.json_data["candidate_payload_preview"]["body"] == payload.body
+
+
 def test_identifier_like_single_token_untrusted_memory_cannot_enter_candidate_payload_preview() -> None:
     untrusted_body = "The customer mentioned account abc12345 during the thread."
     findings = [finding(body="Copied: abc12345")]
