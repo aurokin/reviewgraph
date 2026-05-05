@@ -390,7 +390,7 @@ def _meaningful_memory_fragments(memory_body: str) -> tuple[str, ...]:
         compact_token = _compact_raw_token(raw_token)
         if compact_token and (
             _raw_token_has_high_signal_context(raw_tokens, index) or _raw_token_has_delimiter_digit_signal(raw_token)
-        ):
+        ) and _has_meaningful_compact_raw_token_signal(compact_token, words, index):
             fragments.add(compact_token)
     for size in range(2, min(5, len(words)) + 1):
         for index in range(0, len(words) - size + 1):
@@ -484,6 +484,26 @@ def _raw_token_has_high_signal_context(raw_tokens: list[str], index: int) -> boo
 
 def _raw_token_has_delimiter_digit_signal(raw_token: str) -> bool:
     return bool(re.search(r"[A-Za-z0-9]+[-_][A-Za-z0-9]*\d|\d[-_][A-Za-z0-9]+", raw_token))
+
+
+def _has_meaningful_compact_raw_token_signal(compact_token: str, words: list[str], index: int) -> bool:
+    if compact_token in _COMMON_TECH_TOKENS:
+        return False
+    if _has_common_word_numeric_prefix(compact_token):
+        return False
+    if compact_token.isdigit():
+        context_window = words[max(0, index - 2) : index] + words[index + 1 : index + 3]
+        return any(token in _HIGH_SIGNAL_CONTEXT_WORDS for token in context_window)
+    return True
+
+
+def _has_common_word_numeric_prefix(compact_token: str) -> bool:
+    return any(
+        compact_token.startswith(word)
+        and compact_token[len(word) :].isdigit()
+        and word in _COMMON_MEMORY_WORDS
+        for word in _COMMON_MEMORY_WORDS
+    )
 
 
 def _normalize_memory_text(value: str) -> str:

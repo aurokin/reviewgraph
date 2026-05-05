@@ -715,10 +715,11 @@ def test_common_long_domain_word_in_untrusted_memory_does_not_block_candidate_pa
 
 @pytest.mark.parametrize(
     "token",
-    ("python3", "node18", "sha256", "react19", "http2"),
+    ("python3", "python-3", "node18", "node-18", "sha256", "react19", "http2"),
 )
 def test_common_tech_tokens_in_untrusted_memory_do_not_block_candidate_payload_preview(token: str) -> None:
-    findings = [finding(title="Runtime regression", body=f"The {token} runtime path now fails.")]
+    finding_token = token.replace("-", "")
+    findings = [finding(title="Runtime regression", body=f"The {finding_token} runtime path now fails.")]
     plan = build_posting_plan(findings=findings)
     payload = build_candidate_issue_comment_payload(
         review_target=target(),
@@ -751,6 +752,7 @@ def test_common_tech_tokens_in_untrusted_memory_do_not_block_candidate_payload_p
     (
         ("I think line 123456 is wrong.", "Changed line 123456 returns stale data."),
         ("I saw cache 123456 in this PR.", "Cache 123456 is handled by the new branch."),
+        ("I saw cache-123456 in this PR.", "Cache 123456 is handled by the new branch."),
         ("Authentication 123456 failed locally.", "Authentication 123456 fails for valid sessions."),
     ),
 )

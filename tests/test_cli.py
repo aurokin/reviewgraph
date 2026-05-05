@@ -604,8 +604,8 @@ def test_concrete_security_finding_with_normal_review_language_is_postable(tmp_p
             "type": "postable_finding",
             "id": "finding-open-redirect",
             "title": "Login redirect accepts user-controlled URL",
-            "body": "The new branch accepts a user-controlled redirect URL when login expires, enabling open redirect.",
-            "evidence": "Changed line 12 enables open redirect when login expires.",
+            "body": "The new branch accepts a user-controlled redirect URL when login expires, allowing open redirect.",
+            "evidence": "Changed line 12 allows open redirect when login expires.",
             "path": "src/cache.py",
             "line": 12,
             "priority": 1,
@@ -624,6 +624,90 @@ def test_concrete_security_finding_with_normal_review_language_is_postable(tmp_p
     assert review["classified_output"]["postable_findings"][0]["id"] == "finding-open-redirect"
     assert review["classified_output"]["suppressed"] == []
     assert review["candidate_payload_preview"]["item_fingerprints"] == ["fixture-open-redirect"]
+
+
+@pytest.mark.parametrize(
+    ("title", "body", "evidence"),
+    (
+        (
+            "Expired login allows unauthenticated access",
+            "The new branch allows unauthenticated access when login expires.",
+            "Changed line 12 allows unauthenticated access when login expires.",
+        ),
+        (
+            "Filename permits path traversal",
+            "The new branch permits path traversal when the filename contains dot-dot segments.",
+            "Changed line 12 permits path traversal when the filename contains dot-dot segments.",
+        ),
+        (
+            "Private visibility includes emails",
+            "The new branch includes private email addresses when visibility is private.",
+            "Changed line 12 includes private email addresses when visibility is private.",
+        ),
+    ),
+)
+def test_concrete_security_and_privacy_finding_wording_is_postable(
+    tmp_path: Path,
+    title: str,
+    body: str,
+    evidence: str,
+) -> None:
+    fixture_path = tmp_path / "security-wording.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["items"] = [
+        {
+            "type": "postable_finding",
+            "id": "finding-security-wording",
+            "title": title,
+            "body": body,
+            "evidence": evidence,
+            "path": "src/cache.py",
+            "line": 12,
+            "priority": 1,
+            "severity": "critical",
+            "confidence": "high",
+            "fingerprint": "fixture-security-wording",
+        }
+    ]
+    fixture_path.write_text(json.dumps(fixture))
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path))
+    review = result.json_data["review"]
+
+    assert result.json_data["local_verdict"] == "comment"
+    assert result.json_data["post_enabled"] is True
+    assert review["classified_output"]["postable_findings"][0]["id"] == "finding-security-wording"
+    assert review["classified_output"]["suppressed"] == []
+    assert review["candidate_payload_preview"]["item_fingerprints"] == ["fixture-security-wording"]
+
+
+def test_generic_maintenance_finding_with_enables_is_suppressed(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "generic-enables.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["items"] = [
+        {
+            "type": "postable_finding",
+            "id": "finding-generic-enables",
+            "title": "Improve structure",
+            "body": "This enables easier maintenance when this grows.",
+            "evidence": "Changed line 12 enables easier maintenance when this grows.",
+            "path": "src/cache.py",
+            "line": 12,
+            "priority": 3,
+            "severity": "suggestion",
+            "confidence": "high",
+            "fingerprint": "fixture-generic-enables",
+        }
+    ]
+    fixture_path.write_text(json.dumps(fixture))
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path))
+    review = result.json_data["review"]
+
+    assert result.json_data["local_verdict"] == "no_findings"
+    assert result.json_data["post_enabled"] is False
+    assert review["candidate_payload_preview"] is None
+    assert review["classified_output"]["postable_findings"] == []
 
 
 def test_suggested_reply_fixture_is_local_only(tmp_path: Path) -> None:

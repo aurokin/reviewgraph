@@ -449,13 +449,17 @@ def _has_non_testing_finding_shape(text: str) -> bool:
             "breaks",
             "corrupts",
             "drops",
-            "enables",
             "exposes",
             "fails",
             "hangs",
             "ignores",
+            "includes",
             "misroutes",
+            "allows",
+            "accepts",
+            "bypasses",
             "leaks",
+            "permits",
             "raises",
             "regress",
             "rejects",
@@ -463,6 +467,9 @@ def _has_non_testing_finding_shape(text: str) -> bool:
             "skips",
             "stale",
             "unauthorized",
+            "open redirect",
+            "path traversal",
+            "unauthenticated access",
         )
     )
     scenario = bool(re.search(r"\b(when|if|after|before|with|without|for|on)\b", text))
