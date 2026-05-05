@@ -1,0 +1,245 @@
+import ast
+from pathlib import Path
+
+import pytest
+
+from reviewgraph.models import (
+    ClarificationRequest,
+    ClassifiedFinding,
+    Confidence,
+    DiffAnchor,
+    LocalNote,
+    ReviewTarget,
+    ReviewVerdict,
+    Severity,
+    SuggestedReply,
+    SuppressedOutput,
+)
+from reviewgraph.posting import (
+    ArtifactKind,
+    PostingDestination,
+    PostingPlanError,
+    assert_builder_signatures_are_pure,
+    build_candidate_issue_comment_payload,
+    build_posting_plan,
+    canonical_visible_body,
+    full_body_hash,
+    validate_mvp_artifact_kind,
+    visible_body_hash,
+)
+
+
+def target() -> ReviewTarget:
+    return ReviewTarget(
+        owner_repo="acme/widgets",
+        pr_number=42,
+        base_sha="base123",
+        head_sha="head456",
+        merge_base_sha="merge789",
+        diff_basis="merge_base",
+    )
+
+
+def finding(
+    finding_id: str = "finding-1",
+    body: str = "The new branch returns stale data when the cache misses.",
+    fingerprint: str = "fp-1",
+    diff_anchor: DiffAnchor | None = None,
+) -> ClassifiedFinding:
+    return ClassifiedFinding(
+        id=finding_id,
+        source_reviewer="correctness",
+        source_stage="initial_triage",
+        title="Cache miss returns stale data",
+        body=body,
+        evidence="changed line 12",
+        path="src/cache.py",
+        line=12,
+        priority=1,
+        severity=Severity.WARNING,
+        confidence=Confidence.HIGH,
+        fingerprint=fingerprint,
+        diff_anchor=diff_anchor,
+    )
+
+
+def test_posting_plan_supports_all_destinations() -> None:
+    anchor = DiffAnchor(
+        path="src/cache.py",
+        line=12,
+        hunk_start=10,
+        hunk_end=14,
+        target_commit_sha="head456",
+    )
+    plan = build_posting_plan(
+        findings=[finding(), finding("finding-2", fingerprint="fp-2", diff_anchor=anchor)],
+        local_notes=[LocalNote("note-1", "Review size", "This is local.", "file count")],
+        suggested_replies=[SuggestedReply("reply-1", "comment-1", "Local draft reply")],
+        include_summary=True,
+        inline_candidate_ids={"finding-2"},
+    )
+
+    assert {item.destination for item in plan.items} == {
+        PostingDestination.TOP_LEVEL_SUMMARY_ITEM,
+        PostingDestination.REVIEW_BODY_ITEM,
+        PostingDestination.INLINE_CANDIDATE,
+        PostingDestination.LOCAL_ONLY,
+        PostingDestination.SUGGESTED_REPLY,
+    }
+
+
+def test_inline_candidates_require_changed_target_diff_anchor() -> None:
+    with pytest.raises(PostingPlanError, match="diff anchor"):
+        build_posting_plan(findings=[finding()], inline_candidate_ids={"finding-1"})
+
+    bad_anchor = DiffAnchor(
+        path="src/cache.py",
+        line=20,
+        hunk_start=10,
+        hunk_end=14,
+        target_commit_sha="head456",
+    )
+    with pytest.raises(PostingPlanError, match="diff anchor"):
+        build_posting_plan(
+            findings=[finding(diff_anchor=bad_anchor)],
+            inline_candidate_ids={"finding-1"},
+        )
+
+
+def test_candidate_payload_is_top_level_issue_comment_only() -> None:
+    plan = build_posting_plan(findings=[finding()])
+    payload = build_candidate_issue_comment_payload(
+        review_target=target(),
+        posting_plan=plan,
+        findings=[finding()],
+    )
+
+    assert payload.artifact_kind == ArtifactKind.ISSUE_COMMENT
+    assert payload.review_target.to_ordered_dict() == {
+        "owner_repo": "acme/widgets",
+        "pr_number": 42,
+        "base_sha": "base123",
+        "head_sha": "head456",
+        "merge_base_sha": "merge789",
+        "diff_basis": "merge_base",
+    }
+
+
+@pytest.mark.parametrize(
+    "artifact_kind",
+    ["pull_request_review", "inline_comment", "approve", "request_changes", "COMMENT"],
+)
+def test_formal_review_payload_kinds_are_rejected(artifact_kind: str) -> None:
+    with pytest.raises(PostingPlanError, match="issue_comment"):
+        validate_mvp_artifact_kind(artifact_kind)
+
+
+def test_non_postable_outputs_are_excluded_from_public_payload() -> None:
+    plan = build_posting_plan(
+        findings=[finding()],
+        local_notes=[LocalNote("note-1", "Review size", "Do not post me.", "file count")],
+        suggested_replies=[SuggestedReply("reply-1", "comment-1", "Do not reply automatically.")],
+        clarification_requests=[
+            ClarificationRequest("clarify-1", "logic", "Is this intentional?", "It affects mergeability.")
+        ],
+        suppressed_outputs=[SuppressedOutput("suppressed-1", "Generic advice.")],
+    )
+    payload = build_candidate_issue_comment_payload(
+        review_target=target(),
+        posting_plan=plan,
+        findings=[finding()],
+    )
+
+    assert "Do not post me" not in payload.body
+    assert "Do not reply automatically" not in payload.body
+    assert "Is this intentional" not in payload.body
+    assert "Generic advice" not in payload.body
+    assert "Cache miss returns stale data" in payload.body
+
+
+def test_request_changes_verdict_is_not_public_by_default() -> None:
+    plan = build_posting_plan(findings=[finding()])
+    payload = build_candidate_issue_comment_payload(
+        review_target=target(),
+        posting_plan=plan,
+        findings=[finding()],
+        local_verdict=ReviewVerdict.REQUEST_CHANGES,
+    )
+
+    assert "request_changes" not in payload.body
+    assert "request changes" not in payload.body.lower()
+
+
+def test_candidate_payload_has_fingerprints_and_canonical_hashes() -> None:
+    second = finding("finding-2", body="Another concrete issue.", fingerprint="fp-0")
+    plan = build_posting_plan(findings=[finding(), second])
+    payload = build_candidate_issue_comment_payload(
+        review_target=target(),
+        posting_plan=plan,
+        findings=[finding(), second],
+    )
+
+    assert payload.item_fingerprints == ("fp-0", "fp-1")
+    assert payload.visible_body_hash == visible_body_hash(payload.body)
+    assert payload.full_body_hash == full_body_hash(payload.body)
+    assert canonical_visible_body("a\r\nb\n\n") == "a\nb\n"
+
+    duplicate = finding("finding-3", fingerprint="fp-1")
+    duplicate_plan = build_posting_plan(findings=[finding(), duplicate])
+    with pytest.raises(PostingPlanError, match="duplicate"):
+        build_candidate_issue_comment_payload(
+            review_target=target(),
+            posting_plan=duplicate_plan,
+            findings=[finding(), duplicate],
+        )
+
+
+def test_redacts_supported_secret_classes_before_hashing() -> None:
+    secret_body = """
+api_key = sk_live_1234567890abcdef
+Authorization: Bearer abcdefghijklmnopqrstuvwxyz
+Use Bearer zyxwvutsrqponmlkjihgfedcba here
+token=ghp_abcdefghijklmnopqrstuvwxyz123456
+GITHUB_TOKEN=ghs_abcdefghijklmnopqrstuvwxyz123456
+-----BEGIN PRIVATE KEY-----
+private-material
+-----END PRIVATE KEY-----
+"""
+    plan = build_posting_plan(findings=[finding(body=secret_body)])
+    payload = build_candidate_issue_comment_payload(
+        review_target=target(),
+        posting_plan=plan,
+        findings=[finding(body=secret_body)],
+    )
+
+    assert "sk_live" not in payload.body
+    assert "abcdefghijklmnopqrstuvwxyz" not in payload.body
+    assert "PRIVATE KEY" not in payload.body
+    assert payload.redaction_status.redacted is True
+    assert set(payload.redaction_status.categories) >= {
+        "private_key",
+        "authorization_header",
+        "bearer_token",
+        "github_token",
+        "api_key",
+        "env_assignment",
+    }
+
+
+def test_posting_module_has_no_writer_or_transport_imports() -> None:
+    source = Path("src/reviewgraph/posting.py").read_text()
+    tree = ast.parse(source)
+    forbidden = {"side_effects", "github", "transport", "approval", "finalization", "marker"}
+    imports: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imports.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imports.add(node.module)
+
+    assert not any(
+        any(part == forbidden_name for part in imported.split("."))
+        for imported in imports
+        for forbidden_name in forbidden
+    )
+    assert_builder_signatures_are_pure()
