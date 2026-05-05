@@ -33,7 +33,7 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "api_key",
         re.compile(
-            r"(?i)([\"']?\b(?:api[_-]?key|token|secret)[\"']?\s*[:=]\s*)[\"']?[A-Za-z0-9._~+/=-]{12,}[\"']?"
+            r"(?i)([\"']?\b(?:api[_-]?key|token|secret)[\"']?\s*[:=]\s*)[\"']?[A-Za-z0-9._~+/=_-]{12,}[\"']?"
         ),
     ),
     ("env_assignment", re.compile(r"(?im)^([A-Z][A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD)\s*=\s*).+$")),

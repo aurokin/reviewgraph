@@ -192,3 +192,49 @@ class RedactionStatus:
     redacted: bool
     replacement_count: int
     categories: tuple[str, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class SelectedReviewer:
+    name: str
+    stage: str
+    reasons: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not self.name:
+            raise ValueError("selected reviewer name is required")
+        if not self.stage:
+            raise ValueError("selected reviewer stage is required")
+        if not self.reasons:
+            raise ValueError("selected reviewer reasons are required")
+
+
+@dataclass(frozen=True)
+class MemoryReference:
+    id: str
+    trust_label: str
+    resolved_status: str
+    source_type: str
+    body: str | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("id", "trust_label", "resolved_status", "source_type"):
+            if not getattr(self, name):
+                raise ValueError(f"{name} is required")
+
+
+@dataclass(frozen=True)
+class TruncationNotice:
+    resource: str
+    truncated: bool
+    note: str
+    original_count: int | None = None
+    retained_count: int | None = None
+    original_bytes: int | None = None
+    retained_bytes: int | None = None
+
+    def __post_init__(self) -> None:
+        if not self.resource:
+            raise ValueError("truncation resource is required")
+        if not self.note:
+            raise ValueError("truncation note is required")
