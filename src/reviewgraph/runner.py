@@ -370,11 +370,17 @@ def _is_postable_finding(finding: ClassifiedFinding) -> bool:
         return False
     generic_refactor_advice = (
         "clean this up",
+        "cleaner structure",
         "could be refactored",
+        "easier maintenance",
+        "easier to maintain",
+        "easier to read",
         "extract helper",
+        "helper",
         "improve readability",
         "refactor this",
         "simplify this code",
+        "when this grows",
     )
     return not any(phrase in text for phrase in generic_refactor_advice)
 
@@ -446,7 +452,11 @@ def _has_non_testing_finding_shape(text: str) -> bool:
     changed_behavior = any(
         term in text
         for term in (
+            "accepts",
+            "allows",
             "breaks",
+            "bypasses",
+            "cannot",
             "corrupts",
             "drops",
             "exposes",
@@ -454,11 +464,9 @@ def _has_non_testing_finding_shape(text: str) -> bool:
             "hangs",
             "ignores",
             "includes",
-            "misroutes",
-            "allows",
-            "accepts",
-            "bypasses",
             "leaks",
+            "misroutes",
+            "omits",
             "permits",
             "raises",
             "regress",
@@ -472,7 +480,7 @@ def _has_non_testing_finding_shape(text: str) -> bool:
             "unauthenticated access",
         )
     )
-    scenario = bool(re.search(r"\b(when|if|after|before|with|without|for|on)\b", text))
+    scenario = bool(re.search(r"\b(when|if|after|before|with|without|for|on|in|to|via|from|while|where)\b", text))
     return changed_behavior and scenario
 
 

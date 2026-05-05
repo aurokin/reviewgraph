@@ -631,18 +631,23 @@ def test_concrete_security_finding_with_normal_review_language_is_postable(tmp_p
     (
         (
             "Expired login allows unauthenticated access",
-            "The new branch allows unauthenticated access when login expires.",
-            "Changed line 12 allows unauthenticated access when login expires.",
+            "The new branch allows unauthenticated access to admin endpoints.",
+            "Changed line 12 allows unauthenticated access to admin endpoints.",
         ),
         (
             "Filename permits path traversal",
-            "The new branch permits path traversal when the filename contains dot-dot segments.",
-            "Changed line 12 permits path traversal when the filename contains dot-dot segments.",
+            "The new branch permits path traversal via the filename parameter.",
+            "Changed line 12 permits path traversal via the filename parameter.",
         ),
         (
             "Private visibility includes emails",
-            "The new branch includes private email addresses when visibility is private.",
-            "Changed line 12 includes private email addresses when visibility is private.",
+            "The new branch includes private email addresses in public responses.",
+            "Changed line 12 includes private email addresses in public responses.",
+        ),
+        (
+            "Cache responses omit cache control",
+            "The new branch omits the Cache-Control header when the cache misses, so clients cannot cache responses.",
+            "Changed line 12 omits the Cache-Control header when the cache misses.",
         ),
     ),
 )
@@ -681,7 +686,8 @@ def test_concrete_security_and_privacy_finding_wording_is_postable(
     assert review["candidate_payload_preview"]["item_fingerprints"] == ["fixture-security-wording"]
 
 
-def test_generic_maintenance_finding_with_enables_is_suppressed(tmp_path: Path) -> None:
+@pytest.mark.parametrize("verb", ("allows", "accepts", "permits", "includes", "enables"))
+def test_generic_maintenance_finding_with_broad_verb_is_suppressed(tmp_path: Path, verb: str) -> None:
     fixture_path = tmp_path / "generic-enables.json"
     fixture = _basic_fixture()
     fixture["raw_reviewer_outputs"][0]["items"] = [
@@ -689,8 +695,8 @@ def test_generic_maintenance_finding_with_enables_is_suppressed(tmp_path: Path) 
             "type": "postable_finding",
             "id": "finding-generic-enables",
             "title": "Improve structure",
-            "body": "This enables easier maintenance when this grows.",
-            "evidence": "Changed line 12 enables easier maintenance when this grows.",
+            "body": f"This {verb} easier maintenance when this grows.",
+            "evidence": f"Changed line 12 {verb} easier maintenance when this grows.",
             "path": "src/cache.py",
             "line": 12,
             "priority": 3,

@@ -890,6 +890,8 @@ def test_mixed_identifier_untrusted_memory_cannot_enter_candidate_payload_previe
     ("untrusted_body", "finding_body"),
     (
         ("ACME-42", "Copied: ACME42"),
+        ("customer-123456", "Copied: customer123456"),
+        ("The unresolved thread referenced account cache-123456.", "Copied: cache123456"),
         ("The unresolved thread referenced ticket PROJ-1234.", "Copied: PROJ1234"),
         ("The unresolved thread referenced account ACME-42.", "Copied: ACME42"),
         ("The unresolved thread referenced identifier user_12345.", "Copied: user12345"),

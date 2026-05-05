@@ -489,21 +489,32 @@ def _raw_token_has_delimiter_digit_signal(raw_token: str) -> bool:
 def _has_meaningful_compact_raw_token_signal(compact_token: str, words: list[str], index: int) -> bool:
     if compact_token in _COMMON_TECH_TOKENS:
         return False
-    if _has_common_word_numeric_prefix(compact_token):
-        return False
+    context_window = words[max(0, index - 2) : index] + words[index + 1 : index + 3]
+    prefix = _common_word_numeric_prefix(compact_token)
+    if prefix is not None:
+        return prefix in _IDENTIFIER_NUMERIC_PREFIX_WORDS or any(
+            token in _HIGH_SIGNAL_CONTEXT_WORDS for token in context_window
+        )
     if compact_token.isdigit():
-        context_window = words[max(0, index - 2) : index] + words[index + 1 : index + 3]
         return any(token in _HIGH_SIGNAL_CONTEXT_WORDS for token in context_window)
     return True
 
 
-def _has_common_word_numeric_prefix(compact_token: str) -> bool:
-    return any(
-        compact_token.startswith(word)
-        and compact_token[len(word) :].isdigit()
-        and word in _COMMON_MEMORY_WORDS
-        for word in _COMMON_MEMORY_WORDS
+def _common_word_numeric_prefix(compact_token: str) -> str | None:
+    return next(
+        (
+            word
+            for word in _COMMON_MEMORY_WORDS
+            if compact_token.startswith(word) and compact_token[len(word) :].isdigit()
+        ),
+        None,
     )
+
+
+_IDENTIFIER_NUMERIC_PREFIX_WORDS = {
+    "customer",
+    "user",
+}
 
 
 def _normalize_memory_text(value: str) -> str:
