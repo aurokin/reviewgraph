@@ -169,6 +169,7 @@ def test_finding_with_clarification_keeps_posting_plan_local_only(tmp_path: Path
     assert result.json_data["post_enabled"] is False
     assert result.json_data["review"]["candidate_payload_preview"] is None
     plan_items = result.json_data["review"]["posting_plan"]["items"]
+    assert {item["id"] for item in plan_items} >= {"finding-cache-stale", "clarify-intent"}
     assert all(item["destination"] == "local_only" for item in plan_items)
 
 
@@ -195,6 +196,53 @@ def test_postable_finding_must_overlap_changed_lines(tmp_path: Path) -> None:
     exit_code = main(["--fixture-pr", str(fixture_path)])
 
     assert exit_code == 2
+
+
+def test_raw_output_reviewer_must_be_selected(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    fixture_path = tmp_path / "unselected-reviewer.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["reviewer"] = "security"
+    fixture["raw_reviewer_outputs"][0]["stage"] = "logic_review"
+    fixture_path.write_text(json.dumps(fixture))
+
+    assert main(["--fixture-pr", str(fixture_path)]) == 2
+    assert "was not selected" in capsys.readouterr().err
+
+
+def test_malformed_raw_output_field_returns_nonzero(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fixture_path = tmp_path / "missing-raw-field.json"
+    fixture = _basic_fixture()
+    del fixture["raw_reviewer_outputs"][0]["items"][0]["path"]
+    fixture_path.write_text(json.dumps(fixture))
+
+    assert main(["--fixture-pr", str(fixture_path)]) == 2
+    assert "postable_finding.path is required" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("field", "nested_field", "expected_stderr"),
+    (
+        ("memory", "trust_label", "memory.trust_label is required"),
+        ("truncation", "note", "truncation.note is required"),
+    ),
+)
+def test_malformed_nested_fixture_field_returns_nonzero(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    field: str,
+    nested_field: str,
+    expected_stderr: str,
+) -> None:
+    fixture_path = tmp_path / "missing-nested-field.json"
+    fixture = _basic_fixture()
+    del fixture[field][0][nested_field]
+    fixture_path.write_text(json.dumps(fixture))
+
+    assert main(["--fixture-pr", str(fixture_path)]) == 2
+    assert expected_stderr in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(

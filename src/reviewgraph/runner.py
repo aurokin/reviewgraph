@@ -26,7 +26,9 @@ from reviewgraph.models import (
 )
 from reviewgraph.posting import (
     CandidateIssueCommentPayload,
+    PostingDestination,
     PostingPlan,
+    PostingPlanItem,
     build_candidate_issue_comment_payload,
     build_posting_plan,
 )
@@ -58,18 +60,20 @@ def run_fixture_dry_run(
     review_target = _review_target(fixture)
     memory_references = _memory_references(fixture)
     truncation_notices = _truncation_notices(fixture)
-    classified = _classify_raw_outputs(fixture)
+    classified = _classify_raw_outputs(fixture, selected_reviewers=selected_reviewers)
     local_verdict = _local_verdict(
         findings=classified["findings"],
         clarification_requests=classified["clarification_requests"],
     )
     post_enabled = local_verdict == ReviewVerdict.COMMENT and bool(classified["findings"])
     posting_plan = build_posting_plan(
-        findings=classified["findings"] if post_enabled else (),
+        findings=classified["findings"],
         local_notes=classified["local_notes"],
         clarification_requests=classified["clarification_requests"],
         suppressed_outputs=classified["suppressed_outputs"],
     )
+    if not post_enabled:
+        posting_plan = _local_only_posting_plan(posting_plan)
     candidate_payload = _candidate_payload(
         enabled=post_enabled,
         review_target=review_target,
@@ -152,41 +156,54 @@ def _review_target(fixture: FixturePR) -> ReviewTarget:
 
 
 def _memory_references(fixture: FixturePR) -> tuple[MemoryReference, ...]:
-    return tuple(
-        MemoryReference(
-            id=str(item["id"]),
-            trust_label=str(item["trust_label"]),
-            resolved_status=str(item["resolved_status"]),
-            source_type=str(item["source_type"]),
-            body=item.get("body"),
+    memory_references: list[MemoryReference] = []
+    for item in fixture.memory:
+        _require_fields(item, ("id", "trust_label", "resolved_status", "source_type"), "memory")
+        memory_references.append(
+            MemoryReference(
+                id=str(item["id"]),
+                trust_label=str(item["trust_label"]),
+                resolved_status=str(item["resolved_status"]),
+                source_type=str(item["source_type"]),
+                body=item.get("body"),
+            )
         )
-        for item in fixture.memory
-    )
+    return tuple(memory_references)
 
 
 def _truncation_notices(fixture: FixturePR) -> tuple[TruncationNotice, ...]:
-    return tuple(
-        TruncationNotice(
-            resource=str(item["resource"]),
-            truncated=bool(item["truncated"]),
-            note=str(item["note"]),
-            original_count=item.get("original_count"),
-            retained_count=item.get("retained_count"),
-            original_bytes=item.get("original_bytes"),
-            retained_bytes=item.get("retained_bytes"),
+    notices: list[TruncationNotice] = []
+    for item in fixture.truncation:
+        _require_fields(item, ("resource", "truncated", "note"), "truncation")
+        notices.append(
+            TruncationNotice(
+                resource=str(item["resource"]),
+                truncated=bool(item["truncated"]),
+                note=str(item["note"]),
+                original_count=item.get("original_count"),
+                retained_count=item.get("retained_count"),
+                original_bytes=item.get("original_bytes"),
+                retained_bytes=item.get("retained_bytes"),
+            )
         )
-        for item in fixture.truncation
-    )
+    return tuple(notices)
 
 
-def _classify_raw_outputs(fixture: FixturePR) -> dict[str, tuple[Any, ...]]:
+def _classify_raw_outputs(
+    fixture: FixturePR,
+    *,
+    selected_reviewers: tuple[SelectedReviewer, ...],
+) -> dict[str, tuple[Any, ...]]:
     findings: list[ClassifiedFinding] = []
     local_notes: list[LocalNote] = []
     clarification_requests: list[ClarificationRequest] = []
     suppressed_outputs: list[SuppressedOutput] = []
+    selected_keys = {(reviewer.name, reviewer.stage) for reviewer in selected_reviewers}
     for reviewer_output in fixture.raw_reviewer_outputs:
-        reviewer = str(reviewer_output.get("reviewer", ""))
-        stage = str(reviewer_output.get("stage", ""))
+        reviewer = _required_str(reviewer_output, "reviewer", "raw_reviewer_outputs[]")
+        stage = _required_str(reviewer_output, "stage", "raw_reviewer_outputs[]")
+        if (reviewer, stage) not in selected_keys:
+            raise RunnerError(f"raw reviewer output {reviewer}/{stage} was not selected")
         items = reviewer_output.get("items")
         if not reviewer or not stage or not isinstance(items, list):
             raise RunnerError("raw reviewer output requires reviewer, stage, and items")
@@ -198,6 +215,7 @@ def _classify_raw_outputs(fixture: FixturePR) -> dict[str, tuple[Any, ...]]:
                 finding = _classified_finding(fixture, reviewer=reviewer, stage=stage, item=item)
                 findings.append(finding)
             elif item_type == "local_note":
+                _require_fields(item, ("id", "title", "body", "evidence"), "local_note")
                 local_notes.append(
                     LocalNote(
                         id=str(item["id"]),
@@ -207,6 +225,7 @@ def _classify_raw_outputs(fixture: FixturePR) -> dict[str, tuple[Any, ...]]:
                     )
                 )
             elif item_type == "clarification_request":
+                _require_fields(item, ("id", "question", "why_it_matters"), "clarification_request")
                 clarification_requests.append(
                     ClarificationRequest(
                         id=str(item["id"]),
@@ -216,6 +235,7 @@ def _classify_raw_outputs(fixture: FixturePR) -> dict[str, tuple[Any, ...]]:
                     )
                 )
             elif item_type == "suppressed":
+                _require_fields(item, ("id", "reason"), "suppressed")
                 suppressed_outputs.append(SuppressedOutput(id=str(item["id"]), reason=str(item["reason"])))
             else:
                 raise RunnerError(f"unsupported raw reviewer output type: {item_type}")
@@ -234,6 +254,22 @@ def _classified_finding(
     stage: str,
     item: dict[str, Any],
 ) -> ClassifiedFinding:
+    _require_fields(
+        item,
+        (
+            "id",
+            "title",
+            "body",
+            "evidence",
+            "path",
+            "line",
+            "priority",
+            "severity",
+            "confidence",
+            "fingerprint",
+        ),
+        "postable_finding",
+    )
     path = str(item["path"])
     line = int(item["line"])
     assert_changed_line(fixture, path=path, line=line)
@@ -251,6 +287,19 @@ def _classified_finding(
         confidence=Confidence(str(item["confidence"])),
         fingerprint=str(item["fingerprint"]),
     )
+
+
+def _require_fields(data: dict[str, Any], fields: tuple[str, ...], label: str) -> None:
+    for field in fields:
+        if field not in data:
+            raise RunnerError(f"{label}.{field} is required")
+
+
+def _required_str(data: dict[str, Any], field: str, label: str) -> str:
+    value = data.get(field)
+    if not isinstance(value, str) or not value:
+        raise RunnerError(f"{label}.{field} is required")
+    return value
 
 
 def _local_verdict(
@@ -278,6 +327,24 @@ def _candidate_payload(
         review_target=review_target,
         posting_plan=posting_plan,
         findings=findings,
+    )
+
+
+def _local_only_posting_plan(posting_plan: PostingPlan) -> PostingPlan:
+    return PostingPlan(
+        items=tuple(
+            item
+            if not item.public_payload_eligible
+            else PostingPlanItem(
+                id=item.id,
+                source_classification=item.source_classification,
+                destination=PostingDestination.LOCAL_ONLY,
+                public_payload_eligible=False,
+                fingerprint=item.fingerprint,
+                body=item.body,
+            )
+            for item in posting_plan.items
+        )
     )
 
 
