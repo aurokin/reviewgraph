@@ -22,9 +22,10 @@ Introduce a deterministic graph-owned risk/size classifier that produces `RiskAs
 - Risk levels are deterministic for fixture PRs:
   - Assert stable low/medium/high outcomes for representative fixture PRs.
 - Size thresholds are configurable and traceable:
-  - Add default thresholds and a configurable `RiskThresholds` input; assert changed threshold values alter traceable reasons.
+  - Add default thresholds and a configurable `RiskThresholds` input at the classifier boundary; assert changed threshold values alter traceable serialized reasons.
 - Risk and size decisions are recorded separately from reviewer selection reasons:
   - Store the assessment in `ReviewState.risk` during dry-run setup without changing `SelectedReviewer.reasons`.
+  - Classify against full PR size facts before or independent of reviewer-context budgeting so oversized and omitted context still records original risk/size.
   - Assert JSON output has a `risk` envelope separate from `selected_reviewers`.
 - Mixed-risk and oversized fixtures have golden expected risk output:
   - Add golden assertions in `tests/test_risk.py` for `mixed-risk-change` and `oversized-change`.
@@ -33,9 +34,9 @@ Introduce a deterministic graph-owned risk/size classifier that produces `RiskAs
 
 1. Add `src/reviewgraph/risk.py` with deterministic surface detection, diff hint extraction, threshold defaults, and risk-level selection.
 2. Keep the classifier pure: input PR context plus thresholds, output `RiskAssessment`; no reviewer config, no routing decisions, no side effects.
-3. Wire `run_fixture_dry_run` and the empty graph state initializer to populate `ReviewState.risk` using default thresholds.
+3. Wire `run_fixture_dry_run` and the empty graph state initializer to populate `ReviewState.risk` using default thresholds and full fixture PR facts, not the budget-retained reviewer context.
 4. Add a stable JSON representation of risk assessment to the dry-run envelope for harness evidence.
-5. Add `tests/test_risk.py` for golden mixed-risk and oversized fixture outputs, configurable thresholds, and separation from reviewer selection reasons.
+5. Add `tests/test_risk.py` for golden mixed-risk and oversized fixture outputs, classifier-boundary configurable thresholds, budget-independent size facts, and separation from reviewer selection reasons.
 6. Run risk, routing, tracer/CLI, and full validation.
 7. Use subagent review before implementation and after code changes.
 8. Commit the plan before implementation, then commit implementation separately.
