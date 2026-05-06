@@ -17,6 +17,7 @@ from reviewgraph.models import (
 )
 from reviewgraph.posting import canonical_json_hash
 from reviewgraph.redaction import redact_data
+from reviewgraph.risk import classify_change_risk, risk_assessment_to_json
 from reviewgraph.state import initial_stage_queue
 
 
@@ -90,6 +91,7 @@ def _initialize_review_state(state: _EmptyDryRunRuntimeState) -> dict[str, Any]:
         limits=default_context_budget(),
         existing_truncation=(),
     )
+    risk_assessment = classify_change_risk(fixture.pr)
     review_state = ReviewState(
         run_id=f"fixture-empty:{fixture.id}",
         run_mode=RunMode.DRY_RUN,
@@ -106,7 +108,7 @@ def _initialize_review_state(state: _EmptyDryRunRuntimeState) -> dict[str, Any]:
         active_stage=None,
         suspended_stage=None,
         completed_stages=[],
-        risk=None,
+        risk=risk_assessment,
         selected_reviewers=[],
         reviewer_run_keys=[],
         reviewer_run_status={},
@@ -169,6 +171,7 @@ def _review_state_json(review_state: ReviewState, *, graph_trace: list[str]) -> 
             "completed_stages": [stage.value for stage in review_state.completed_stages],
         },
         "selected_reviewers": [],
+        "risk": risk_assessment_to_json(review_state.risk),
         "local_verdict": review_state.local_verdict,
         "classified_output": {
             "findings": [],

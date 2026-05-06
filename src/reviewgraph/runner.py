@@ -35,6 +35,7 @@ from reviewgraph.models import (
     PRConversationMemory,
     RawReviewerFinding,
     ReviewConfig,
+    RiskAssessment,
     ReviewerRunKey,
     ReviewerRunStatus,
     ReviewerRunStatusValue,
@@ -58,6 +59,7 @@ from reviewgraph.posting import (
 )
 from reviewgraph.redaction import redact_data
 from reviewgraph.render import RenderedReview, render_review
+from reviewgraph.risk import classify_change_risk, risk_assessment_to_json
 from reviewgraph.routing import select_reviewers_for_active_stage
 from reviewgraph.state import StageCursor, StageCursorTransition, advance_or_finish_stage, initial_stage_cursor
 
@@ -107,11 +109,13 @@ def run_fixture_dry_run(
     )
     memory_references = budgeted_context.memory.entries
     budgeted_fixture = _budgeted_fixture_view(fixture, budgeted_context)
+    risk_assessment = classify_change_risk(fixture.pr)
     stage_run = _run_review_stages(
         config,
         budgeted_fixture,
         memory_references=memory_references,
         budget_limits=context_budget_limits,
+        risk=risk_assessment,
         omitted_file_paths=budgeted_context.context_budget.omitted_file_paths,
     )
     selected_reviewers = stage_run.selected_reviewers
@@ -165,6 +169,7 @@ def run_fixture_dry_run(
         fixture=fixture,
         post_enabled=post_enabled,
         local_verdict=local_verdict,
+        risk=risk_assessment,
         selected_reviewers=selected_reviewers,
         reviewer_run_status=stage_run.reviewer_run_status,
         graph_trace=graph_trace,
@@ -185,6 +190,7 @@ def _run_review_stages(
     *,
     memory_references: tuple[MemoryReference, ...],
     budget_limits: ContextBudget,
+    risk: RiskAssessment,
     omitted_file_paths: tuple[str, ...] = (),
 ) -> _StageRunResult:
     raw_outputs_by_key = _raw_outputs_by_key(fixture)
@@ -202,6 +208,7 @@ def _run_review_stages(
         fixture,
         memory_references=memory_references,
         context_budget=budget_limits,
+        risk=risk,
     )
     clarification_needed = False
 
@@ -335,6 +342,7 @@ def _routing_review_state(
     *,
     memory_references: tuple[MemoryReference, ...],
     context_budget: ContextBudget,
+    risk: RiskAssessment,
 ) -> ReviewState:
     return ReviewState(
         run_id=f"fixture-routing:{fixture.id}",
@@ -352,7 +360,7 @@ def _routing_review_state(
         active_stage=None,
         suspended_stage=None,
         completed_stages=[],
-        risk=None,
+        risk=risk,
         selected_reviewers=[],
         reviewer_run_keys=[],
         reviewer_run_status={},
@@ -1097,6 +1105,7 @@ def _json_envelope(
     fixture: FixturePR,
     post_enabled: bool,
     local_verdict: ReviewVerdict,
+    risk: RiskAssessment,
     selected_reviewers: tuple[SelectedReviewer, ...],
     reviewer_run_status: dict[str, ReviewerRunStatus],
     graph_trace: list[dict[str, Any]],
@@ -1110,6 +1119,7 @@ def _json_envelope(
         "fixture_ref": fixture.pr_ref,
         "graph_trace": graph_trace,
         "local_verdict": local_verdict.value,
+        "risk": risk_assessment_to_json(risk),
         "selected_reviewers": [
             {"name": reviewer.name, "stage": reviewer.stage, "reasons": list(reviewer.reasons)}
             for reviewer in selected_reviewers
