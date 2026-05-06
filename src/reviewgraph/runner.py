@@ -139,6 +139,7 @@ def _run_review_stages(config: ReviewerConfig, fixture: FixturePR) -> _StageRunR
     seen_raw_keys: set[tuple[str, str]] = set()
     active_stage: str | None = None
     stage_queue = list(NORMAL_STAGES)
+    clarification_needed = False
 
     for stage in NORMAL_STAGES:
         before_active = active_stage
@@ -171,7 +172,21 @@ def _run_review_stages(config: ReviewerConfig, fixture: FixturePR) -> _StageRunR
             seen_raw_keys.add(key)
             _classify_reviewer_output(fixture, reviewer_output=reviewer_output, classified=classified)
         if classified["clarification_requests"]:
+            clarification_needed = True
             break
+
+    if clarification_needed:
+        graph_trace.append(
+            {
+                "active_stage_before": active_stage,
+                "active_stage_after": None,
+                "suspended_stage_before": None,
+                "suspended_stage_after": None,
+                "stage_queue_before": list(stage_queue),
+                "stage_queue_after": list(stage_queue),
+                "transition_reason": "clarification_needed_end",
+            }
+        )
     else:
         graph_trace.append(
             {

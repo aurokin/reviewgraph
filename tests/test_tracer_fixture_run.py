@@ -85,7 +85,17 @@ EXPECTED_COMPLETED_TRACE = [
     },
 ]
 
-EXPECTED_AMBIGUOUS_TRACE = EXPECTED_COMPLETED_TRACE[:-1]
+EXPECTED_AMBIGUOUS_TRACE = EXPECTED_COMPLETED_TRACE[:-1] + [
+    {
+        "active_stage_before": "logic_review",
+        "active_stage_after": None,
+        "suspended_stage_before": None,
+        "suspended_stage_after": None,
+        "stage_queue_before": [],
+        "stage_queue_after": [],
+        "transition_reason": "clarification_needed_end",
+    }
+]
 
 EXPECTED_REVIEWER = {
     "name": "correctness",
