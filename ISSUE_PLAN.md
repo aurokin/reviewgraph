@@ -1,87 +1,102 @@
-# ISSUE PLAN: AUR-205 Stop For Clarification Requests
+# ISSUE PLAN: AUR-206 Resume From Clarification Answers
 
-Active issue plan for `AUR-205` / `RG-016: Stop For Clarification Requests`.
+Active issue plan for `AUR-206` / `RG-017: Resume From Clarification Answers`.
 
 Linear remains the source of truth for issue state and relationships.
 
 ## Linear Snapshot
 
-- Issue: `AUR-205`
+- Issue: `AUR-206`
 - Status at plan time: `In Progress`
 - Milestone: `PRD 0005: Review Quality`
-- Title: `RG-016: Stop For Clarification Requests`
-- Harness: `python -m pytest tests/test_clarification.py`
-- Out of scope from Linear: answer ingestion and resume behavior from `AUR-206`.
+- Title: `RG-017: Resume From Clarification Answers`
+- Harness: `python -m pytest tests/test_clarification_resume.py`
+- Out of scope from Linear: live human UI or GitHub comment replies.
 
 ## Intent
 
-Make unanswered reviewer clarification an explicit graph stop state, not just a rendered request.
+Add the deterministic state-machine contract for answering a pending clarification and resuming only the affected reviewer through transient `clarification_review`.
 
-If a reviewer says it cannot make a high-confidence mergeability or confidence judgment without human context, ReviewGraph should preserve the request as pending state, disable posting, render the question and why it matters, and avoid converting that ambiguity into a blocking local verdict. The graph may still show postable findings and local notes in dry-run output, but they must be local-only while any blocking clarification remains pending.
-
-Clarification requests with `blocks_verdict=false` are still pending/rendered state, but they do not stop the graph, disable posting, or force the private verdict to `needs_clarification` by themselves.
+This issue should not turn the fixture CLI into a full interactive product. The goal is to make the graph primitives true and testable: an answer updates clarification state without cursor mutation, `advance_or_finish_stage` can enter and leave `clarification_review`, resumed reviewer run keys carry the clarification ID, unrelated completed stages are not rerun, and answered/stale pending IDs no longer block posting.
 
 ## Current Baseline
 
-- `ClarificationRequest` already carries graph-owned `status`, `source_stage`, `source_run_key`, `resume_target_stage`, and `resume_target_reviewers` during normalization.
-- `classify_review_quality` preserves safe clarification requests and suppresses unsafe or omitted-memory clarification requests.
-- `runner._run_review_stages` already breaks the stage loop when any classified clarification request exists and appends a `clarification_needed_end` trace.
-- `runner._local_verdict` currently returns `needs_clarification` when clarification requests exist, and `post_enabled` is false unless the verdict is `comment`.
-- `build_posting_plan` already renders clarification requests as local-only items, and `render_review` includes clarification question/why-it-matters in markdown and JSON.
-- Existing broad CLI tests prove clarification-only and finding-plus-clarification fixtures are not post enabled, but there is no focused `tests/test_clarification.py` harness and the top-level dry-run envelope does not expose `pending_clarification_ids` / `clarification_status` state.
+- `AUR-205` added `evaluate_clarification_gate`, pending/blocking IDs, and blocking-stop behavior.
+- `ClarificationRequest` already records `source_stage`, `source_run_key`, `status`, `resume_target_stage`, and `resume_target_reviewers`.
+- `ClarificationAnswer` and `ClarificationStatus` models exist but no helper ingests answers yet.
+- `advance_or_finish_stage` currently rejects `clarification_review` with `StageCursorError("clarification_review resume is not implemented in this slice")`.
+- `make_reviewer_run_key` and `register_selected_reviewer` already accept `clarification_id`, but `select_reviewers_for_active_stage` does not pass one.
+- `has_suppressing_status_for_reviewer` ignores clarification ID, so completed normal-stage runs would suppress resumed clarification runs unless that identity rule changes for clarification resumes.
 
 ## Decisions
 
-1. Add a small `src/reviewgraph/clarification.py` policy helper rather than continuing to scatter clarification state derivation across runner/rendering.
-2. The helper should only model unanswered pending state for AUR-205:
-   - stable pending IDs from request IDs;
-   - status map keyed by request ID;
-   - blocking pending IDs;
-   - whether any pending blocking request blocks posting/verdict confidence.
-3. Do not implement human answers, status transitions to answered/resolved, transient `clarification_review` execution, or affected-reviewer reruns; those belong to AUR-206.
-4. Preserve the current private verdict value `needs_clarification` for local dry-run output. The acceptance criterion means no `request_changes` / blocking verdict should be produced from ambiguous issues, not that the private verdict must be `None`.
-5. If any pending blocking clarification exists, every posting-plan item should be local-only and `candidate_payload_preview` should be absent, even when there are otherwise postable findings.
-6. Non-blocking pending clarifications remain visible and local-only in the posting plan, but they should not prevent otherwise eligible postable findings from producing a candidate payload.
-7. Keep existing provenance rules: unsafe or omitted-memory clarification requests are suppressed and should not create pending state.
+1. Implement AUR-206 as pure graph/state primitives plus focused harness, not live UI.
+2. Add `ingest_clarification_answer(review_state, answer)` to `clarification.py`.
+   - It validates that the request exists and is pending.
+   - It appends the answer, replaces the stored `ClarificationRequest` with `status=ANSWERED`, updates `clarification_status[request_id]` to `answered`, removes the request ID from `pending_clarification_ids`, and records the answered ID for the next clarification run.
+   - It must not mutate `active_stage`, `suspended_stage`, `stage_queue`, or `completed_stages`.
+3. Add an explicit field to `ReviewState` for scheduled answered clarification IDs, likely `ready_clarification_ids: list[str]`. This avoids overloading `pending_clarification_ids` and makes stale pending IDs testable.
+4. Teach `advance_or_finish_stage` to:
+   - enter `clarification_review` when `ready_clarification_ids` is non-empty and a normal stage is active;
+   - set `suspended_stage` to the current normal stage;
+   - consume exactly one ready clarification ID on entry by moving it into an active/scheduled resume slot, so the same answer cannot re-enter repeatedly;
+   - restore the suspended stage after clarification review;
+   - never put `clarification_review` in the normal queue or completed list.
+5. Keep the resume selector narrow:
+   - Provide a production helper/API that selects only reviewers named by the answered request's `resume_target_reviewers`.
+   - Register resumed run keys with `stage=clarification_review` and the answered `clarification_id`.
+   - Key selection to the specific active clarification ID, not just any pending/answered request.
+   - Do not rerun unrelated completed normal stages or unrelated reviewers.
+6. Adjust reviewer-run suppression so a completed normal-stage run does not suppress a clarification-resume run for the same reviewer when the new run key has a clarification ID.
+7. Stale pending IDs should not keep `post_enabled=false`: answered IDs are removed from `pending_clarification_ids`, `ClarificationRequest.status` becomes `ANSWERED`, and `evaluate_clarification_gate` should only block on requests whose current request status is pending. The request object status is the authoritative source; `clarification_status` is a derived/indexed view that must match it.
 
 ## Implementation Plan
 
-1. Add `src/reviewgraph/clarification.py`.
-   - Define a frozen result such as `ClarificationGateResult`.
-   - Provide `evaluate_clarification_gate(requests)` that returns pending IDs, status map, blocking IDs, and a `blocks_posting` flag based only on pending `blocks_verdict=true` requests.
-   - Keep the API pure and fixture-safe; no GitHub, no writer, no answer ingestion.
+1. Extend models/state minimally.
+   - Add `ready_clarification_ids` and `active_clarification_id` to `ReviewState`.
+   - Update empty graph and runner initializers/tests for the new state field.
 
-2. Wire the helper into `runner.py`.
-   - Derive clarification gate state after output IDs are validated and before local verdict/posting-plan construction.
-   - Use the gate result to keep `post_enabled=false` whenever a pending blocking clarification exists.
-   - Use the gate result for stage-loop stop behavior so non-blocking clarifications do not emit `clarification_needed_end`.
-   - Include top-level dry-run JSON fields for `pending_clarification_ids` and `clarification_status` so graph state is visible outside rendered review JSON.
-   - Preserve the existing `clarification_needed_end` trace behavior.
+2. Extend `clarification.py`.
+   - Keep `evaluate_clarification_gate` pure.
+   - Add `ingest_clarification_answer` and small helpers for request lookup/status update.
+   - Ensure it records answer state without cursor mutation.
+   - Ensure gate evaluation treats answered request objects as non-blocking even if a stale pending ID list was not yet cleaned up.
 
-3. Add focused harness `tests/test_clarification.py`.
-   - Clarification-only fixture produces pending state with stable ID, `status=pending`, `post_enabled=false`, local verdict `needs_clarification`, no writer call, no candidate payload, and rendered question/why-it-matters.
-   - Finding plus clarification keeps all posting-plan items local-only and produces no candidate payload.
-   - Non-blocking clarification (`blocks_verdict=false`) becomes pending/rendered state but does not stop stage advancement, does not force `needs_clarification`, and does not suppress otherwise eligible candidate payloads.
-   - Unsafe or omitted-memory clarification requests are suppressed and do not create pending IDs.
-   - Graph trace stops at `clarification_needed_end` without advancing unrelated later stages.
-   - No local `request_changes` verdict is produced from clarification ambiguity.
+3. Extend `state.py`.
+   - Allow `clarification_review` as transient `active_stage` with a non-null `suspended_stage`.
+   - Implement enter/exit transitions in `advance_or_finish_stage`.
+   - Consume one `ready_clarification_ids` entry into `active_clarification_id` on entry, and clear `active_clarification_id` on exit after restoring the suspended stage.
+   - Preserve normal-stage queue/completed invariants.
 
-4. Update durable docs narrowly.
-   - `docs/architecture/state-graph.md` should identify the pending clarification gate state that stops before posting.
-   - `docs/harnesses/harness-engineering.md` should name `tests/test_clarification.py` as the focused stop-state harness.
+4. Add resume reviewer selection/key helpers.
+   - Extend routing/reviewer-run production code with a clarification resume path.
+   - Ensure resumed keys include `clarification_id` and only affected reviewers are selected.
+   - Ensure completed normal-stage reviewer statuses do not suppress clarification-review runs for the same reviewer/target/config.
+
+5. Add `tests/test_clarification_resume.py`.
+   - Answer ingestion marks pending request answered and removes the pending ID without cursor mutation.
+   - `advance_or_finish_stage` enters `clarification_review`, then restores the suspended stage.
+   - Ready clarification IDs are consumed once; a second `advance_or_finish_stage` does not re-enter for the same answered ID.
+   - Resumed run key includes the clarification ID.
+   - A completed unrelated stage/reviewer is not rerun during clarification resume.
+   - Answered/stale pending IDs do not keep the clarification gate blocking, and post eligibility can recover when findings exist and no pending blocking requests remain.
+
+6. Update durable docs narrowly.
+   - `docs/architecture/state-graph.md` should reflect the implemented answer ingestion and transient resume behavior.
+   - `docs/harnesses/harness-engineering.md` should name `tests/test_clarification_resume.py`.
 
 ## Verification
 
-- Focused: `python -m pytest tests/test_clarification.py`
-- Regression: `python -m pytest tests/test_quality.py tests/test_cli.py tests/test_tracer_fixture_run.py tests/test_render.py tests/test_posting.py`
+- Focused: `python -m pytest tests/test_clarification_resume.py`
+- Regression: `python -m pytest tests/test_clarification.py tests/test_stage_cursor.py tests/test_reviewer_runs.py tests/test_routing.py tests/test_graph_empty.py`
 - Full: `python -m pytest -q`
 - Hygiene: `python -m py_compile src/reviewgraph/*.py && python scripts/check_docs.py && git diff --check`
 
 ## Out Of Scope
 
-- Answer ingestion.
-- Resume from answered clarification.
-- `clarification_review` reviewer reruns.
-- GitHub posting of clarification questions.
+- Live human answer UI.
+- GitHub comment replies.
+- Full CLI interactive resume command.
+- Live LLM reruns.
 - Approval/finalization behavior.
-- Local verdict extraction beyond the existing private `needs_clarification` value.
+- Resolving clarification based on new reviewer output beyond state restoration and run-key proof.
