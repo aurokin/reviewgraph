@@ -186,6 +186,38 @@ def test_writer_proof_uses_per_run_delta() -> None:
     assert result.json_data["side_effects"] == {"writer_called": False, "writer_call_count": 0}
 
 
+def test_fixture_dry_run_modules_do_not_import_side_effect_boundaries() -> None:
+    forbidden_roots = {
+        "github",
+        "langgraph",
+        "llm",
+        "openai",
+        "requests",
+    }
+    forbidden_reviewgraph_modules = {
+        "reviewgraph.approval",
+        "reviewgraph.finalization",
+        "reviewgraph.github",
+        "reviewgraph.llm",
+        "reviewgraph.writer",
+    }
+    for relative in (
+        "src/reviewgraph/cli.py",
+        "src/reviewgraph/runner.py",
+        "src/reviewgraph/render.py",
+        "src/reviewgraph/posting.py",
+    ):
+        tree = ast.parse(Path(relative).read_text())
+        imported: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported.add(node.module)
+        assert not (imported & forbidden_reviewgraph_modules)
+        assert not ({name.split(".", 1)[0] for name in imported} & forbidden_roots)
+
+
 def test_fixture_run_redacts_secret_like_content(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GITHUB_TOKEN", "ghs_abcdefghijklmnopqrstuvwxyz123456")
     markdown_path = tmp_path / "review.md"

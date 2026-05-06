@@ -1,0 +1,71 @@
+{
+  "id": "specialized-review-pr",
+  "pr_ref": "fixture:specialized-review-pr",
+  "target": {
+    "owner_repo": "acme/widgets",
+    "pr_number": 43,
+    "base_sha": "base-specialized",
+    "head_sha": "head-specialized",
+    "merge_base_sha": "merge-specialized",
+    "diff_basis": "merge_base"
+  },
+  "changed_files": [
+    {
+      "path": "src/auth/session.py",
+      "changed_ranges": [
+        {"start": 20, "end": 26}
+      ],
+      "patch": "@@ -20,7 +20,7 @@\n+    return session if test_mode else require_mfa(session)"
+    }
+  ],
+  "memory": [
+    {
+      "id": "mem-auth-trusted",
+      "trust_label": "trusted",
+      "resolved_status": "unresolved",
+      "source_type": "review_thread",
+      "body": "Maintainer asked for extra auth review on this path."
+    }
+  ],
+  "truncation": [
+    {
+      "resource": "patch",
+      "truncated": false,
+      "note": "Specialized fixture patch stayed within context budget."
+    }
+  ],
+  "raw_reviewer_outputs": [
+    {
+      "reviewer": "correctness",
+      "stage": "initial_triage",
+      "items": [
+        {
+          "type": "local_note",
+          "id": "note-auth-shape",
+          "title": "Auth path touched",
+          "body": "Initial triage recorded that an auth path changed.",
+          "evidence": "Changed file src/auth/session.py."
+        }
+      ]
+    },
+    {
+      "reviewer": "security",
+      "stage": "specialized_review",
+      "items": [
+        {
+          "type": "postable_finding",
+          "id": "finding-test-mode-mfa",
+          "title": "Test mode skips MFA",
+          "body": "The new branch skips MFA when test mode is enabled.",
+          "evidence": "Changed line 22 skips MFA when test mode is enabled.",
+          "path": "src/auth/session.py",
+          "line": 22,
+          "priority": 1,
+          "severity": "critical",
+          "confidence": "high",
+          "fingerprint": "fixture-specialized-test-mode-mfa"
+        }
+      ]
+    }
+  ]
+}

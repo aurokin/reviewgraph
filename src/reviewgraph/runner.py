@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from fnmatch import fnmatch
 from typing import Any
 
 from reviewgraph.fixtures import (
@@ -50,6 +51,9 @@ class DryRunResult:
     writer_call_count: int
 
 
+NORMAL_STAGES = ("initial_triage", "specialized_review", "logic_review")
+
+
 def run_fixture_dry_run(
     *,
     fixture_ref: str,
@@ -59,8 +63,8 @@ def run_fixture_dry_run(
     writer_call_count_before = _writer_call_count(writer_sentinel)
     fixture = load_fixture_pr(fixture_ref)
     config = load_reviewer_config(reviewer_config_path)
-    selected_reviewers = _select_reviewers(config)
-    graph_trace = [_initial_triage_trace()]
+    selected_reviewers = _select_reviewers(config, fixture)
+    graph_trace = _graph_trace(selected_reviewers)
     review_target = _review_target(fixture)
     memory_references = _memory_references(fixture)
     truncation_notices = _truncation_notices(fixture)
@@ -119,24 +123,79 @@ def run_fixture_dry_run(
     )
 
 
-def _select_reviewers(config: ReviewerConfig) -> tuple[SelectedReviewer, ...]:
+def _select_reviewers(config: ReviewerConfig, fixture: FixturePR) -> tuple[SelectedReviewer, ...]:
     selected: list[SelectedReviewer] = []
-    for name in sorted(config.agents):
-        agent = config.agents[name]
-        stages = agent.get("stages")
-        triggers = agent.get("triggers")
-        if isinstance(stages, list) and "initial_triage" in stages and isinstance(triggers, dict):
-            if triggers.get("always") is True:
+    for stage in NORMAL_STAGES:
+        for name in sorted(config.agents):
+            agent = config.agents[name]
+            stages = agent.get("stages")
+            triggers = agent.get("triggers")
+            if isinstance(stages, list) and stage in stages and isinstance(triggers, dict):
+                reasons = _trigger_reasons(stage=stage, triggers=triggers, fixture=fixture)
+                if not reasons:
+                    continue
                 selected.append(
                     SelectedReviewer(
                         name=name,
-                        stage="initial_triage",
-                        reasons=("initial_triage triggers.always=true",),
+                        stage=stage,
+                        reasons=tuple(reasons),
                     )
                 )
-    if not selected:
+    if not any(reviewer.stage == "initial_triage" for reviewer in selected):
         raise RunnerError("reviewer config has no eligible initial_triage always-on reviewer")
     return tuple(selected)
+
+
+def _trigger_reasons(*, stage: str, triggers: dict[str, Any], fixture: FixturePR) -> list[str]:
+    reasons: list[str] = []
+    if triggers.get("always") is True:
+        reasons.append(f"{stage} triggers.always=true")
+    for pattern in triggers.get("paths", ()):
+        if any(_path_matches(changed_file.path, pattern) for changed_file in fixture.changed_files):
+            reasons.append(f"{stage} triggers.paths={pattern}")
+    patches = "\n".join(changed_file.patch for changed_file in fixture.changed_files).casefold()
+    for pattern in triggers.get("diff_patterns", ()):
+        if pattern.casefold() in patches:
+            reasons.append(f"{stage} triggers.diff_patterns={pattern}")
+    return reasons
+
+
+def _path_matches(path: str, pattern: str) -> bool:
+    return path == pattern or fnmatch(path, pattern) or path.startswith(pattern.rstrip("/") + "/")
+
+
+def _graph_trace(selected_reviewers: tuple[SelectedReviewer, ...]) -> list[dict[str, Any]]:
+    selected_stages = [stage for stage in NORMAL_STAGES if any(reviewer.stage == stage for reviewer in selected_reviewers)]
+    if not selected_stages or selected_stages[0] != "initial_triage":
+        raise RunnerError("initial_triage must be the first selected review stage")
+
+    traces = [_initial_triage_trace()]
+    active_stage = "initial_triage"
+    stage_queue = ["specialized_review", "logic_review"]
+    for next_stage in selected_stages[1:]:
+        before_queue = list(stage_queue)
+        skipped: list[str] = []
+        while stage_queue and stage_queue[0] != next_stage:
+            skipped.append(stage_queue.pop(0))
+        if not stage_queue:
+            raise RunnerError(f"selected stage {next_stage} is not in the remaining stage queue")
+        stage_queue.pop(0)
+        reason = f"complete_{active_stage}_start_{next_stage}"
+        if skipped:
+            reason = f"complete_{active_stage}_skip_{'_'.join(skipped)}_start_{next_stage}"
+        traces.append(
+            {
+                "active_stage_before": active_stage,
+                "active_stage_after": next_stage,
+                "suspended_stage_before": None,
+                "suspended_stage_after": None,
+                "stage_queue_before": before_queue,
+                "stage_queue_after": list(stage_queue),
+                "transition_reason": reason,
+            }
+        )
+        active_stage = next_stage
+    return traces
 
 
 def _initial_triage_trace() -> dict[str, Any]:

@@ -5,13 +5,25 @@
       "path": "prs/basic-pr.json",
       "behavior": "fixture dry run with one postable finding, one local note, trusted and untrusted memory, redaction, and writer-unreachable proof",
       "consumed_by": ["tests/test_cli.py", "tests/test_tracer_fixture_run.py"]
+    },
+    {
+      "id": "specialized-review-pr",
+      "path": "prs/specialized-review-pr.json",
+      "behavior": "fixture dry run where a path trigger introduces a specialized_review security reviewer after initial triage",
+      "consumed_by": ["tests/test_cli.py", "tests/test_tracer_fixture_run.py"]
+    },
+    {
+      "id": "ambiguous-logic-pr",
+      "path": "prs/ambiguous-logic-pr.json",
+      "behavior": "fixture dry run where a diff-pattern trigger introduces logic_review and returns a clarification request with no writer reachability",
+      "consumed_by": ["tests/test_cli.py", "tests/test_tracer_fixture_run.py"]
     }
   ],
   "reviewer_configs": [
     {
       "id": "basic-reviewers",
       "path": "reviewer-configs/basic-reviewers.json",
-      "behavior": "minimal always-on initial_triage reviewer config",
+      "behavior": "fixture reviewer config with initial, specialized path, and logic diff-pattern triggers",
       "consumed_by": ["tests/test_cli.py", "tests/test_tracer_fixture_run.py"]
     }
   ]

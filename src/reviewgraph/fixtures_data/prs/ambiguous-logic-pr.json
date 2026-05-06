@@ -1,0 +1,64 @@
+{
+  "id": "ambiguous-logic-pr",
+  "pr_ref": "fixture:ambiguous-logic-pr",
+  "target": {
+    "owner_repo": "acme/widgets",
+    "pr_number": 44,
+    "base_sha": "base-logic",
+    "head_sha": "head-logic",
+    "merge_base_sha": "merge-logic",
+    "diff_basis": "merge_base"
+  },
+  "changed_files": [
+    {
+      "path": "src/billing/discounts.py",
+      "changed_ranges": [
+        {"start": 30, "end": 36}
+      ],
+      "patch": "@@ -30,7 +30,7 @@\n+    # requires product intent before reviewers can decide whether expired coupons should drop discounts"
+    }
+  ],
+  "memory": [
+    {
+      "id": "mem-product-unresolved",
+      "trust_label": "trusted",
+      "resolved_status": "unresolved",
+      "source_type": "issue_comment",
+      "body": "Product has not clarified whether expired coupons should keep legacy discounts."
+    }
+  ],
+  "truncation": [
+    {
+      "resource": "patch",
+      "truncated": false,
+      "note": "Ambiguous logic fixture patch stayed within context budget."
+    }
+  ],
+  "raw_reviewer_outputs": [
+    {
+      "reviewer": "correctness",
+      "stage": "initial_triage",
+      "items": [
+        {
+          "type": "local_note",
+          "id": "note-discount-shape",
+          "title": "Billing behavior changed",
+          "body": "Initial triage recorded a billing behavior change.",
+          "evidence": "Changed file src/billing/discounts.py."
+        }
+      ]
+    },
+    {
+      "reviewer": "logic",
+      "stage": "logic_review",
+      "items": [
+        {
+          "type": "clarification_request",
+          "id": "clarify-expired-coupon-intent",
+          "question": "Should expired coupons preserve legacy discounts for existing carts?",
+          "why_it_matters": "Without product intent, the reviewer cannot decide whether the changed billing behavior is a bug or an intended migration."
+        }
+      ]
+    }
+  ]
+}

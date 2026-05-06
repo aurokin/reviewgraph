@@ -194,6 +194,103 @@ def test_basic_fixture_tracer_json_is_stable() -> None:
     assert _stable_json(first.json_data) == _stable_json(second.json_data)
 
 
+def test_specialized_review_fixture_proves_staged_reviewer_introduction() -> None:
+    result = run_fixture_dry_run(fixture_ref="specialized-review-pr")
+    data = result.json_data
+    review = data["review"]
+
+    assert data["run_mode"] == "dry_run"
+    assert data["post_enabled"] is True
+    assert data["local_verdict"] == "comment"
+    assert data["side_effects"] == {"writer_called": False, "writer_call_count": 0}
+    assert data["selected_reviewers"] == [
+        {
+            "name": "correctness",
+            "stage": "initial_triage",
+            "reasons": ["initial_triage triggers.always=true"],
+        },
+        {
+            "name": "security",
+            "stage": "specialized_review",
+            "reasons": ["specialized_review triggers.paths=src/auth/*"],
+        },
+    ]
+    assert data["graph_trace"] == [
+        EXPECTED_TRACE,
+        {
+            "active_stage_before": "initial_triage",
+            "active_stage_after": "specialized_review",
+            "suspended_stage_before": None,
+            "suspended_stage_after": None,
+            "stage_queue_before": ["specialized_review", "logic_review"],
+            "stage_queue_after": ["logic_review"],
+            "transition_reason": "complete_initial_triage_start_specialized_review",
+        },
+    ]
+    assert review["classified_output"]["local_notes"][0]["id"] == "note-auth-shape"
+    assert review["classified_output"]["postable_findings"][0]["id"] == "finding-test-mode-mfa"
+    assert review["candidate_payload_preview"]["artifact_kind"] == "issue_comment"
+    assert review["candidate_payload_preview"]["item_fingerprints"] == ["fixture-specialized-test-mode-mfa"]
+
+
+def test_ambiguous_logic_fixture_stops_for_clarification_without_candidate_payload() -> None:
+    writer = RaisingWriter()
+    result = run_fixture_dry_run(fixture_ref="ambiguous-logic-pr", writer_sentinel=writer)
+    data = result.json_data
+    review = data["review"]
+    classified = review["classified_output"]
+
+    assert result.writer_call_count == 0
+    assert writer.call_count == 0
+    assert data["run_mode"] == "dry_run"
+    assert data["post_enabled"] is False
+    assert data["local_verdict"] == "needs_clarification"
+    assert data["side_effects"] == {"writer_called": False, "writer_call_count": 0}
+    assert data["selected_reviewers"] == [
+        {
+            "name": "correctness",
+            "stage": "initial_triage",
+            "reasons": ["initial_triage triggers.always=true"],
+        },
+        {
+            "name": "logic",
+            "stage": "logic_review",
+            "reasons": ["logic_review triggers.diff_patterns=requires product intent"],
+        },
+    ]
+    assert data["graph_trace"] == [
+        EXPECTED_TRACE,
+        {
+            "active_stage_before": "initial_triage",
+            "active_stage_after": "logic_review",
+            "suspended_stage_before": None,
+            "suspended_stage_after": None,
+            "stage_queue_before": ["specialized_review", "logic_review"],
+            "stage_queue_after": [],
+            "transition_reason": "complete_initial_triage_skip_specialized_review_start_logic_review",
+        },
+    ]
+    assert classified["postable_findings"] == []
+    assert classified["local_notes"][0]["id"] == "note-discount-shape"
+    assert classified["clarification_requests"] == [
+        {
+            "id": "clarify-expired-coupon-intent",
+            "classification": "clarification_request",
+            "reviewer": "logic",
+            "question": "Should expired coupons preserve legacy discounts for existing carts?",
+            "why_it_matters": (
+                "Without product intent, the reviewer cannot decide whether the changed billing behavior is a bug "
+                "or an intended migration."
+            ),
+            "blocks_verdict": True,
+        }
+    ]
+    assert review["candidate_payload_preview"] is None
+    assert all(not item["public_payload_eligible"] for item in review["posting_plan"]["items"])
+    assert "## Clarification Requests" in result.markdown
+    assert "Should expired coupons preserve legacy discounts" in result.markdown
+
+
 class RaisingWriter:
     def __init__(self) -> None:
         self.call_count = 0
@@ -238,9 +335,13 @@ def _assert_secret_like_fixture_content_absent(result) -> None:
 
 def _assert_manifest_consumes_tracer_harness() -> None:
     manifest = load_manifest()
-    basic_pr = next(entry for entry in manifest["fixtures"] if entry["id"] == "basic-pr")
+    fixtures_by_id = {entry["id"]: entry for entry in manifest["fixtures"]}
     basic_reviewers = next(entry for entry in manifest["reviewer_configs"] if entry["id"] == "basic-reviewers")
-    assert set(basic_pr["consumed_by"]) >= {"tests/test_cli.py", "tests/test_tracer_fixture_run.py"}
+    for fixture_id in ("basic-pr", "specialized-review-pr", "ambiguous-logic-pr"):
+        assert set(fixtures_by_id[fixture_id]["consumed_by"]) >= {
+            "tests/test_cli.py",
+            "tests/test_tracer_fixture_run.py",
+        }
     assert set(basic_reviewers["consumed_by"]) >= {"tests/test_cli.py", "tests/test_tracer_fixture_run.py"}
 
 

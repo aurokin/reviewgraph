@@ -1,6 +1,12 @@
 # Operations Notes
 
-This directory is for running ReviewGraph once implementation exists.
+This directory is for running ReviewGraph safely. The current runnable path is fixture-only and does not require credentials:
+
+```bash
+PYTHONPATH=src python -m reviewgraph.cli --fixture-pr basic-pr --print-markdown
+```
+
+Use the fixture path for local smoke tests until the later live-read, live-LLM, approval, and writer milestones land.
 
 ## Expected future docs
 

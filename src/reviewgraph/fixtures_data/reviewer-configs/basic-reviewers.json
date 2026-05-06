@@ -9,6 +9,26 @@
       "required": true,
       "verdict_power": "comment",
       "capabilities": ["diff_context"]
+    },
+    "logic": {
+      "description": "Checks cross-file product behavior and ambiguity in deterministic fixtures.",
+      "stages": ["logic_review"],
+      "triggers": {
+        "diff_patterns": ["requires product intent"]
+      },
+      "required": false,
+      "verdict_power": "comment",
+      "capabilities": ["diff_context"]
+    },
+    "security": {
+      "description": "Checks security-sensitive fixture paths in specialized review.",
+      "stages": ["specialized_review"],
+      "triggers": {
+        "paths": ["src/auth/*"]
+      },
+      "required": false,
+      "verdict_power": "comment",
+      "capabilities": ["diff_context"]
     }
   }
 }

@@ -8,6 +8,28 @@ The project is intentionally documentation-first. The first implementation shoul
 
 ReviewGraph reads GitHub pull requests, uses the PR conversation as shared review memory, introduces reviewer agents under explicit graph conditions, runs targeted review stages, and gates GitHub writes behind human approval.
 
+## Current runnable slice
+
+The current implementation is the PRD 0002 fixture tracer bullet. It does not perform live GitHub reads, live LLM calls, approval, or posting. It proves the dry-run product shape with packaged fixtures and deterministic fake reviewer output:
+
+```bash
+PYTHONPATH=src python -m reviewgraph.cli --fixture-pr basic-pr --print-markdown
+```
+
+Useful validation commands:
+
+```bash
+python -m pytest tests/test_tracer_fixture_run.py
+python -m pytest
+python scripts/check_docs.py
+```
+
+Packaged fixture IDs currently cover:
+
+- `basic-pr`: normal fixture dry run with a postable finding, local note, suppressed output, memory, redaction, posting plan, and no-writer proof.
+- `specialized-review-pr`: path-triggered `specialized_review` reviewer introduction.
+- `ambiguous-logic-pr`: diff-pattern-triggered `logic_review` clarification path that disables posting.
+
 ## Start here
 
 Read in this order:
@@ -48,4 +70,4 @@ Read in this order:
 
 ## Repository status
 
-Scaffold-only. No runtime implementation exists yet.
+Fixture dry-run tracer implemented. Live GitHub reads, live LLM reviewers, approval finalization, and GitHub writers are still future milestones.
