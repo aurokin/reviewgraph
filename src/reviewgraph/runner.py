@@ -52,6 +52,7 @@ from reviewgraph.posting import (
 )
 from reviewgraph.redaction import redact_data
 from reviewgraph.render import RenderedReview, render_review
+from reviewgraph.state import StageCursor, StageCursorTransition, advance_or_finish_stage, initial_stage_cursor
 
 
 class RunnerError(ValueError):
@@ -72,9 +73,6 @@ class _StageRunResult:
     graph_trace: list[dict[str, Any]]
     classified: dict[str, tuple[Any, ...]]
     context_budget: ContextBudget
-
-
-NORMAL_STAGES = ("initial_triage", "specialized_review", "logic_review")
 
 
 def run_fixture_dry_run(
@@ -188,25 +186,15 @@ def _run_review_stages(
     stage_budgets: list[ContextBudget] = []
     retained_reviewer_count = 0
     planned_live_calls = 0
-    active_stage: str | None = None
-    stage_queue = list(NORMAL_STAGES)
+    cursor = initial_stage_cursor()
     clarification_needed = False
 
-    for stage in NORMAL_STAGES:
-        before_active = active_stage
-        before_queue = list(stage_queue)
-        if not stage_queue or stage_queue[0] != stage:
-            raise RunnerError(f"stage cursor expected {stage}")
-        stage_queue.pop(0)
-        active_stage = stage
-        graph_trace.append(
-            _stage_transition_trace(
-                active_stage_before=before_active,
-                active_stage_after=active_stage,
-                stage_queue_before=before_queue,
-                stage_queue_after=stage_queue,
-            )
-        )
+    while cursor.stage_queue:
+        transition = advance_or_finish_stage(cursor)
+        graph_trace.append(transition.to_json())
+        if cursor.active_stage is None:
+            raise RunnerError("stage cursor did not activate a review stage")
+        stage = cursor.active_stage.value
 
         selected_stage_reviewers = _select_reviewers_for_stage(
             config,
@@ -251,28 +239,13 @@ def _run_review_stages(
 
     if clarification_needed:
         graph_trace.append(
-            {
-                "active_stage_before": active_stage,
-                "active_stage_after": None,
-                "suspended_stage_before": None,
-                "suspended_stage_after": None,
-                "stage_queue_before": list(stage_queue),
-                "stage_queue_after": list(stage_queue),
-                "transition_reason": "clarification_needed_end",
-            }
+            _stage_cursor_terminal_trace(
+                cursor,
+                transition_reason="clarification_needed_end",
+            )
         )
     else:
-        graph_trace.append(
-            {
-                "active_stage_before": active_stage,
-                "active_stage_after": None,
-                "suspended_stage_before": None,
-                "suspended_stage_after": None,
-                "stage_queue_before": list(stage_queue),
-                "stage_queue_after": list(stage_queue),
-                "transition_reason": "finish_review_stages",
-            }
-        )
+        graph_trace.append(advance_or_finish_stage(cursor).to_json())
 
     extra_raw_keys = sorted(set(raw_outputs_by_key) - seen_raw_keys - deferred_raw_keys)
     if extra_raw_keys:
@@ -423,26 +396,18 @@ def _risk_rank(risk_level: str) -> int:
     return {"low": 0, "medium": 1, "high": 2}[risk_level]
 
 
-def _stage_transition_trace(
-    *,
-    active_stage_before: str | None,
-    active_stage_after: str,
-    stage_queue_before: list[str],
-    stage_queue_after: list[str],
-) -> dict[str, Any]:
-    if active_stage_before is None:
-        transition_reason = f"start_{active_stage_after}"
-    else:
-        transition_reason = f"complete_{active_stage_before}_start_{active_stage_after}"
-    return {
-        "active_stage_before": active_stage_before,
-        "active_stage_after": active_stage_after,
-        "suspended_stage_before": None,
-        "suspended_stage_after": None,
-        "stage_queue_before": list(stage_queue_before),
-        "stage_queue_after": list(stage_queue_after),
-        "transition_reason": transition_reason,
-    }
+def _stage_cursor_terminal_trace(cursor: StageCursor, *, transition_reason: str) -> dict[str, Any]:
+    return StageCursorTransition(
+        active_stage_before=cursor.active_stage,
+        active_stage_after=cursor.active_stage,
+        suspended_stage_before=cursor.suspended_stage,
+        suspended_stage_after=cursor.suspended_stage,
+        stage_queue_before=tuple(cursor.stage_queue),
+        stage_queue_after=tuple(cursor.stage_queue),
+        completed_stages_before=tuple(cursor.completed_stages),
+        completed_stages_after=tuple(cursor.completed_stages),
+        transition_reason=transition_reason,
+    ).to_json()
 
 
 def _review_target(fixture: FixturePR) -> ReviewTarget:

@@ -51,6 +51,8 @@ EXPECTED_TRACE = {
     "suspended_stage_after": None,
     "stage_queue_before": ["initial_triage", "specialized_review", "logic_review"],
     "stage_queue_after": ["specialized_review", "logic_review"],
+    "completed_stages_before": [],
+    "completed_stages_after": [],
     "transition_reason": "start_initial_triage",
 }
 
@@ -63,6 +65,8 @@ EXPECTED_COMPLETED_TRACE = [
         "suspended_stage_after": None,
         "stage_queue_before": ["specialized_review", "logic_review"],
         "stage_queue_after": ["logic_review"],
+        "completed_stages_before": [],
+        "completed_stages_after": ["initial_triage"],
         "transition_reason": "complete_initial_triage_start_specialized_review",
     },
     {
@@ -72,6 +76,8 @@ EXPECTED_COMPLETED_TRACE = [
         "suspended_stage_after": None,
         "stage_queue_before": ["logic_review"],
         "stage_queue_after": [],
+        "completed_stages_before": ["initial_triage"],
+        "completed_stages_after": ["initial_triage", "specialized_review"],
         "transition_reason": "complete_specialized_review_start_logic_review",
     },
     {
@@ -81,6 +87,8 @@ EXPECTED_COMPLETED_TRACE = [
         "suspended_stage_after": None,
         "stage_queue_before": [],
         "stage_queue_after": [],
+        "completed_stages_before": ["initial_triage", "specialized_review"],
+        "completed_stages_after": ["initial_triage", "specialized_review", "logic_review"],
         "transition_reason": "finish_review_stages",
     },
 ]
@@ -88,11 +96,13 @@ EXPECTED_COMPLETED_TRACE = [
 EXPECTED_AMBIGUOUS_TRACE = EXPECTED_COMPLETED_TRACE[:-1] + [
     {
         "active_stage_before": "logic_review",
-        "active_stage_after": None,
+        "active_stage_after": "logic_review",
         "suspended_stage_before": None,
         "suspended_stage_after": None,
         "stage_queue_before": [],
         "stage_queue_after": [],
+        "completed_stages_before": ["initial_triage", "specialized_review"],
+        "completed_stages_after": ["initial_triage", "specialized_review"],
         "transition_reason": "clarification_needed_end",
     }
 ]

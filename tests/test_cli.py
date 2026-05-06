@@ -46,6 +46,8 @@ def test_cli_writes_markdown_and_json_for_fixture_id(tmp_path: Path) -> None:
         "suspended_stage_after": None,
         "stage_queue_before": ["initial_triage", "specialized_review", "logic_review"],
         "stage_queue_after": ["specialized_review", "logic_review"],
+        "completed_stages_before": [],
+        "completed_stages_after": [],
         "transition_reason": "start_initial_triage",
     }
     assert data["selected_reviewers"][0]["reasons"] == ["initial_triage triggers.always=true"]

@@ -35,7 +35,7 @@ This slice should stay focused on cursor state. It should not select reviewers, 
 1. Add `src/reviewgraph/state.py` with normal stage constants, cursor validation, `StageCursorTransition`, and `advance_or_finish_stage`.
 2. Update `src/reviewgraph/graph.py` to use the shared initial normal stage queue constant for AUR-194 initialization.
 3. Add `tests/test_stage_cursor.py` covering initial state, future-only queue invariant, normal stage advancement, final completion, completed-stage rerun prevention, and transition trace fields.
-4. Keep `clarification_review` as a validation rule only in this issue: it is transient and not allowed in the normal queue, but resume behavior remains future PRD 0005/graph work.
+4. Keep `clarification_review` as a validation rule only in this issue: it is transient and not allowed in the normal queue, but full clarification scheduling/resume behavior remains later PRD 0004 graph work.
 5. Run the focused harness and graph/tracer regressions.
 6. Use subagent review before implementation and again after code changes.
 7. Commit the plan before implementation, then commit the implementation separately.

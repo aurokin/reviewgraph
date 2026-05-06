@@ -17,6 +17,7 @@ from reviewgraph.models import (
 )
 from reviewgraph.posting import canonical_json_hash
 from reviewgraph.redaction import redact_data
+from reviewgraph.state import initial_stage_queue
 
 
 class _EmptyDryRunRuntimeState(TypedDict):
@@ -101,11 +102,7 @@ def _initialize_review_state(state: _EmptyDryRunRuntimeState) -> dict[str, Any]:
         read_gaps=[],
         config=ReviewConfig(agents={}),
         config_hash=canonical_json_hash({"agents": {}}),
-        stage_queue=[
-            ReviewStage.INITIAL_TRIAGE,
-            ReviewStage.SPECIALIZED_REVIEW,
-            ReviewStage.LOGIC_REVIEW,
-        ],
+        stage_queue=initial_stage_queue(),
         active_stage=None,
         suspended_stage=None,
         completed_stages=[],
