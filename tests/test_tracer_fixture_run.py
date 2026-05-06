@@ -134,6 +134,9 @@ def test_basic_fixture_tracer_golden_run() -> None:
     assert data["side_effects"] == {"writer_called": False, "writer_call_count": 0}
     assert data["graph_trace"] == EXPECTED_COMPLETED_TRACE
     assert data["selected_reviewers"] == [EXPECTED_REVIEWER]
+    assert data["reviewer_run_status"][0]["reviewer"] == "correctness"
+    assert data["reviewer_run_status"][0]["stage"] == "initial_triage"
+    assert data["reviewer_run_status"][0]["status"] == "completed"
     assert review["selected_reviewers"] == [EXPECTED_REVIEWER]
 
     assert [item["id"] for item in raw_items] == [

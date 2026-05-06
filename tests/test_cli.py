@@ -2009,6 +2009,7 @@ def test_missing_raw_output_for_selected_reviewer_returns_nonzero(
                     "security": {
                         "stages": ["initial_triage"],
                         "triggers": {"always": True},
+                        "required": True,
                     },
                 }
             }

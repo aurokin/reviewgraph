@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, replace
-from fnmatch import fnmatch
 from typing import Any
 
 from reviewgraph.fixtures import (
@@ -21,6 +20,7 @@ from reviewgraph.context_budget import (
     apply_reviewer_budget,
     default_context_budget,
     merge_context_budgets,
+    reviewer_key,
 )
 from reviewgraph.memory import build_conversation_memory
 from reviewgraph.posting import canonical_json_hash
@@ -32,10 +32,16 @@ from reviewgraph.models import (
     ContextBudget,
     LocalNote,
     MemoryReference,
+    PRConversationMemory,
     RawReviewerFinding,
+    ReviewConfig,
+    ReviewerRunKey,
+    ReviewerRunStatus,
+    ReviewerRunStatusValue,
     ReviewTarget,
     ReviewVerdict,
-    ReviewerTriggers,
+    ReviewState,
+    RunMode,
     SelectedReviewer,
     Severity,
     SuggestedReply,
@@ -52,6 +58,7 @@ from reviewgraph.posting import (
 )
 from reviewgraph.redaction import redact_data
 from reviewgraph.render import RenderedReview, render_review
+from reviewgraph.routing import select_reviewers_for_active_stage
 from reviewgraph.state import StageCursor, StageCursorTransition, advance_or_finish_stage, initial_stage_cursor
 
 
@@ -70,6 +77,8 @@ class DryRunResult:
 @dataclass(frozen=True)
 class _StageRunResult:
     selected_reviewers: tuple[SelectedReviewer, ...]
+    reviewer_run_keys: tuple[ReviewerRunKey, ...]
+    reviewer_run_status: dict[str, ReviewerRunStatus]
     graph_trace: list[dict[str, Any]]
     classified: dict[str, tuple[Any, ...]]
     context_budget: ContextBudget
@@ -157,6 +166,7 @@ def run_fixture_dry_run(
         post_enabled=post_enabled,
         local_verdict=local_verdict,
         selected_reviewers=selected_reviewers,
+        reviewer_run_status=stage_run.reviewer_run_status,
         graph_trace=graph_trace,
         writer_call_count=writer_call_count,
         rendered=rendered,
@@ -187,6 +197,12 @@ def _run_review_stages(
     retained_reviewer_count = 0
     planned_live_calls = 0
     cursor = initial_stage_cursor()
+    routing_state = _routing_review_state(
+        config,
+        fixture,
+        memory_references=memory_references,
+        context_budget=budget_limits,
+    )
     clarification_needed = False
 
     while cursor.stage_queue:
@@ -194,14 +210,12 @@ def _run_review_stages(
         graph_trace.append(transition.to_json())
         if cursor.active_stage is None:
             raise RunnerError("stage cursor did not activate a review stage")
+        routing_state.active_stage = cursor.active_stage
+        routing_state.stage_queue = list(cursor.stage_queue)
+        routing_state.completed_stages = list(cursor.completed_stages)
         stage = cursor.active_stage.value
 
-        selected_stage_reviewers = _select_reviewers_for_stage(
-            config,
-            fixture,
-            stage,
-            memory_references=memory_references,
-        )
+        selected_stage_reviewers = select_reviewers_for_active_stage(routing_state)
         budgeted_reviewers = apply_reviewer_budget(
             reviewers=selected_stage_reviewers,
             limits=budget_limits,
@@ -210,6 +224,13 @@ def _run_review_stages(
         )
         stage_budgets.append(budgeted_reviewers.context_budget)
         deferred_raw_keys.update(budgeted_reviewers.deferred_keys)
+        for reviewer in budgeted_reviewers.deferred_reviewers:
+            _update_reviewer_status(
+                routing_state,
+                reviewer,
+                status=ReviewerRunStatusValue.SKIPPED,
+                reason="skipped by context budget before execution",
+            )
         classified["local_notes"].extend(budgeted_reviewers.local_notes)
         stage_reviewers = budgeted_reviewers.retained_reviewers
         retained_reviewer_count += len(stage_reviewers)
@@ -221,17 +242,50 @@ def _run_review_stages(
             key = (reviewer.name, reviewer.stage)
             reviewer_output = raw_outputs_by_key.get(key)
             if reviewer_output is None:
+                _update_reviewer_status(
+                    routing_state,
+                    reviewer,
+                    status=ReviewerRunStatusValue.FAILED,
+                    reason="missing raw reviewer output for selected reviewer",
+                )
+                if not _reviewer_is_required(config, reviewer):
+                    classified["local_notes"].append(_optional_reviewer_failure_note(reviewer))
+                    continue
                 raise RunnerError(
                     "raw reviewer output was not selected; missing raw reviewer output for selected reviewer: "
                     f"{reviewer.name}/{reviewer.stage}"
                 )
             seen_raw_keys.add(key)
-            _classify_reviewer_output(
-                fixture,
-                reviewer_output=reviewer_output,
-                classified=classified,
-                memory_references=memory_references,
-                omitted_file_paths=omitted_file_paths,
+            _update_reviewer_status(
+                routing_state,
+                reviewer,
+                status=ReviewerRunStatusValue.RUNNING,
+                reason="deterministic fixture output execution started",
+            )
+            try:
+                _classify_reviewer_output(
+                    fixture,
+                    reviewer_output=reviewer_output,
+                    classified=classified,
+                    memory_references=memory_references,
+                    omitted_file_paths=omitted_file_paths,
+                )
+            except RunnerError:
+                _update_reviewer_status(
+                    routing_state,
+                    reviewer,
+                    status=ReviewerRunStatusValue.FAILED,
+                    reason="deterministic fixture output execution failed",
+                )
+                if not _reviewer_is_required(config, reviewer):
+                    classified["local_notes"].append(_optional_reviewer_failure_note(reviewer))
+                    continue
+                raise
+            _update_reviewer_status(
+                routing_state,
+                reviewer,
+                status=ReviewerRunStatusValue.COMPLETED,
+                reason="deterministic fixture output execution completed",
             )
         if classified["clarification_requests"]:
             clarification_needed = True
@@ -253,147 +307,12 @@ def _run_review_stages(
         raise RunnerError(f"raw reviewer output was not selected: {extra}")
     return _StageRunResult(
         selected_reviewers=tuple(selected_reviewers),
+        reviewer_run_keys=tuple(routing_state.reviewer_run_keys),
+        reviewer_run_status=dict(routing_state.reviewer_run_status),
         graph_trace=graph_trace,
         classified={key: tuple(value) for key, value in classified.items()},
         context_budget=merge_context_budgets(budget_limits, *stage_budgets),
     )
-
-
-def _select_reviewers_for_stage(
-    config: ReviewerConfig,
-    fixture: FixturePR,
-    stage: str,
-    *,
-    memory_references: tuple[MemoryReference, ...],
-) -> tuple[SelectedReviewer, ...]:
-    selected: list[SelectedReviewer] = []
-    for name in sorted(config.agents):
-        agent = config.agents[name]
-        stages = tuple(agent_stage.value for agent_stage in agent.stages)
-        if stage in stages:
-            reasons = _trigger_reasons(
-                stage=stage,
-                triggers=agent.triggers,
-                fixture=fixture,
-                memory_references=memory_references,
-            )
-            if not reasons:
-                continue
-            selected.append(
-                SelectedReviewer(
-                    name=name,
-                    stage=stage,
-                    reasons=tuple(reasons),
-                )
-            )
-    return tuple(selected)
-
-
-def _trigger_reasons(
-    *,
-    stage: str,
-    triggers: ReviewerTriggers,
-    fixture: FixturePR,
-    memory_references: tuple[MemoryReference, ...],
-) -> list[str]:
-    reasons: list[str] = []
-    gate_failures: list[str] = []
-    changed_file_count = len(fixture.changed_files)
-    changed_line_count = _changed_line_count(fixture)
-    risk_level = _fixture_risk_level(fixture)
-
-    if triggers.max_files is not None:
-        if changed_file_count > triggers.max_files:
-            gate_failures.append(f"{stage} triggers.max_files>{triggers.max_files}")
-        else:
-            reasons.append(f"{stage} triggers.max_files<={triggers.max_files}")
-    if triggers.changed_files_min is not None:
-        if changed_file_count < triggers.changed_files_min:
-            gate_failures.append(f"{stage} triggers.changed_files_min<{triggers.changed_files_min}")
-        else:
-            reasons.append(f"{stage} triggers.changed_files_min={triggers.changed_files_min}")
-    if triggers.changed_lines_min is not None:
-        if changed_line_count < triggers.changed_lines_min:
-            gate_failures.append(f"{stage} triggers.changed_lines_min<{triggers.changed_lines_min}")
-        else:
-            reasons.append(f"{stage} triggers.changed_lines_min={triggers.changed_lines_min}")
-    if triggers.risk_min is not None:
-        if _risk_rank(risk_level) < _risk_rank(triggers.risk_min.value):
-            gate_failures.append(f"{stage} triggers.risk_min<{triggers.risk_min.value}")
-        else:
-            reasons.append(f"{stage} triggers.risk_min={triggers.risk_min.value}")
-    if gate_failures:
-        return []
-
-    selector_reasons: list[str] = []
-    if triggers.always is True:
-        selector_reasons.append(f"{stage} triggers.always=true")
-    for pattern in triggers.paths:
-        if any(_path_matches(changed_file.path, pattern) for changed_file in fixture.changed_files):
-            selector_reasons.append(f"{stage} triggers.paths={pattern}")
-    patches = "\n".join(changed_file.patch or "" for changed_file in fixture.changed_files).casefold()
-    for pattern in triggers.diff_patterns:
-        if _diff_pattern_matches(patches, pattern):
-            selector_reasons.append(f"{stage} triggers.diff_patterns={pattern}")
-    labels = {label.casefold() for label in fixture.labels}
-    for label in triggers.labels:
-        if label.casefold() in labels:
-            selector_reasons.append(f"{stage} triggers.labels={label}")
-    trusted_memory = "\n".join(
-        memory.body or ""
-        for memory in memory_references
-        if memory.actionable
-    ).casefold()
-    for pattern in triggers.conversation_patterns:
-        if pattern.casefold() in trusted_memory:
-            selector_reasons.append(f"{stage} triggers.conversation_patterns={pattern}")
-
-    has_explicit_selector = any(
-        (
-            triggers.always,
-            triggers.paths,
-            triggers.labels,
-            triggers.diff_patterns,
-            triggers.conversation_patterns,
-        )
-    )
-    if not has_explicit_selector and reasons:
-        return reasons
-    return selector_reasons + reasons if selector_reasons else []
-
-
-def _path_matches(path: str, pattern: str) -> bool:
-    return path == pattern or fnmatch(path, pattern) or path.startswith(pattern.rstrip("/") + "/")
-
-
-def _diff_pattern_matches(casefolded_patch: str, pattern: str) -> bool:
-    try:
-        return re.search(pattern, casefolded_patch, flags=re.IGNORECASE) is not None
-    except re.error:
-        return pattern.casefold() in casefolded_patch
-
-
-def _changed_line_count(fixture: FixturePR) -> int:
-    return sum(
-        changed_range.end - changed_range.start + 1
-        for changed_file in fixture.changed_files
-        for changed_range in changed_file.changed_ranges
-    )
-
-
-def _fixture_risk_level(fixture: FixturePR) -> str:
-    changed_files = len(fixture.changed_files)
-    changed_lines = _changed_line_count(fixture)
-    patches = "\n".join(changed_file.patch or "" for changed_file in fixture.changed_files).casefold()
-    if changed_files >= 10 or changed_lines >= 500 or any(term in patches for term in ("auth", "token", "password")):
-        return "high"
-    if changed_files >= 3 or changed_lines >= 50 or any(term in patches for term in ("billing", "product intent")):
-        return "medium"
-    return "low"
-
-
-def _risk_rank(risk_level: str) -> int:
-    return {"low": 0, "medium": 1, "high": 2}[risk_level]
 
 
 def _stage_cursor_terminal_trace(cursor: StageCursor, *, transition_reason: str) -> dict[str, Any]:
@@ -408,6 +327,144 @@ def _stage_cursor_terminal_trace(cursor: StageCursor, *, transition_reason: str)
         completed_stages_after=tuple(cursor.completed_stages),
         transition_reason=transition_reason,
     ).to_json()
+
+
+def _routing_review_state(
+    config: ReviewerConfig,
+    fixture: FixturePR,
+    *,
+    memory_references: tuple[MemoryReference, ...],
+    context_budget: ContextBudget,
+) -> ReviewState:
+    return ReviewState(
+        run_id=f"fixture-routing:{fixture.id}",
+        run_mode=RunMode.DRY_RUN,
+        post_enabled=False,
+        pr_ref=fixture.pr_ref,
+        review_target=_review_target(fixture),
+        posting_target=None,
+        pr=fixture.pr,
+        conversation_memory=PRConversationMemory(entries=memory_references),
+        read_gaps=[],
+        config=config,
+        config_hash=_review_config_hash(config),
+        stage_queue=initial_stage_cursor().stage_queue,
+        active_stage=None,
+        suspended_stage=None,
+        completed_stages=[],
+        risk=None,
+        selected_reviewers=[],
+        reviewer_run_keys=[],
+        reviewer_run_status={},
+        reviewer_results=[],
+        context_budget=context_budget,
+        redaction_status=None,
+        findings=[],
+        local_notes=[],
+        suggested_replies=[],
+        suppressed_outputs=[],
+        clarification_requests=[],
+        pending_clarification_ids=[],
+        clarifications=[],
+        clarification_status={},
+        ranked_findings=[],
+        local_verdict=None,
+        rendered_markdown=None,
+        posting_plan=None,
+        actor_permission_gate=None,
+        payload_validation=None,
+        marker_reconciliation=None,
+        finalization_status=None,
+        candidate_github_payload=None,
+        final_github_payload=None,
+        candidate_payload_hash=None,
+        final_payload_hash=None,
+        approval=None,
+        writer_result=None,
+        errors=[],
+    )
+
+
+def _update_reviewer_status(
+    review_state: ReviewState,
+    reviewer: SelectedReviewer,
+    *,
+    status: ReviewerRunStatusValue,
+    reason: str,
+) -> None:
+    run_key = _reviewer_run_key_for_selection(review_state, reviewer)
+    stable_key = run_key.stable_key()
+    review_state.reviewer_run_status[stable_key] = ReviewerRunStatus(
+        status=status,
+        run_key=run_key,
+        reason=reason,
+    )
+
+
+def _reviewer_run_key_for_selection(review_state: ReviewState, reviewer: SelectedReviewer) -> ReviewerRunKey:
+    for run_key in review_state.reviewer_run_keys:
+        if run_key.reviewer == reviewer.name and run_key.stage.value == reviewer.stage:
+            return run_key
+    raise RunnerError(f"reviewer run key missing for {reviewer_key(reviewer)}")
+
+
+def _reviewer_is_required(config: ReviewerConfig, reviewer: SelectedReviewer) -> bool:
+    agent = config.agents.get(reviewer.name)
+    return bool(agent.required) if agent is not None else False
+
+
+def _optional_reviewer_failure_note(reviewer: SelectedReviewer) -> LocalNote:
+    return LocalNote(
+        id=f"note-reviewer-failure-{reviewer.stage}-{reviewer.name}",
+        title="Optional reviewer failed",
+        body=f"{reviewer.name} was selected for {reviewer.stage} but failed before producing usable output.",
+        evidence=f"Trigger reasons: {', '.join(reviewer.reasons)}",
+    )
+
+
+def _review_config_hash(config: ReviewConfig) -> str:
+    return canonical_json_hash(
+        {
+            "agents": {
+                name: {
+                    "capabilities": list(agent.capabilities),
+                    "context": agent.context,
+                    "model": agent.model,
+                    "required": agent.required,
+                    "stages": [stage.value for stage in agent.stages],
+                    "tools": list(agent.tools),
+                    "triggers": {
+                        "always": agent.triggers.always,
+                        "changed_files_min": agent.triggers.changed_files_min,
+                        "changed_lines_min": agent.triggers.changed_lines_min,
+                        "conversation_patterns": list(agent.triggers.conversation_patterns),
+                        "diff_patterns": list(agent.triggers.diff_patterns),
+                        "labels": list(agent.triggers.labels),
+                        "max_files": agent.triggers.max_files,
+                        "paths": list(agent.triggers.paths),
+                        "risk_min": agent.triggers.risk_min.value if agent.triggers.risk_min else None,
+                    },
+                    "verdict_power": agent.verdict_power,
+                }
+                for name, agent in sorted(config.agents.items())
+            },
+            "trusted_bot_authors": list(config.trusted_bot_authors),
+            "trusted_operator_authors": list(config.trusted_operator_authors),
+            "context_budget": _context_budget_hash_payload(config.context_budget),
+        }
+    )
+
+
+def _context_budget_hash_payload(context_budget: ContextBudget | None) -> dict[str, int] | None:
+    if context_budget is None:
+        return None
+    return {
+        "max_changed_files": context_budget.max_changed_files,
+        "max_live_calls": context_budget.max_live_calls,
+        "max_memory_bytes": context_budget.max_memory_bytes,
+        "max_patch_bytes": context_budget.max_patch_bytes,
+        "max_reviewers": context_budget.max_reviewers,
+    }
 
 
 def _review_target(fixture: FixturePR) -> ReviewTarget:
@@ -1041,6 +1098,7 @@ def _json_envelope(
     post_enabled: bool,
     local_verdict: ReviewVerdict,
     selected_reviewers: tuple[SelectedReviewer, ...],
+    reviewer_run_status: dict[str, ReviewerRunStatus],
     graph_trace: list[dict[str, Any]],
     writer_call_count: int,
     rendered: RenderedReview,
@@ -1055,6 +1113,15 @@ def _json_envelope(
         "selected_reviewers": [
             {"name": reviewer.name, "stage": reviewer.stage, "reasons": list(reviewer.reasons)}
             for reviewer in selected_reviewers
+        ],
+        "reviewer_run_status": [
+            {
+                "key": key,
+                "reviewer": status.run_key.reviewer,
+                "stage": status.run_key.stage.value,
+                "status": status.status.value,
+            }
+            for key, status in sorted(reviewer_run_status.items())
         ],
         "side_effects": {
             "writer_called": writer_call_count > 0,
