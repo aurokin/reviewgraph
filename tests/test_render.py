@@ -154,6 +154,15 @@ def test_rendered_markdown_and_json_include_required_sections() -> None:
         "resolved_status": "unresolved",
         "source_type": "issue_comment",
         "body": None,
+        "author": None,
+        "author_association": None,
+        "author_type": None,
+        "created_at": None,
+        "url": None,
+        "path": None,
+        "line": None,
+        "actionable": False,
+        "passive_reason": None,
     }
     assert data["truncation"][0]["truncated"] is True
 

@@ -14,6 +14,7 @@ from reviewgraph.fixtures import (
     load_reviewer_config,
     redact_for_error,
 )
+from reviewgraph.memory import build_conversation_memory
 from reviewgraph.posting import canonical_json_hash
 from reviewgraph.models import (
     ClarificationRequest,
@@ -73,11 +74,16 @@ def run_fixture_dry_run(
     writer_call_count_before = _writer_call_count(writer_sentinel)
     fixture = load_fixture_pr(fixture_ref)
     config = load_reviewer_config(reviewer_config_path)
-    stage_run = _run_review_stages(config, fixture)
+    conversation_memory = build_conversation_memory(
+        fixture.pr,
+        trusted_operator_authors=set(config.trusted_operator_authors),
+        trusted_bot_authors=set(config.trusted_bot_authors),
+    )
+    memory_references = conversation_memory.entries
+    stage_run = _run_review_stages(config, fixture, memory_references=memory_references)
     selected_reviewers = stage_run.selected_reviewers
     graph_trace = stage_run.graph_trace
     review_target = _review_target(fixture)
-    memory_references = _memory_references(fixture)
     truncation_notices = _truncation_notices(fixture)
     classified = stage_run.classified
     _validate_output_item_ids(classified)
@@ -134,7 +140,12 @@ def run_fixture_dry_run(
     )
 
 
-def _run_review_stages(config: ReviewerConfig, fixture: FixturePR) -> _StageRunResult:
+def _run_review_stages(
+    config: ReviewerConfig,
+    fixture: FixturePR,
+    *,
+    memory_references: tuple[MemoryReference, ...],
+) -> _StageRunResult:
     raw_outputs_by_key = _raw_outputs_by_key(fixture)
     selected_reviewers: list[SelectedReviewer] = []
     graph_trace: list[dict[str, Any]] = []
@@ -160,7 +171,12 @@ def _run_review_stages(config: ReviewerConfig, fixture: FixturePR) -> _StageRunR
             )
         )
 
-        stage_reviewers = _select_reviewers_for_stage(config, fixture, stage)
+        stage_reviewers = _select_reviewers_for_stage(
+            config,
+            fixture,
+            stage,
+            memory_references=memory_references,
+        )
         if stage == "initial_triage" and not stage_reviewers:
             raise RunnerError("reviewer config has no eligible initial_triage always-on reviewer")
         selected_reviewers.extend(stage_reviewers)
@@ -214,13 +230,24 @@ def _run_review_stages(config: ReviewerConfig, fixture: FixturePR) -> _StageRunR
     )
 
 
-def _select_reviewers_for_stage(config: ReviewerConfig, fixture: FixturePR, stage: str) -> tuple[SelectedReviewer, ...]:
+def _select_reviewers_for_stage(
+    config: ReviewerConfig,
+    fixture: FixturePR,
+    stage: str,
+    *,
+    memory_references: tuple[MemoryReference, ...],
+) -> tuple[SelectedReviewer, ...]:
     selected: list[SelectedReviewer] = []
     for name in sorted(config.agents):
         agent = config.agents[name]
         stages = tuple(agent_stage.value for agent_stage in agent.stages)
         if stage in stages:
-            reasons = _trigger_reasons(stage=stage, triggers=agent.triggers, fixture=fixture)
+            reasons = _trigger_reasons(
+                stage=stage,
+                triggers=agent.triggers,
+                fixture=fixture,
+                memory_references=memory_references,
+            )
             if not reasons:
                 continue
             selected.append(
@@ -233,7 +260,13 @@ def _select_reviewers_for_stage(config: ReviewerConfig, fixture: FixturePR, stag
     return tuple(selected)
 
 
-def _trigger_reasons(*, stage: str, triggers: ReviewerTriggers, fixture: FixturePR) -> list[str]:
+def _trigger_reasons(
+    *,
+    stage: str,
+    triggers: ReviewerTriggers,
+    fixture: FixturePR,
+    memory_references: tuple[MemoryReference, ...],
+) -> list[str]:
     reasons: list[str] = []
     gate_failures: list[str] = []
     changed_file_count = len(fixture.changed_files)
@@ -278,9 +311,9 @@ def _trigger_reasons(*, stage: str, triggers: ReviewerTriggers, fixture: Fixture
         if label.casefold() in labels:
             selector_reasons.append(f"{stage} triggers.labels={label}")
     trusted_memory = "\n".join(
-        str(item.get("body", ""))
-        for item in fixture.memory
-        if item.get("trust_label") == "trusted" and item.get("resolved_status") == "unresolved"
+        memory.body or ""
+        for memory in memory_references
+        if memory.actionable
     ).casefold()
     for pattern in triggers.conversation_patterns:
         if pattern.casefold() in trusted_memory:
@@ -366,25 +399,6 @@ def _review_target(fixture: FixturePR) -> ReviewTarget:
         merge_base_sha=target.get("merge_base_sha"),
         diff_basis=target["diff_basis"],
     )
-
-
-def _memory_references(fixture: FixturePR) -> tuple[MemoryReference, ...]:
-    memory_references: list[MemoryReference] = []
-    for item in fixture.memory:
-        _require_fields(item, ("id", "trust_label", "resolved_status", "source_type"), "memory")
-        body = item.get("body")
-        if body is not None and not isinstance(body, str):
-            raise RunnerError("memory.body must be a string or null")
-        memory_references.append(
-            MemoryReference(
-                id=_required_str(item, "id", "memory"),
-                trust_label=_required_str(item, "trust_label", "memory"),
-                resolved_status=_required_str(item, "resolved_status", "memory"),
-                source_type=_required_str(item, "source_type", "memory"),
-                body=body,
-            )
-        )
-    return tuple(memory_references)
 
 
 def _truncation_notices(fixture: FixturePR) -> tuple[TruncationNotice, ...]:

@@ -32,6 +32,17 @@ def test_missing_capabilities_default_to_diff_context() -> None:
     assert config.agents["correctness"].capabilities == ("diff_context",)
 
 
+def test_trusted_actor_allowlists_parse_from_reviewer_config() -> None:
+    data = _valid_config()
+    data["trusted_operator_authors"] = ["operator"]
+    data["trusted_bot_authors"] = ["review-bot"]
+
+    config = parse_reviewer_config(data)
+
+    assert config.trusted_operator_authors == ("operator",)
+    assert config.trusted_bot_authors == ("review-bot",)
+
+
 @pytest.mark.parametrize(
     ("mutation", "match"),
     [
@@ -49,6 +60,8 @@ def test_missing_capabilities_default_to_diff_context() -> None:
         (lambda data: data["agents"]["correctness"]["triggers"].update({"always": "true"}), "always must be a boolean"),
         (lambda data: data["agents"]["correctness"]["triggers"].update({"changed_lines_min": 0}), "positive integer"),
         (lambda data: data["agents"]["correctness"].update({"verdict_power": "approve"}), "unsupported verdict_power"),
+        (lambda data: data.update({"trusted_bot_authors": ["review-bot", "review-bot"]}), "duplicates"),
+        (lambda data: data.update({"trusted_operator_authors": "operator"}), "non-empty list"),
     ],
 )
 def test_invalid_reviewer_config_fails_clearly(mutation, match: str) -> None:

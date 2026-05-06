@@ -24,10 +24,12 @@
     }
   ],
   "comments": [
-    {"id": "comment-api-migration", "author": "maintainer", "author_association": "MEMBER", "trust_label": "trusted", "source_type": "issue_comment", "body": "Clients may still read legacy_total.", "created_at": "2026-05-06T00:20:00Z"}
+    {"id": "comment-api-migration", "author": "maintainer", "author_association": "MEMBER",
+      "author_type": "user", "trust_label": "trusted", "source_type": "issue_comment", "body": "Clients may still read legacy_total.", "created_at": "2026-05-06T00:20:00Z"}
   ],
   "reviews": [
-    {"id": "review-api-1", "author": "api-reviewer", "author_association": "MEMBER", "state": "CHANGES_REQUESTED", "created_at": "2026-05-06T00:20:30Z", "trust_label": "trusted", "source_type": "review", "body": "Compatibility risk needs evidence."}
+    {"id": "review-api-1", "author": "api-reviewer", "author_association": "MEMBER",
+      "author_type": "user", "state": "CHANGES_REQUESTED", "created_at": "2026-05-06T00:20:30Z", "trust_label": "trusted", "source_type": "review", "body": "Compatibility risk needs evidence."}
   ],
   "review_threads": [
     {
@@ -35,7 +37,8 @@
       "path": "src/api/orders.py",
       "resolved_status": "unresolved",
       "comments": [
-        {"id": "thread-comment-api-1", "author": "api-reviewer", "author_association": "MEMBER", "trust_label": "trusted", "source_type": "review_thread", "body": "Removing legacy_total can break clients.", "created_at": "2026-05-06T00:21:00Z", "path": "src/api/orders.py", "line": 73, "side": "RIGHT", "commit_sha": "head-api", "position": 1}
+        {"id": "thread-comment-api-1", "author": "api-reviewer", "author_association": "MEMBER",
+      "author_type": "user", "trust_label": "trusted", "source_type": "review_thread", "body": "Removing legacy_total can break clients.", "created_at": "2026-05-06T00:21:00Z", "path": "src/api/orders.py", "line": 73, "side": "RIGHT", "commit_sha": "head-api", "position": 1}
       ]
     }
   ],

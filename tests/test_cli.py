@@ -55,8 +55,18 @@ def test_cli_writes_markdown_and_json_for_fixture_id(tmp_path: Path) -> None:
     assert review["classified_output"]["local_notes"][0]["id"] == "note-review-size"
     assert review["posting_plan"]["items"][0]["destination"] == "review_body_item"
     assert review["candidate_payload_preview"]["artifact_kind"] == "issue_comment"
-    assert review["memory"][0]["id"] == "mem-trusted"
-    assert review["memory"][1]["body"] is None
+    assert [entry["id"] for entry in review["memory"]] == [
+        "comment-cache-intent",
+        "review-cache-1",
+        "thread-comment-cache-1",
+    ]
+    assert review["memory"][0]["author"] == "maintainer"
+    assert review["memory"][0]["author_association"] == "MEMBER"
+    assert review["memory"][0]["author_type"] == "user"
+    assert review["memory"][0]["actionable"] is True
+    assert review["memory"][2]["path"] == "src/cache.py"
+    assert review["memory"][2]["line"] == 12
+    assert review["memory"][2]["passive_reason"] == "resolved thread"
 
 
 def test_cli_accepts_yaml_reviewer_config(tmp_path: Path) -> None:
@@ -1475,7 +1485,6 @@ def test_non_string_raw_local_fields_return_nonzero(
 @pytest.mark.parametrize(
     ("field", "nested_field", "expected_stderr"),
     (
-        ("memory", "trust_label", "memory.trust_label is required"),
         ("truncation", "note", "truncation.note is required"),
     ),
 )
@@ -1521,17 +1530,17 @@ def test_invalid_truncation_optional_count_returns_nonzero(
     assert "truncation.original_count must be an integer or null" in capsys.readouterr().err
 
 
-def test_invalid_memory_body_type_returns_nonzero(
+def test_invalid_pr_comment_body_type_returns_nonzero(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    fixture_path = tmp_path / "bad-memory-body.json"
+    fixture_path = tmp_path / "bad-comment-body.json"
     fixture = _basic_fixture()
-    fixture["memory"][0]["body"] = ["not", "a", "string"]
+    fixture["comments"][0]["body"] = ["not", "a", "string"]
     fixture_path.write_text(json.dumps(fixture))
 
     assert main(["--fixture-pr", str(fixture_path)]) == 2
-    assert "memory.body must be a string or null" in capsys.readouterr().err
+    assert "fixture.comments.body is required" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -1700,10 +1709,10 @@ def test_regex_diff_pattern_reviewer_can_be_selected(tmp_path: Path) -> None:
     ]
 
 
-def test_unknown_trusted_memory_does_not_select_conversation_pattern_reviewer(tmp_path: Path) -> None:
-    fixture_path = tmp_path / "unknown-memory.json"
+def test_legacy_fixture_memory_does_not_select_conversation_pattern_reviewer(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "legacy-memory.json"
     fixture = _basic_fixture()
-    fixture["memory"][0]["resolved_status"] = "unknown"
+    fixture["memory"][0]["resolved_status"] = "unresolved"
     fixture["memory"][0]["body"] = "This ambiguous behavior needs logic review."
     fixture_path.write_text(json.dumps(fixture))
     config_path = tmp_path / "reviewers.json"
@@ -1727,6 +1736,188 @@ def test_unknown_trusted_memory_does_not_select_conversation_pattern_reviewer(tm
     result = run_fixture_dry_run(fixture_ref=str(fixture_path), reviewer_config_path=str(config_path))
 
     assert [reviewer["name"] for reviewer in result.json_data["selected_reviewers"]] == ["correctness"]
+
+
+def test_actionable_review_thread_memory_selects_conversation_pattern_reviewer(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "actionable-thread-memory.json"
+    fixture = _basic_fixture()
+    fixture["review_threads"][0]["resolved_status"] = "unresolved"
+    fixture["review_threads"][0]["comments"][0]["body"] = "This ambiguous behavior needs logic review."
+    fixture["raw_reviewer_outputs"][0]["reviewer"] = "logic"
+    fixture_path.write_text(json.dumps(fixture))
+    config_path = tmp_path / "reviewers.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "agents": {
+                    "logic": {
+                        "stages": ["initial_triage"],
+                        "triggers": {"conversation_patterns": ["ambiguous behavior"]},
+                    },
+                }
+            }
+        )
+    )
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path), reviewer_config_path=str(config_path))
+
+    assert result.json_data["selected_reviewers"] == [
+        {
+            "name": "logic",
+            "stage": "initial_triage",
+            "reasons": ["initial_triage triggers.conversation_patterns=ambiguous behavior"],
+        }
+    ]
+
+
+def test_trusted_top_level_comment_memory_selects_conversation_pattern_reviewer(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "actionable-comment-memory.json"
+    fixture = _basic_fixture()
+    fixture["comments"][0]["body"] = "This ambiguous behavior needs logic review."
+    fixture["raw_reviewer_outputs"][0]["reviewer"] = "logic"
+    fixture_path.write_text(json.dumps(fixture))
+    config_path = tmp_path / "reviewers.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "agents": {
+                    "logic": {
+                        "stages": ["initial_triage"],
+                        "triggers": {"conversation_patterns": ["ambiguous behavior"]},
+                    },
+                }
+            }
+        )
+    )
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path), reviewer_config_path=str(config_path))
+
+    assert result.json_data["selected_reviewers"] == [
+        {
+            "name": "logic",
+            "stage": "initial_triage",
+            "reasons": ["initial_triage triggers.conversation_patterns=ambiguous behavior"],
+        }
+    ]
+
+
+def test_unlisted_member_bot_memory_does_not_select_conversation_pattern_reviewer(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "unlisted-bot-thread-memory.json"
+    fixture = _basic_fixture()
+    fixture["review_threads"][0]["resolved_status"] = "unresolved"
+    fixture["review_threads"][0]["comments"][0].update(
+        {
+            "author": "review-bot",
+            "author_association": "MEMBER",
+            "author_type": "bot",
+            "body": "This ambiguous behavior needs logic review.",
+        }
+    )
+    fixture_path.write_text(json.dumps(fixture))
+    config_path = tmp_path / "reviewers.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "agents": {
+                    "correctness": {
+                        "stages": ["initial_triage"],
+                        "triggers": {"always": True},
+                    },
+                    "logic": {
+                        "stages": ["initial_triage"],
+                        "triggers": {"conversation_patterns": ["ambiguous behavior"]},
+                    },
+                }
+            }
+        )
+    )
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path), reviewer_config_path=str(config_path))
+
+    assert [reviewer["name"] for reviewer in result.json_data["selected_reviewers"]] == ["correctness"]
+    thread_memory = next(item for item in result.json_data["review"]["memory"] if item["source_type"] == "review_thread")
+    assert thread_memory["trust_label"] == "untrusted"
+    assert thread_memory["author_type"] == "bot"
+
+
+def test_allowlisted_bot_memory_selects_conversation_pattern_reviewer(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "allowlisted-bot-thread-memory.json"
+    fixture = _basic_fixture()
+    fixture["review_threads"][0]["resolved_status"] = "unresolved"
+    fixture["review_threads"][0]["comments"][0].update(
+        {
+            "author": "review-bot",
+            "author_association": "MEMBER",
+            "author_type": "bot",
+            "body": "This ambiguous behavior needs logic review.",
+        }
+    )
+    fixture["raw_reviewer_outputs"][0]["reviewer"] = "logic"
+    fixture_path.write_text(json.dumps(fixture))
+    config_path = tmp_path / "reviewers.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "trusted_bot_authors": ["review-bot"],
+                "agents": {
+                    "logic": {
+                        "stages": ["initial_triage"],
+                        "triggers": {"conversation_patterns": ["ambiguous behavior"]},
+                    },
+                },
+            }
+        )
+    )
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path), reviewer_config_path=str(config_path))
+
+    assert result.json_data["selected_reviewers"] == [
+        {
+            "name": "logic",
+            "stage": "initial_triage",
+            "reasons": ["initial_triage triggers.conversation_patterns=ambiguous behavior"],
+        }
+    ]
+    thread_memory = next(item for item in result.json_data["review"]["memory"] if item["source_type"] == "review_thread")
+    assert thread_memory["trust_label"] == "trusted"
+    assert thread_memory["actionable"] is True
+
+
+def test_allowlisted_operator_memory_selects_conversation_pattern_reviewer(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "allowlisted-operator-thread-memory.json"
+    fixture = _basic_fixture()
+    fixture["review_threads"][0]["resolved_status"] = "unresolved"
+    fixture["review_threads"][0]["comments"][0].update(
+        {
+            "author": "operator",
+            "author_association": "CONTRIBUTOR",
+            "author_type": "user",
+            "body": "This ambiguous behavior needs logic review.",
+        }
+    )
+    fixture["raw_reviewer_outputs"][0]["reviewer"] = "logic"
+    fixture_path.write_text(json.dumps(fixture))
+    config_path = tmp_path / "reviewers.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "trusted_operator_authors": ["operator"],
+                "agents": {
+                    "logic": {
+                        "stages": ["initial_triage"],
+                        "triggers": {"conversation_patterns": ["ambiguous behavior"]},
+                    },
+                },
+            }
+        )
+    )
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path), reviewer_config_path=str(config_path))
+
+    assert result.json_data["selected_reviewers"][0]["name"] == "logic"
+    thread_memory = next(item for item in result.json_data["review"]["memory"] if item["source_type"] == "review_thread")
+    assert thread_memory["trust_label"] == "trusted"
+    assert thread_memory["actionable"] is True
 
 
 def test_no_eligible_reviewer_returns_nonzero(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

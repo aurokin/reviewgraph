@@ -24,11 +24,14 @@
     }
   ],
   "comments": [
-    {"id": "comment-page-1", "author": "maintainer", "author_association": "MEMBER", "trust_label": "trusted", "source_type": "issue_comment", "body": "This comment belongs to fake page one.", "created_at": "2026-05-06T00:28:00Z"},
-    {"id": "comment-page-2", "author": "maintainer", "author_association": "MEMBER", "trust_label": "trusted", "source_type": "issue_comment", "body": "This comment belongs to fake page two.", "created_at": "2026-05-06T00:29:00Z"}
+    {"id": "comment-page-1", "author": "maintainer", "author_association": "MEMBER",
+      "author_type": "user", "trust_label": "trusted", "source_type": "issue_comment", "body": "This comment belongs to fake page one.", "created_at": "2026-05-06T00:28:00Z"},
+    {"id": "comment-page-2", "author": "maintainer", "author_association": "MEMBER",
+      "author_type": "user", "trust_label": "trusted", "source_type": "issue_comment", "body": "This comment belongs to fake page two.", "created_at": "2026-05-06T00:29:00Z"}
   ],
   "reviews": [
-    {"id": "review-paginated-1", "author": "reviewer", "author_association": "MEMBER", "state": "COMMENTED", "created_at": "2026-05-06T00:29:30Z", "trust_label": "trusted", "source_type": "review", "body": "Review loaded from fake page two."}
+    {"id": "review-paginated-1", "author": "reviewer", "author_association": "MEMBER",
+      "author_type": "user", "state": "COMMENTED", "created_at": "2026-05-06T00:29:30Z", "trust_label": "trusted", "source_type": "review", "body": "Review loaded from fake page two."}
   ],
   "review_threads": [
     {
@@ -36,7 +39,8 @@
       "path": "src/pagination/page_one.py",
       "resolved_status": "unknown",
       "comments": [
-        {"id": "thread-comment-paginated-1", "author": "reviewer", "author_association": "MEMBER", "trust_label": "trusted", "source_type": "review_thread", "body": "Thread loaded from fake page three.", "created_at": "2026-05-06T00:30:00Z", "path": "src/pagination/page_one.py", "line": 9, "side": "RIGHT", "commit_sha": "head-paginated", "position": 1}
+        {"id": "thread-comment-paginated-1", "author": "reviewer", "author_association": "MEMBER",
+      "author_type": "user", "trust_label": "trusted", "source_type": "review_thread", "body": "Thread loaded from fake page three.", "created_at": "2026-05-06T00:30:00Z", "path": "src/pagination/page_one.py", "line": 9, "side": "RIGHT", "commit_sha": "head-paginated", "position": 1}
       ]
     }
   ],

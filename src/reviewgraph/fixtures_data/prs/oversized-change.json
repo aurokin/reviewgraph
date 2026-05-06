@@ -24,10 +24,12 @@
     }
   ],
   "comments": [
-    {"id": "comment-oversized-summary", "author": "maintainer", "author_association": "MEMBER", "trust_label": "trusted", "source_type": "issue_comment", "body": "Large migration; use summary context if patches are truncated.", "created_at": "2026-05-06T00:22:00Z"}
+    {"id": "comment-oversized-summary", "author": "maintainer", "author_association": "MEMBER",
+      "author_type": "user", "trust_label": "trusted", "source_type": "issue_comment", "body": "Large migration; use summary context if patches are truncated.", "created_at": "2026-05-06T00:22:00Z"}
   ],
   "reviews": [
-    {"id": "review-oversized-1", "author": "reviewer", "author_association": "MEMBER", "state": "COMMENTED", "created_at": "2026-05-06T00:22:30Z", "trust_label": "trusted", "source_type": "review", "body": "Patch may need context budgeting."}
+    {"id": "review-oversized-1", "author": "reviewer", "author_association": "MEMBER",
+      "author_type": "user", "state": "COMMENTED", "created_at": "2026-05-06T00:22:30Z", "trust_label": "trusted", "source_type": "review", "body": "Patch may need context budgeting."}
   ],
   "review_threads": [
     {
@@ -35,7 +37,8 @@
       "path": "src/settings/migration.py",
       "resolved_status": "unknown",
       "comments": [
-        {"id": "thread-comment-oversized-1", "author": "reviewer", "author_association": "MEMBER", "trust_label": "trusted", "source_type": "review_thread", "body": "Representative large-file discussion.", "created_at": "2026-05-06T00:23:00Z", "path": "src/settings/migration.py", "line": 200, "side": "RIGHT", "commit_sha": "head-oversized", "position": 1}
+        {"id": "thread-comment-oversized-1", "author": "reviewer", "author_association": "MEMBER",
+      "author_type": "user", "trust_label": "trusted", "source_type": "review_thread", "body": "Representative large-file discussion.", "created_at": "2026-05-06T00:23:00Z", "path": "src/settings/migration.py", "line": 200, "side": "RIGHT", "commit_sha": "head-oversized", "position": 1}
       ]
     }
   ],

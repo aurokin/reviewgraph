@@ -24,6 +24,7 @@ from reviewgraph.models import (
     GitHubWriterResult,
     GraphError,
     MarkerReconciliationResult,
+    MemoryReference,
     OutputClassification,
     PayloadValidationResult,
     PostingDestination,
@@ -577,6 +578,7 @@ def test_side_effect_contracts_bind_approval_finalization_and_writer_metadata() 
             id="comment-1",
             author="reviewer",
             author_association="MEMBER",
+            author_type="user",
             body="body",
             created_at="2026-05-06T00:00:00Z",
             trust_label="",
@@ -586,6 +588,7 @@ def test_side_effect_contracts_bind_approval_finalization_and_writer_metadata() 
             id="comment-1",
             author="reviewer",
             author_association="MEMBER",
+            author_type="user",
             body="body",
             created_at="2026-05-06T00:00:00Z",
             trust_label="trusted",
@@ -595,6 +598,7 @@ def test_side_effect_contracts_bind_approval_finalization_and_writer_metadata() 
             id="review-1",
             author="reviewer",
             author_association="MEMBER",
+            author_type="user",
             state="COMMENTED",
             created_at="",
             trust_label="trusted",
@@ -604,6 +608,7 @@ def test_side_effect_contracts_bind_approval_finalization_and_writer_metadata() 
             id="review-1",
             author="reviewer",
             author_association="MEMBER",
+            author_type="user",
             state="COMMENTED",
             created_at="2026-05-06T00:00:00Z",
             trust_label="trusted",
@@ -620,6 +625,34 @@ def test_side_effect_contracts_bind_approval_finalization_and_writer_metadata() 
 def test_pull_request_context_contracts_require_trust_source_and_thread_comments(build: object) -> None:
     with pytest.raises(ValueError):
         build()
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"trust_label": "untrusted"},
+        {"resolved_status": "resolved"},
+        {"source_type": "review"},
+        {"author_type": None},
+        {"author_type": "organization"},
+    ],
+)
+def test_actionable_memory_requires_trusted_unresolved_supported_actor(kwargs: dict[str, object]) -> None:
+    values = {
+        "id": "mem-1",
+        "trust_label": "trusted",
+        "resolved_status": "unresolved",
+        "source_type": "issue_comment",
+        "body": "Please review ambiguous behavior.",
+        "author": "maintainer",
+        "author_association": "MEMBER",
+        "author_type": "user",
+        "actionable": True,
+    }
+    values.update(kwargs)
+
+    with pytest.raises(ValueError):
+        MemoryReference(**values)
 
 
 @pytest.mark.parametrize(

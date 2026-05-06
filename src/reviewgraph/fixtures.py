@@ -298,10 +298,12 @@ def _parse_comments(value: object, label: str) -> tuple[PullRequestComment, ...]
                     id=_required_str(entry, "id", label),
                     author=_required_str(entry, "author", label),
                     author_association=_required_str(entry, "author_association", label),
+                    author_type=_required_str(entry, "author_type", label),
                     body=_required_str(entry, "body", label),
                     created_at=_required_str(entry, "created_at", label),
                     trust_label=_required_str(entry, "trust_label", label),
                     source_type=_required_str(entry, "source_type", label),
+                    url=_optional_nullable_str(entry, "url", label),
                     path=_optional_nullable_str(entry, "path", label),
                     line=_optional_positive_int(entry, "line", label),
                     side=_optional_nullable_str(entry, "side", label),
@@ -327,11 +329,13 @@ def _parse_reviews(value: object) -> tuple[PullRequestReview, ...]:
                     id=_required_str(entry, "id", "fixture.reviews"),
                     author=_required_str(entry, "author", "fixture.reviews"),
                     author_association=_required_str(entry, "author_association", "fixture.reviews"),
+                    author_type=_required_str(entry, "author_type", "fixture.reviews"),
                     state=_required_str(entry, "state", "fixture.reviews"),
                     created_at=_required_str(entry, "created_at", "fixture.reviews"),
                     trust_label=_required_str(entry, "trust_label", "fixture.reviews"),
                     source_type=_required_str(entry, "source_type", "fixture.reviews"),
                     body=_optional_nullable_str(entry, "body", "fixture.reviews"),
+                    url=_optional_nullable_str(entry, "url", "fixture.reviews"),
                 )
             )
         except ValueError as exc:

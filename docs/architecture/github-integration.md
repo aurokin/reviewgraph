@@ -29,7 +29,7 @@ The review target should be explicit and stable in state. A run should know whet
 
 Actionable review feedback should be filtered more carefully than passive memory:
 
-- Trust human authors with GitHub owner/member/collaborator associations, plus the authenticated operator.
+- Trust explicit human authors with GitHub owner/member/collaborator associations, plus configured authenticated operators.
 - Trust only approved review bots by configuration.
 - Preserve seen comment/review IDs so already-processed feedback is not reprocessed.
 - Treat resolved review threads as non-actionable unless new unresolved follow-up appears.
@@ -40,12 +40,13 @@ Adapters must paginate files, comments, review comments, and reviews. If ReviewG
 Approved review bots are configured with a default-deny allowlist:
 
 ```yaml
-github:
-  trusted_review_bots:
-    - "chatgpt-codex-connector[bot]"
+trusted_operator_authors:
+  - "octocat"
+trusted_bot_authors:
+  - "chatgpt-codex-connector[bot]"
 ```
 
-Bot comments from unlisted accounts remain passive memory and cannot trigger `conversation_patterns` or actionable feedback.
+Bot comments from unlisted accounts remain passive memory and cannot trigger `conversation_patterns` or actionable feedback. Comments with missing or unknown actor type also fail closed for trust.
 
 ## Write operations
 

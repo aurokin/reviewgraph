@@ -105,6 +105,7 @@ Golden tests should protect product behavior without freezing incidental wording
 
 - PR comments and review threads become structured memory before reviewer fanout.
 - Trusted humans, trusted bots, untrusted humans, unlisted bots, resolved threads, unresolved threads, and unknown thread state are distinct.
+- Fixture and adapter memory inputs must include explicit actor type; missing or unknown actor type fails closed for trust.
 - Untrusted comments are passive data. They cannot route reviewers, override prompts, satisfy evidence requirements, influence verdicts, approve posting, or enter public payload text in MVP.
 - Unknown required thread state fails closed for actionability until a later policy proves otherwise.
 

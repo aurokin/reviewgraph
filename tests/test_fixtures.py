@@ -111,8 +111,10 @@ def test_review_target_hash_changes_for_base_head_and_diff_basis() -> None:
             "changed_files[].patch_status must explain missing patch",
         ),
         (lambda data: data["comments"][0].pop("author_association"), "fixture.comments.author_association is required"),
+        (lambda data: data["comments"][0].pop("author_type"), "fixture.comments.author_type is required"),
         (lambda data: data["comments"][0].pop("trust_label"), "fixture.comments.trust_label is required"),
         (lambda data: data["reviews"][0].pop("created_at"), "fixture.reviews.created_at is required"),
+        (lambda data: data["reviews"][0].pop("author_type"), "fixture.reviews.author_type is required"),
         (lambda data: data["reviews"][0].pop("source_type"), "fixture.reviews.source_type is required"),
         (lambda data: data["reviews"][0].update({"author_association": ""}), "fixture.reviews.author_association is required"),
         (

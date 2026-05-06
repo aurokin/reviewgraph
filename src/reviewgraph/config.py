@@ -42,7 +42,7 @@ def load_reviewer_config(path: str | Path) -> ReviewConfig:
 
 
 def parse_reviewer_config(data: dict[str, Any]) -> ReviewConfig:
-    unknown_config_fields = set(data) - {"agents"}
+    unknown_config_fields = set(data) - {"agents", "trusted_bot_authors", "trusted_operator_authors"}
     if unknown_config_fields:
         raise ConfigError(f"reviewer config has unsupported fields: {', '.join(sorted(unknown_config_fields))}")
     agents = data.get("agents")
@@ -56,7 +56,19 @@ def parse_reviewer_config(data: dict[str, Any]) -> ReviewConfig:
         if not isinstance(agent, dict):
             raise ConfigError(f"reviewer config agent {name} must be an object")
         parsed_agents[name] = _parse_reviewer_agent(name, agent)
-    return ReviewConfig(agents=parsed_agents)
+    return ReviewConfig(
+        agents=parsed_agents,
+        trusted_operator_authors=_optional_unique_list_of_str(
+            data,
+            "trusted_operator_authors",
+            "reviewer config",
+        ),
+        trusted_bot_authors=_optional_unique_list_of_str(
+            data,
+            "trusted_bot_authors",
+            "reviewer config",
+        ),
+    )
 
 
 def _read_config_file(path: Path) -> dict[str, Any]:
@@ -192,6 +204,13 @@ def _optional_list_of_str(data: dict[str, Any], field: str, label: str) -> tuple
     if not all(isinstance(item, str) and item for item in value):
         raise ConfigError(f"reviewer config agent {label}.{field} must contain non-empty strings")
     return tuple(value)
+
+
+def _optional_unique_list_of_str(data: dict[str, Any], field: str, label: str) -> tuple[str, ...]:
+    values = _optional_list_of_str(data, field, label)
+    if len(set(values)) != len(values):
+        raise ConfigError(f"{label}.{field} must not contain duplicates")
+    return values
 
 
 def _optional_positive_int(data: dict[str, Any], field: str, label: str) -> int | None:

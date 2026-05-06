@@ -612,11 +612,34 @@ class MemoryReference:
     resolved_status: str
     source_type: str
     body: str | None = None
+    author: str | None = None
+    author_association: str | None = None
+    author_type: str | None = None
+    created_at: str | None = None
+    url: str | None = None
+    path: str | None = None
+    line: int | None = None
+    actionable: bool = False
+    passive_reason: str | None = None
 
     def __post_init__(self) -> None:
         for name in ("id", "trust_label", "resolved_status", "source_type"):
             if not getattr(self, name):
                 raise ValueError(f"{name} is required")
+        for name in ("author", "author_association", "author_type", "created_at", "url", "path", "passive_reason"):
+            _require_optional_non_empty(getattr(self, name), f"memory {name}")
+        _require_optional_positive_int(self.line, "memory line")
+        if type(self.actionable) is not bool:
+            raise ValueError("memory actionable must be a boolean")
+        if self.actionable:
+            if self.trust_label != "trusted":
+                raise ValueError("actionable memory requires trusted trust_label")
+            if self.resolved_status != "unresolved":
+                raise ValueError("actionable memory requires unresolved resolved_status")
+            if self.source_type not in {"issue_comment", "review_thread"}:
+                raise ValueError("actionable memory requires issue_comment or review_thread source_type")
+            if self.author_type is None or self.author_type.casefold() not in {"user", "bot"}:
+                raise ValueError("actionable memory requires supported author_type")
 
 
 @dataclass(frozen=True)
@@ -624,10 +647,12 @@ class PullRequestComment:
     id: str
     author: str
     author_association: str
+    author_type: str
     body: str
     created_at: str
     trust_label: str
     source_type: str
+    url: str | None = None
     path: str | None = None
     line: int | None = None
     side: str | None = None
@@ -635,9 +660,18 @@ class PullRequestComment:
     position: int | None = None
 
     def __post_init__(self) -> None:
-        for name in ("id", "author", "author_association", "body", "created_at", "trust_label", "source_type"):
+        for name in (
+            "id",
+            "author",
+            "author_association",
+            "body",
+            "created_at",
+            "trust_label",
+            "source_type",
+            "author_type",
+        ):
             _require_non_empty(getattr(self, name), f"pull request comment {name}")
-        for name in ("path", "side", "commit_sha"):
+        for name in ("url", "path", "side", "commit_sha"):
             _require_optional_non_empty(getattr(self, name), f"pull request comment {name}")
         _require_optional_positive_int(self.line, "pull request comment line")
         _require_optional_positive_int(self.position, "pull request comment position")
@@ -648,16 +682,28 @@ class PullRequestReview:
     id: str
     author: str
     author_association: str
+    author_type: str
     state: str
     created_at: str
     trust_label: str
     source_type: str
     body: str | None = None
+    url: str | None = None
 
     def __post_init__(self) -> None:
-        for name in ("id", "author", "author_association", "state", "created_at", "trust_label", "source_type"):
+        for name in (
+            "id",
+            "author",
+            "author_association",
+            "state",
+            "created_at",
+            "trust_label",
+            "source_type",
+            "author_type",
+        ):
             _require_non_empty(getattr(self, name), f"pull request review {name}")
         _require_optional_non_empty(self.body, "pull request review body")
+        _require_optional_non_empty(self.url, "pull request review url")
 
 
 @dataclass(frozen=True)
@@ -886,6 +932,8 @@ class ReviewerAgentConfig:
 @dataclass(frozen=True)
 class ReviewConfig:
     agents: Mapping[str, ReviewerAgentConfig]
+    trusted_operator_authors: tuple[str, ...] = field(default_factory=tuple)
+    trusted_bot_authors: tuple[str, ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
         if not isinstance(self.agents, Mapping) or not self.agents:
@@ -897,6 +945,12 @@ class ReviewConfig:
                 raise ValueError("review config agents must contain ReviewerAgentConfig values")
             if agent.name != name:
                 raise ValueError("review config agent mapping key must match reviewer agent name")
+        _require_string_tuple(self.trusted_operator_authors, "review config trusted_operator_authors")
+        _require_string_tuple(self.trusted_bot_authors, "review config trusted_bot_authors")
+        if len(set(self.trusted_operator_authors)) != len(self.trusted_operator_authors):
+            raise ValueError("review config trusted_operator_authors must not contain duplicates")
+        if len(set(self.trusted_bot_authors)) != len(self.trusted_bot_authors):
+            raise ValueError("review config trusted_bot_authors must not contain duplicates")
         object.__setattr__(self, "agents", MappingProxyType(dict(self.agents)))
 
 

@@ -102,6 +102,8 @@ A reviewer is selected for an eligible stage when at least one selector matches 
 
 Untrusted PR comments may be retained as passive memory, but they must not satisfy `conversation_patterns` or contribute to request-changes recommendations.
 
+Top-level config may include `trusted_operator_authors` and `trusted_bot_authors`. Bot authors are default-deny even when their GitHub association is owner, member, or collaborator. Missing or unknown actor type fails closed for trust.
+
 ## Optional agent fields
 
 - `model`: preferred model for this reviewer.

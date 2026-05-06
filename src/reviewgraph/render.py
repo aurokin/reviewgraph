@@ -763,6 +763,17 @@ def _memory_json(memory: MemoryReference, context: "_RenderContext") -> dict[str
         "resolved_status": context.redact(memory.resolved_status),
         "source_type": context.redact(memory.source_type),
         "body": context.redact(memory.body) if memory.body and not _is_unsafe_memory(memory) else None,
+        "author": context.redact(memory.author) if memory.author is not None else None,
+        "author_association": context.redact(memory.author_association)
+        if memory.author_association is not None
+        else None,
+        "author_type": context.redact(memory.author_type) if memory.author_type is not None else None,
+        "created_at": context.redact(memory.created_at) if memory.created_at is not None else None,
+        "url": context.redact(memory.url) if memory.url is not None else None,
+        "path": context.redact(memory.path) if memory.path is not None else None,
+        "line": memory.line,
+        "actionable": memory.actionable,
+        "passive_reason": context.redact(memory.passive_reason) if memory.passive_reason is not None else None,
     }
 
 
