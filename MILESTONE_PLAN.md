@@ -6,17 +6,17 @@ Active execution artifact for this milestone. Linear remains the durable source 
 
 - Milestone: `PRD 0005: Review Quality`
 - Milestone ID: `7c623166-927e-43d7-a14d-41af005a2587`
-- Current status at intake: all implementation issues are `Backlog`; no evidence comments yet.
+- Current execution status: `AUR-201` and `AUR-227` are `Done`; `AUR-202` is `In Progress`; remaining implementation issues are pending in Linear.
 - Implementation issues:
-  - `AUR-201` / `RG-012: Normalize Reviewer Output` / `Backlog`
-  - `AUR-202` / `RG-013: Classify Review Quality` / `Backlog`
+  - `AUR-201` / `RG-012: Normalize Reviewer Output` / `Done`
+  - `AUR-202` / `RG-013: Classify Review Quality` / `In Progress`
   - `AUR-203` / `RG-014: Classify Testing Feedback Quality` / `Backlog`
   - `AUR-204` / `RG-015: Validate Diff Anchors For Inline Candidates` / `Backlog`
   - `AUR-205` / `RG-016: Stop For Clarification Requests` / `Backlog`
   - `AUR-206` / `RG-017: Resume From Clarification Answers` / `Backlog`
   - `AUR-207` / `RG-018: Compute Local Verdict` / `Backlog`
   - `AUR-226` / `RG-037: Continue After Optional Reviewer Failure` / `Backlog`
-  - `AUR-227` / `RG-038: Repair Or Record Malformed Reviewer JSON` / `Backlog`
+  - `AUR-227` / `RG-038: Repair Or Record Malformed Reviewer JSON` / `Done`
 - Gate issue:
   - `AUR-257` / `Complete PRD 0005: Review Quality` / `Backlog`
 
@@ -39,8 +39,8 @@ The product point is restraint. ReviewGraph should prefer no finding over a plau
 
 1. `AUR-201` first: extract reviewer-output normalization into a focused contract. Valid reviewer output should become typed raw findings, local notes, clarification requests, suggested replies, and suppressible non-findings. Malformed raw strings or malformed mappings must flow to the explicit repair/error policy rather than being silently coerced. Graph-owned fields must not be stripped silently; they should be preserved as rejection/suppression evidence for policy.
 2. `AUR-227` second: add the deterministic fake repair/error path for malformed reviewer JSON. This should happen before broader quality classification so malformed inputs have one clear lifecycle: repair once, normalize on success, record required/optional failure on exhaustion.
-3. `AUR-204` third: validate changed-line locations and diff anchors before the quality classifier can mark output postable. Keep inline posting out of scope. Findings without precise changed-line locations remain local-only unless a future top-level exception is explicitly designed.
-4. `AUR-202` fourth: extract and harden the general quality classifier. It should ignore reviewer self-declared postability/blocking, require changed-code evidence, safe evidence provenance, a validated changed-code location when available, an actionable scenario, concise/matter-of-fact comment shape, redaction-safe rendering/posting behavior, graph-owned priority/fingerprint/blocking decisions, and logic-review rules. Generic/speculative/pre-existing/locationless output should be suppressed or downgraded.
+3. `AUR-202` third: extract and harden the general quality classifier. Linear marks `AUR-204`, `AUR-203`, `AUR-205`, `AUR-226`, and `AUR-207` as blocked by `AUR-202`, so this issue moves ahead of diff anchors even though the original local ordering placed `AUR-204` first. It should ignore reviewer self-declared postability/blocking, require changed-code evidence, safe evidence provenance, a validated changed-code location when available, an actionable scenario, concise/matter-of-fact comment shape, redaction-safe rendering/posting behavior, graph-owned priority/fingerprint/blocking decisions, and logic-review rules. Generic/speculative/pre-existing/locationless output should be suppressed or downgraded.
+4. `AUR-204` fourth: validate changed-line locations and diff anchors before the quality classifier can mark output postable. Keep inline posting out of scope. Findings without precise changed-line locations remain local-only unless a future top-level exception is explicitly designed.
 5. `AUR-203` fifth: layer testing-reviewer quality rules on the extracted classifier. Testing output is postable only with changed behavior, a concrete regression scenario, and identifiable missing coverage; generic "add tests" remains local-only or suppressed.
 6. `AUR-205` sixth: make clarification-stop behavior a focused graph contract. Pending blocking clarification requests set `post_enabled=false`, render the question and why it matters, and prevent the ambiguous issue from producing a local blocking verdict.
 7. `AUR-206` seventh: implement answered clarification resume. `ingest_clarification_answer` records answers without mutating cursor fields; `advance_or_finish_stage` activates transient `clarification_review`; only affected reviewers rerun.
