@@ -115,6 +115,21 @@ Every run is bound to an immutable review target before reviewer execution. For 
 
 Before any GitHub write, `finalize_github_payload` must re-fetch the PR head/base/merge-base state and compare it to the approved review target. If the target changed after rendering or approval, the graph fails closed and emits a new dry-run result instead of posting. `post_or_emit` receives only an already-finalized payload or dry-run output; it does not own freshness, approval, or hash policy.
 
+## Context budget
+
+`calculate_context_budget` runs before reviewer fanout. It applies limits to changed-file count, patch bytes, conversation-memory bytes, reviewer count, and planned live calls. The output is durable graph state, not hidden prompt text.
+
+`ContextBudget` records:
+
+- configured limits
+- original and retained file, patch, memory, reviewer, and live-call counts
+- retained file paths, memory IDs, and reviewer IDs
+- omitted file paths, memory IDs, and deferred reviewer IDs
+- truncation notices and omitted-context markers
+- generated local-note IDs and deterministic reasons
+
+Oversized context should be retained as marker-only metadata when possible. Reviewers must receive explicit truncation and omitted-context markers through `ReviewerContextPackage`; they should not infer missing context from absent text. A reviewer selected after routing but over budget is skipped before raw output execution and represented as a local note.
+
 ## Staged reviewer introduction
 
 Valid MVP `ReviewStage` values are:

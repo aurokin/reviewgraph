@@ -799,6 +799,27 @@ class TruncationNotice:
 
 
 @dataclass(frozen=True)
+class OmittedContextMarker:
+    id: str
+    source: str
+    reason_code: str
+    dimension: str
+    affected_id: str
+    original_count: int | None = None
+    retained_count: int | None = None
+    original_bytes: int | None = None
+    retained_bytes: int | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("id", "source", "reason_code", "dimension", "affected_id"):
+            _require_non_empty(getattr(self, name), f"omitted context {name}")
+        for name in ("original_count", "retained_count", "original_bytes", "retained_bytes"):
+            value = getattr(self, name)
+            if value is not None:
+                _require_non_negative_int(value, f"omitted context {name}")
+
+
+@dataclass(frozen=True)
 class ContextBudget:
     max_changed_files: int
     max_patch_bytes: int
@@ -806,6 +827,67 @@ class ContextBudget:
     max_reviewers: int
     max_live_calls: int
     truncation: tuple[TruncationNotice, ...] = field(default_factory=tuple)
+    omitted_context: tuple[OmittedContextMarker, ...] = field(default_factory=tuple)
+    original_changed_file_count: int = 0
+    retained_changed_file_count: int = 0
+    original_patch_bytes: int = 0
+    retained_patch_bytes: int = 0
+    original_memory_count: int = 0
+    retained_memory_count: int = 0
+    original_memory_bytes: int = 0
+    retained_memory_bytes: int = 0
+    original_reviewer_count: int = 0
+    retained_reviewer_count: int = 0
+    planned_live_calls: int = 0
+    retained_file_paths: tuple[str, ...] = field(default_factory=tuple)
+    omitted_file_paths: tuple[str, ...] = field(default_factory=tuple)
+    retained_memory_ids: tuple[str, ...] = field(default_factory=tuple)
+    omitted_memory_ids: tuple[str, ...] = field(default_factory=tuple)
+    retained_reviewer_ids: tuple[str, ...] = field(default_factory=tuple)
+    deferred_reviewer_ids: tuple[str, ...] = field(default_factory=tuple)
+    retained_live_call_reviewer_ids: tuple[str, ...] = field(default_factory=tuple)
+    deferred_live_call_reviewer_ids: tuple[str, ...] = field(default_factory=tuple)
+    generated_local_note_ids: tuple[str, ...] = field(default_factory=tuple)
+    reasons: tuple[str, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        for name in (
+            "max_changed_files",
+            "max_patch_bytes",
+            "max_memory_bytes",
+            "max_reviewers",
+        ):
+            _require_positive_int(getattr(self, name), f"context budget {name}")
+        _require_non_negative_int(self.max_live_calls, "context budget max_live_calls")
+        _require_instance_tuple(self.truncation, "context budget truncation", TruncationNotice)
+        _require_instance_tuple(self.omitted_context, "context budget omitted_context", OmittedContextMarker)
+        for name in (
+            "original_changed_file_count",
+            "retained_changed_file_count",
+            "original_patch_bytes",
+            "retained_patch_bytes",
+            "original_memory_count",
+            "retained_memory_count",
+            "original_memory_bytes",
+            "retained_memory_bytes",
+            "original_reviewer_count",
+            "retained_reviewer_count",
+            "planned_live_calls",
+        ):
+            _require_non_negative_int(getattr(self, name), f"context budget {name}")
+        for name in (
+            "retained_file_paths",
+            "omitted_file_paths",
+            "retained_memory_ids",
+            "omitted_memory_ids",
+            "retained_reviewer_ids",
+            "deferred_reviewer_ids",
+            "retained_live_call_reviewer_ids",
+            "deferred_live_call_reviewer_ids",
+            "generated_local_note_ids",
+            "reasons",
+        ):
+            _require_string_tuple(getattr(self, name), f"context budget {name}")
 
 
 @dataclass(frozen=True)
@@ -934,6 +1016,7 @@ class ReviewConfig:
     agents: Mapping[str, ReviewerAgentConfig]
     trusted_operator_authors: tuple[str, ...] = field(default_factory=tuple)
     trusted_bot_authors: tuple[str, ...] = field(default_factory=tuple)
+    context_budget: ContextBudget | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.agents, Mapping) or not self.agents:
@@ -947,6 +1030,8 @@ class ReviewConfig:
                 raise ValueError("review config agent mapping key must match reviewer agent name")
         _require_string_tuple(self.trusted_operator_authors, "review config trusted_operator_authors")
         _require_string_tuple(self.trusted_bot_authors, "review config trusted_bot_authors")
+        if self.context_budget is not None and not isinstance(self.context_budget, ContextBudget):
+            raise ValueError("review config context_budget must be a ContextBudget value")
         if len(set(self.trusted_operator_authors)) != len(self.trusted_operator_authors):
             raise ValueError("review config trusted_operator_authors must not contain duplicates")
         if len(set(self.trusted_bot_authors)) != len(self.trusted_bot_authors):

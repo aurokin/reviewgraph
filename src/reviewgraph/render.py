@@ -7,8 +7,10 @@ from typing import Any, Iterable
 from reviewgraph.models import (
     ClarificationRequest,
     ClassifiedFinding,
+    ContextBudget,
     LocalNote,
     MemoryReference,
+    OmittedContextMarker,
     RedactionStatus,
     ReviewTarget,
     ReviewVerdict,
@@ -54,6 +56,7 @@ def render_review(
     candidate_payload: CandidateIssueCommentPayload | None = None,
     memory_references: Iterable[MemoryReference] = (),
     truncation_notices: Iterable[TruncationNotice] = (),
+    context_budget: ContextBudget | None = None,
 ) -> RenderedReview:
     context = _RenderContext()
     inputs = _RenderInputs(
@@ -69,6 +72,7 @@ def render_review(
         candidate_payload=candidate_payload,
         memory_references=tuple(memory_references),
         truncation_notices=tuple(truncation_notices),
+        context_budget=context_budget,
     )
     json_data = render_json(inputs=inputs, context=context)
     markdown = render_markdown(inputs=inputs, context=context)
@@ -114,6 +118,7 @@ def render_json(*, inputs: "_RenderInputs", context: "_RenderContext | None" = N
         "posting_plan": _posting_plan_json(inputs.posting_plan, context),
         "memory": [_memory_json(memory, context) for memory in inputs.memory_references],
         "truncation": [_truncation_json(notice, context) for notice in inputs.truncation_notices],
+        "context_budget": _context_budget_json(inputs.context_budget, context),
         "candidate_payload_preview": candidate_preview,
         "redaction_status": context.status_dict(),
     }
@@ -790,6 +795,71 @@ def _truncation_json(notice: TruncationNotice, context: "_RenderContext") -> dic
     }
 
 
+def _context_budget_json(budget: ContextBudget | None, context: "_RenderContext") -> dict[str, Any] | None:
+    if budget is None:
+        return None
+    return {
+        "limits": {
+            "max_changed_files": budget.max_changed_files,
+            "max_patch_bytes": budget.max_patch_bytes,
+            "max_memory_bytes": budget.max_memory_bytes,
+            "max_reviewers": budget.max_reviewers,
+            "max_live_calls": budget.max_live_calls,
+        },
+        "changed_files": {
+            "original_count": budget.original_changed_file_count,
+            "retained_count": budget.retained_changed_file_count,
+            "retained_paths": [context.redact(path) for path in budget.retained_file_paths],
+            "omitted_paths": [context.redact(path) for path in budget.omitted_file_paths],
+        },
+        "patch_bytes": {
+            "original": budget.original_patch_bytes,
+            "retained": budget.retained_patch_bytes,
+        },
+        "memory": {
+            "original_count": budget.original_memory_count,
+            "retained_count": budget.retained_memory_count,
+            "original_bytes": budget.original_memory_bytes,
+            "retained_bytes": budget.retained_memory_bytes,
+            "retained_ids": [context.redact(memory_id) for memory_id in budget.retained_memory_ids],
+            "omitted_ids": [context.redact(memory_id) for memory_id in budget.omitted_memory_ids],
+        },
+        "reviewers": {
+            "original_count": budget.original_reviewer_count,
+            "retained_count": budget.retained_reviewer_count,
+            "retained_ids": [context.redact(reviewer_id) for reviewer_id in budget.retained_reviewer_ids],
+            "deferred_ids": [context.redact(reviewer_id) for reviewer_id in budget.deferred_reviewer_ids],
+        },
+        "live_calls": {
+            "planned": budget.planned_live_calls,
+            "retained_reviewer_ids": [
+                context.redact(reviewer_id) for reviewer_id in budget.retained_live_call_reviewer_ids
+            ],
+            "deferred_reviewer_ids": [
+                context.redact(reviewer_id) for reviewer_id in budget.deferred_live_call_reviewer_ids
+            ],
+        },
+        "truncation": [_truncation_json(notice, context) for notice in budget.truncation],
+        "omitted_context": [_omitted_context_json(marker, context) for marker in budget.omitted_context],
+        "generated_local_note_ids": [context.redact(note_id) for note_id in budget.generated_local_note_ids],
+        "reasons": [context.redact(reason) for reason in budget.reasons],
+    }
+
+
+def _omitted_context_json(marker: OmittedContextMarker, context: "_RenderContext") -> dict[str, Any]:
+    return {
+        "id": context.redact(marker.id),
+        "source": context.redact(marker.source),
+        "reason_code": context.redact(marker.reason_code),
+        "dimension": context.redact(marker.dimension),
+        "affected_id": context.redact(marker.affected_id),
+        "original_count": marker.original_count,
+        "retained_count": marker.retained_count,
+        "original_bytes": marker.original_bytes,
+        "retained_bytes": marker.retained_bytes,
+    }
+
+
 @dataclass(frozen=True)
 class _RenderInputs:
     review_target: ReviewTarget
@@ -804,6 +874,7 @@ class _RenderInputs:
     candidate_payload: CandidateIssueCommentPayload | None
     memory_references: tuple[MemoryReference, ...]
     truncation_notices: tuple[TruncationNotice, ...]
+    context_budget: ContextBudget | None
 
 
 class _RenderContext:

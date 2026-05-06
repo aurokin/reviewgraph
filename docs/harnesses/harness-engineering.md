@@ -115,6 +115,7 @@ Golden tests should protect product behavior without freezing incidental wording
 - Reviewer adapters do not receive GitHub transports, approval state, finalization code, payload builders, or writer clients.
 - Fake and live reviewers share the same input/output contract.
 - Capabilities default to `none` or `diff_context`; tool-using reviewers are future work.
+- Context-budget harnesses must prove changed-file, patch-byte, memory-byte, reviewer-count, and live-call caps before reviewer execution. Deferred reviewers are selected-then-skipped, become local notes, and their raw fixture output is not consumed.
 
 ### Review Quality
 

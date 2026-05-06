@@ -104,6 +104,25 @@ Untrusted PR comments may be retained as passive memory, but they must not satis
 
 Top-level config may include `trusted_operator_authors` and `trusted_bot_authors`. Bot authors are default-deny even when their GitHub association is owner, member, or collaborator. Missing or unknown actor type fails closed for trust.
 
+## Context budget config
+
+Top-level config may include `context_budget` to bound the context package before reviewer fanout:
+
+```yaml
+context_budget:
+  max_changed_files: 50
+  max_patch_bytes: 200000
+  max_memory_bytes: 100000
+  max_reviewers: 20
+  max_live_calls: 0
+```
+
+Fields may be omitted to use fixture-safe defaults. `max_changed_files`, `max_patch_bytes`, `max_memory_bytes`, and `max_reviewers` must be positive integers. `max_live_calls` may be zero; default dry-run and fake-reviewer execution must not require live provider calls. Unknown fields are rejected.
+
+Budgeting is a graph decision, not a prompt convention. The graph records retained and omitted file paths, patch bytes, memory IDs, reviewer IDs, deferred reviewer IDs, planned live-call count, truncation notices, omitted-context markers, and generated local-note IDs in `ContextBudget`.
+
+Reviewers beyond budget are selected-then-skipped: their trigger reasons remain explainable, their raw output is not executed, and a structured local note records the deferral. Oversized patches or conversation memory are represented as marker-only context with explicit truncation state.
+
 ## Optional agent fields
 
 - `model`: preferred model for this reviewer.

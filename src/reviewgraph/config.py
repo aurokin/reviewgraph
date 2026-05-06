@@ -7,9 +7,11 @@ from typing import Any
 import yaml
 from yaml import YAMLError
 
+from reviewgraph.context_budget import DEFAULT_CONTEXT_BUDGET_LIMITS
 from reviewgraph.models import (
     ALLOWED_REVIEWER_CAPABILITIES,
     ALLOWED_REVIEWER_VERDICT_POWERS,
+    ContextBudget,
     ReviewConfig,
     ReviewerAgentConfig,
     ReviewerTriggers,
@@ -42,7 +44,12 @@ def load_reviewer_config(path: str | Path) -> ReviewConfig:
 
 
 def parse_reviewer_config(data: dict[str, Any]) -> ReviewConfig:
-    unknown_config_fields = set(data) - {"agents", "trusted_bot_authors", "trusted_operator_authors"}
+    unknown_config_fields = set(data) - {
+        "agents",
+        "context_budget",
+        "trusted_bot_authors",
+        "trusted_operator_authors",
+    }
     if unknown_config_fields:
         raise ConfigError(f"reviewer config has unsupported fields: {', '.join(sorted(unknown_config_fields))}")
     agents = data.get("agents")
@@ -68,6 +75,7 @@ def parse_reviewer_config(data: dict[str, Any]) -> ReviewConfig:
             "trusted_bot_authors",
             "reviewer config",
         ),
+        context_budget=_optional_context_budget(data),
     )
 
 
@@ -232,3 +240,24 @@ def _optional_risk(data: dict[str, Any], field: str, label: str) -> RiskLevel | 
         return RiskLevel(value)
     except ValueError as exc:
         raise ConfigError(f"reviewer config agent {label}.{field} has unsupported risk level") from exc
+
+
+def _optional_context_budget(data: dict[str, Any]) -> ContextBudget | None:
+    if "context_budget" not in data:
+        return None
+    value = data["context_budget"]
+    if not isinstance(value, dict):
+        raise ConfigError("reviewer config context_budget must be an object")
+    unknown_fields = set(value) - set(DEFAULT_CONTEXT_BUDGET_LIMITS)
+    if unknown_fields:
+        raise ConfigError(
+            f"reviewer config context_budget has unsupported fields: {', '.join(sorted(unknown_fields))}"
+        )
+    fields = dict(DEFAULT_CONTEXT_BUDGET_LIMITS)
+    for field, raw in value.items():
+        if type(raw) is not int or raw < 0 or (field != "max_live_calls" and raw <= 0):
+            if field == "max_live_calls":
+                raise ConfigError(f"reviewer config context_budget.{field} must be a non-negative integer")
+            raise ConfigError(f"reviewer config context_budget.{field} must be a positive integer")
+        fields[field] = raw
+    return ContextBudget(**fields)

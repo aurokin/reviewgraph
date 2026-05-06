@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from fnmatch import fnmatch
 from typing import Any
 
 from reviewgraph.fixtures import (
+    ChangedFile,
     FixtureError,
     FixturePR,
     ReviewerConfig,
@@ -14,12 +15,20 @@ from reviewgraph.fixtures import (
     load_reviewer_config,
     redact_for_error,
 )
+from reviewgraph.context_budget import (
+    BudgetedInputContext,
+    apply_input_context_budget,
+    apply_reviewer_budget,
+    default_context_budget,
+    merge_context_budgets,
+)
 from reviewgraph.memory import build_conversation_memory
 from reviewgraph.posting import canonical_json_hash
 from reviewgraph.models import (
     ClarificationRequest,
     ClassifiedFinding,
     Confidence,
+    ContextBudget,
     LocalNote,
     MemoryReference,
     RawReviewerFinding,
@@ -61,6 +70,7 @@ class _StageRunResult:
     selected_reviewers: tuple[SelectedReviewer, ...]
     graph_trace: list[dict[str, Any]]
     classified: dict[str, tuple[Any, ...]]
+    context_budget: ContextBudget
 
 
 NORMAL_STAGES = ("initial_triage", "specialized_review", "logic_review")
@@ -80,13 +90,31 @@ def run_fixture_dry_run(
         trusted_operator_authors=set(config.trusted_operator_authors),
         trusted_bot_authors=set(config.trusted_bot_authors),
     )
-    memory_references = conversation_memory.entries
-    stage_run = _run_review_stages(config, fixture, memory_references=memory_references)
+    context_budget_limits = config.context_budget or default_context_budget()
+    budgeted_context = apply_input_context_budget(
+        pr=fixture.pr,
+        memory=conversation_memory,
+        limits=context_budget_limits,
+        existing_truncation=_truncation_notices(fixture),
+    )
+    memory_references = budgeted_context.memory.entries
+    budgeted_fixture = _budgeted_fixture_view(fixture, budgeted_context)
+    stage_run = _run_review_stages(
+        config,
+        budgeted_fixture,
+        memory_references=memory_references,
+        budget_limits=context_budget_limits,
+        omitted_file_paths=budgeted_context.context_budget.omitted_file_paths,
+    )
     selected_reviewers = stage_run.selected_reviewers
     graph_trace = stage_run.graph_trace
     review_target = _review_target(fixture)
-    truncation_notices = _truncation_notices(fixture)
-    classified = stage_run.classified
+    context_budget = merge_context_budgets(budgeted_context.context_budget, stage_run.context_budget)
+    truncation_notices = context_budget.truncation
+    classified = {
+        **stage_run.classified,
+        "local_notes": budgeted_context.local_notes + stage_run.classified["local_notes"],
+    }
     _validate_output_item_ids(classified)
     _validate_finding_fingerprints(classified["findings"])
     local_verdict = _local_verdict(
@@ -122,6 +150,7 @@ def run_fixture_dry_run(
         candidate_payload=candidate_payload,
         memory_references=memory_references,
         truncation_notices=truncation_notices,
+        context_budget=context_budget,
     )
     writer_call_count = _writer_call_count(writer_sentinel) - writer_call_count_before
     envelope = _json_envelope(
@@ -146,12 +175,18 @@ def _run_review_stages(
     fixture: FixturePR,
     *,
     memory_references: tuple[MemoryReference, ...],
+    budget_limits: ContextBudget,
+    omitted_file_paths: tuple[str, ...] = (),
 ) -> _StageRunResult:
     raw_outputs_by_key = _raw_outputs_by_key(fixture)
     selected_reviewers: list[SelectedReviewer] = []
     graph_trace: list[dict[str, Any]] = []
     classified = _empty_classified_lists()
     seen_raw_keys: set[tuple[str, str]] = set()
+    deferred_raw_keys: set[tuple[str, str]] = set()
+    stage_budgets: list[ContextBudget] = []
+    retained_reviewer_count = 0
+    planned_live_calls = 0
     active_stage: str | None = None
     stage_queue = list(NORMAL_STAGES)
     clarification_needed = False
@@ -172,15 +207,27 @@ def _run_review_stages(
             )
         )
 
-        stage_reviewers = _select_reviewers_for_stage(
+        selected_stage_reviewers = _select_reviewers_for_stage(
             config,
             fixture,
             stage,
             memory_references=memory_references,
         )
+        budgeted_reviewers = apply_reviewer_budget(
+            reviewers=selected_stage_reviewers,
+            limits=budget_limits,
+            retained_reviewer_count=retained_reviewer_count,
+            planned_live_calls=planned_live_calls,
+        )
+        stage_budgets.append(budgeted_reviewers.context_budget)
+        deferred_raw_keys.update(budgeted_reviewers.deferred_keys)
+        classified["local_notes"].extend(budgeted_reviewers.local_notes)
+        stage_reviewers = budgeted_reviewers.retained_reviewers
+        retained_reviewer_count += len(stage_reviewers)
+        planned_live_calls += budgeted_reviewers.context_budget.planned_live_calls
         if stage == "initial_triage" and not stage_reviewers:
             raise RunnerError("reviewer config has no eligible initial_triage always-on reviewer")
-        selected_reviewers.extend(stage_reviewers)
+        selected_reviewers.extend(selected_stage_reviewers)
         for reviewer in stage_reviewers:
             key = (reviewer.name, reviewer.stage)
             reviewer_output = raw_outputs_by_key.get(key)
@@ -190,7 +237,12 @@ def _run_review_stages(
                     f"{reviewer.name}/{reviewer.stage}"
                 )
             seen_raw_keys.add(key)
-            _classify_reviewer_output(fixture, reviewer_output=reviewer_output, classified=classified)
+            _classify_reviewer_output(
+                fixture,
+                reviewer_output=reviewer_output,
+                classified=classified,
+                omitted_file_paths=omitted_file_paths,
+            )
         if classified["clarification_requests"]:
             clarification_needed = True
             break
@@ -220,7 +272,7 @@ def _run_review_stages(
             }
         )
 
-    extra_raw_keys = sorted(set(raw_outputs_by_key) - seen_raw_keys)
+    extra_raw_keys = sorted(set(raw_outputs_by_key) - seen_raw_keys - deferred_raw_keys)
     if extra_raw_keys:
         extra = ", ".join(f"{reviewer}/{stage}" for reviewer, stage in extra_raw_keys)
         raise RunnerError(f"raw reviewer output was not selected: {extra}")
@@ -228,6 +280,7 @@ def _run_review_stages(
         selected_reviewers=tuple(selected_reviewers),
         graph_trace=graph_trace,
         classified={key: tuple(value) for key, value in classified.items()},
+        context_budget=merge_context_budgets(budget_limits, *stage_budgets),
     )
 
 
@@ -402,6 +455,31 @@ def _review_target(fixture: FixturePR) -> ReviewTarget:
     )
 
 
+def _budgeted_fixture_view(fixture: FixturePR, budgeted_context: BudgetedInputContext) -> FixturePR:
+    budgeted_files = {changed_file.path: changed_file for changed_file in budgeted_context.pr.changed_files}
+    changed_files: list[ChangedFile] = []
+    for original in fixture.changed_files:
+        budgeted_file = budgeted_files.get(original.path)
+        if budgeted_file is None:
+            continue
+        changed_files.append(
+            replace(
+                original,
+                patch=budgeted_file.patch,
+                additions=budgeted_file.additions,
+                deletions=budgeted_file.deletions,
+                status=budgeted_file.status,
+                previous_path=budgeted_file.previous_path,
+                patch_status=budgeted_file.patch_status,
+            )
+        )
+    return replace(
+        fixture,
+        pr=budgeted_context.pr,
+        changed_files=tuple(changed_files),
+    )
+
+
 def _truncation_notices(fixture: FixturePR) -> tuple[TruncationNotice, ...]:
     notices: list[TruncationNotice] = []
     for item in fixture.truncation:
@@ -429,8 +507,6 @@ def _raw_outputs_by_key(fixture: FixturePR) -> dict[tuple[str, str], dict[str, A
         stage = _required_str(reviewer_output, "stage", "raw_reviewer_outputs[]")
         if (reviewer, stage) in raw_outputs:
             raise RunnerError(f"raw reviewer output {reviewer}/{stage} is duplicated")
-        if not isinstance(reviewer_output.get("items"), list):
-            raise RunnerError("raw reviewer output requires reviewer, stage, and items")
         raw_outputs[(reviewer, stage)] = reviewer_output
     return raw_outputs
 
@@ -450,6 +526,7 @@ def _classify_reviewer_output(
     *,
     reviewer_output: dict[str, Any],
     classified: dict[str, list[Any]],
+    omitted_file_paths: tuple[str, ...] = (),
 ) -> None:
     reviewer = _required_str(reviewer_output, "reviewer", "raw_reviewer_outputs[]")
     stage = _required_str(reviewer_output, "stage", "raw_reviewer_outputs[]")
@@ -463,6 +540,18 @@ def _classify_reviewer_output(
         if item_type == "finding":
             raw_finding = _raw_reviewer_finding_or_suppression(item, classified)
             if raw_finding is None:
+                continue
+            if _finding_depends_on_omitted_context(
+                fixture,
+                raw_finding,
+                omitted_file_paths=omitted_file_paths,
+            ):
+                classified["suppressed_outputs"].append(
+                    SuppressedOutput(
+                        id=raw_finding.id,
+                        reason="Finding candidate referenced context omitted by context budget.",
+                    )
+                )
                 continue
             finding = _classified_finding(
                 fixture,
@@ -518,6 +607,20 @@ def _classify_reviewer_output(
             )
         else:
             raise RunnerError(f"unsupported raw reviewer output type: {item_type}")
+
+
+def _finding_depends_on_omitted_context(
+    fixture: FixturePR,
+    raw_finding: RawReviewerFinding,
+    *,
+    omitted_file_paths: tuple[str, ...],
+) -> bool:
+    if raw_finding.path in omitted_file_paths:
+        return True
+    for changed_file in fixture.changed_files:
+        if changed_file.path == raw_finding.path and changed_file.contains_line(raw_finding.line):
+            return changed_file.patch_status != "available"
+    return False
 
 
 def _raw_reviewer_finding_or_suppression(
