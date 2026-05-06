@@ -715,7 +715,7 @@ def test_common_long_domain_word_in_untrusted_memory_does_not_block_candidate_pa
 
 @pytest.mark.parametrize(
     "token",
-    ("python3", "python-3", "node18", "node-18", "sha256", "react19", "http2", "go1.22"),
+    ("python3", "python-3", "node18", "node-18", "sha256", "react19", "http2", "go1.22", "version-2", "version1.2"),
 )
 def test_common_tech_tokens_in_untrusted_memory_do_not_block_candidate_payload_preview(token: str) -> None:
     finding_token = token.replace("-", "").replace(".", "")
@@ -754,6 +754,8 @@ def test_common_tech_tokens_in_untrusted_memory_do_not_block_candidate_payload_p
         ("I think line-123456 is wrong.", "Changed line 123456 returns stale data."),
         ("I saw cache 123456 in this PR.", "Cache 123456 is handled by the new branch."),
         ("I saw cache-123456 in this PR.", "Cache 123456 is handled by the new branch."),
+        ("cache-123456", "Cache 123456 is handled by the new branch."),
+        ("cache 123456", "Cache 123456 is handled by the new branch."),
         ("Authentication 123456 failed locally.", "Authentication 123456 fails for valid sessions."),
     ),
 )
@@ -899,6 +901,9 @@ def test_mixed_identifier_untrusted_memory_cannot_enter_candidate_payload_previe
         ("user_12345", "Copied: user12345"),
         ("account_123456", "Copied: account123456"),
         ("codename_orion", "Copied: codenameorion"),
+        ("SECRET TOKEN", "Copied: SECRETTOKEN"),
+        ("codename orion", "Copied: codenameorion"),
+        ("PROJ 1234", "Copied: PROJ1234"),
         ("ACME.42", "Copied: ACME42"),
         ("The unresolved thread referenced ticket PROJ.1234.", "Copied: PROJ1234"),
         ("The unresolved thread referenced identifier user.12345.", "Copied: user12345"),

@@ -545,6 +545,55 @@ def test_high_confidence_speculative_raw_finding_is_suppressed(tmp_path: Path) -
 
 
 @pytest.mark.parametrize(
+    ("title", "body", "evidence"),
+    (
+        (
+            "Cache may fail",
+            "The new cache may fail when callers pass empty input.",
+            "Changed line 12 returns stale value when callers pass empty input.",
+        ),
+        (
+            "Cache still fails",
+            "The cache still fails when callers pass empty input.",
+            "Changed line 12 returns stale value when callers pass empty input.",
+        ),
+    ),
+)
+def test_uncertain_or_preexisting_raw_finding_is_suppressed(
+    tmp_path: Path,
+    title: str,
+    body: str,
+    evidence: str,
+) -> None:
+    fixture_path = tmp_path / "uncertain-finding.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["items"] = [
+        {
+            "type": "postable_finding",
+            "id": "finding-uncertain",
+            "title": title,
+            "body": body,
+            "evidence": evidence,
+            "path": "src/cache.py",
+            "line": 12,
+            "priority": 2,
+            "severity": "warning",
+            "confidence": "high",
+            "fingerprint": "fixture-uncertain",
+        }
+    ]
+    fixture_path.write_text(json.dumps(fixture))
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path))
+    review = result.json_data["review"]
+
+    assert result.json_data["local_verdict"] == "no_findings"
+    assert result.json_data["post_enabled"] is False
+    assert review["candidate_payload_preview"] is None
+    assert review["classified_output"]["postable_findings"] == []
+
+
+@pytest.mark.parametrize(
     ("title", "body"),
     (
         ("Improve coverage", "This should have a regression test."),
@@ -781,6 +830,35 @@ def test_concrete_findings_with_helper_or_understand_wording_are_postable(
     assert review["classified_output"]["suppressed"] == []
 
 
+def test_concrete_domain_finding_without_known_subject_word_is_postable(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "cart-discount.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["items"] = [
+        {
+            "type": "postable_finding",
+            "id": "finding-cart-discount",
+            "title": "Coupon expiry drops discounts",
+            "body": "The new branch drops cart discounts when the coupon expires.",
+            "evidence": "Changed line 12 drops cart discounts when the coupon expires.",
+            "path": "src/cache.py",
+            "line": 12,
+            "priority": 1,
+            "severity": "warning",
+            "confidence": "high",
+            "fingerprint": "fixture-cart-discount",
+        }
+    ]
+    fixture_path.write_text(json.dumps(fixture))
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path))
+    review = result.json_data["review"]
+
+    assert result.json_data["local_verdict"] == "comment"
+    assert result.json_data["post_enabled"] is True
+    assert review["classified_output"]["postable_findings"][0]["id"] == "finding-cart-discount"
+    assert review["classified_output"]["suppressed"] == []
+
+
 def test_concrete_security_finding_with_normal_review_language_is_postable(tmp_path: Path) -> None:
     fixture_path = tmp_path / "open-redirect.json"
     fixture = _basic_fixture()
@@ -892,6 +970,7 @@ def test_concrete_security_and_privacy_finding_wording_is_postable(
         ("This allows better modularity in this module.", "Changed line 12 allows better modularity in this module."),
         ("This allows better decoupling in this module.", "Changed line 12 allows better decoupling in this module."),
         ("This improves testability in this module.", "Changed line 12 improves testability in this module."),
+        ("The new helper allows users to configure endpoints.", "Changed line 12 allows users to configure endpoints."),
     ),
 )
 def test_generic_maintenance_finding_with_broad_verb_is_suppressed(

@@ -353,13 +353,21 @@ def _memory_body_overlaps_candidate(memory_body: str | None, candidate_body: str
         if " " not in fragment and fragment in candidate_words:
             return True
         compact_fragment = fragment.replace(" ", "")
-        if " " not in fragment and _looks_mixed_identifier_like(fragment) and compact_fragment in compact_candidate:
+        if " " not in fragment and _looks_mixed_identifier_like(fragment) and _compact_fragment_in_candidate(
+            compact_fragment,
+            normalized_candidate,
+        ):
             return True
         if (
             " " in fragment
-            and (_has_enough_fragment_signal(fragment) or _looks_identifier_like(compact_fragment))
-            and _has_enough_compact_fragment_signal(compact_fragment)
-            and compact_fragment in compact_candidate
+            and (
+                _has_enough_compact_fragment_signal(compact_fragment)
+                or (
+                    _has_enough_fragment_signal(fragment)
+                    and _has_meaningful_compact_raw_token_signal(compact_fragment, fragment.split(), 0)
+                )
+            )
+            and _compact_fragment_in_candidate(compact_fragment, normalized_candidate)
         ):
             return True
     return False
@@ -430,11 +438,21 @@ def _has_enough_fragment_signal(fragment: str) -> bool:
     return len(fragment) >= 7 and len(set(compact)) >= 5
 
 
+def _is_common_numeric_memory_fragment(normalized: str) -> bool:
+    words = normalized.split()
+    if len(words) != 2:
+        return False
+    first, second = words
+    return first in _COMMON_MEMORY_WORDS and second.isdigit()
+
+
 def _exact_memory_body_is_meaningful(normalized: str) -> bool:
     words = normalized.split()
     if not words:
         return False
     if all(word in _COMMON_MEMORY_WORDS for word in words):
+        return False
+    if _is_common_numeric_memory_fragment(normalized):
         return False
     if len(words) == 1:
         word = words[0]
@@ -447,6 +465,15 @@ def _normalized_phrase_in_text(phrase: str, text: str) -> bool:
     if len(words) == 1:
         return words[0] in set(text.split())
     return f" {phrase} " in f" {text} "
+
+
+def _compact_fragment_in_candidate(compact_fragment: str, normalized_candidate: str) -> bool:
+    words = normalized_candidate.split()
+    for size in range(1, min(4, len(words)) + 1):
+        for index in range(0, len(words) - size + 1):
+            if "".join(words[index : index + size]) == compact_fragment:
+                return True
+    return False
 
 
 def _full_memory_fragment_is_meaningful(normalized: str) -> bool:
@@ -485,7 +512,10 @@ def _looks_mixed_identifier_like(word: str) -> bool:
 
 def _has_enough_compact_fragment_signal(fragment: str, raw_fragment: str = "") -> bool:
     compact = fragment.replace(" ", "")
-    return _looks_identifier_like(compact) and _has_high_signal_context(fragment.split(), raw_fragment)
+    words = fragment.split()
+    return _has_meaningful_compact_raw_token_signal(compact, words, 0) and (
+        _looks_identifier_like(compact) or _has_high_signal_context(words, raw_fragment)
+    )
 
 
 def _has_high_signal_context(words: list[str], raw_fragment: str) -> bool:
@@ -589,6 +619,7 @@ _COMMON_MEMORY_WORDS = {
     "the",
     "thread",
     "untrusted",
+    "version",
 }
 
 _HIGH_SIGNAL_CONTEXT_WORDS = {

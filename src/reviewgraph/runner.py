@@ -437,11 +437,21 @@ def _has_vague_testing_scenario(text: str) -> bool:
 def _is_generic_speculative_advice(text: str) -> bool:
     speculative_terms = (
         "could cause problems",
+        "could fail",
+        "may fail",
+        "may cause",
         "may cause problems",
+        "might fail",
+        "might cause",
         "might cause problems",
         "potential issue",
         "requires investigation",
         "should investigate",
+        "still fails",
+        "still fail",
+        "still broken",
+        "already fails",
+        "pre-existing",
     )
     return any(term in text for term in speculative_terms)
 
@@ -452,19 +462,20 @@ def _has_non_testing_finding_shape(text: str) -> bool:
 
 def _has_concrete_finding_shape(text: str) -> bool:
     scenario = bool(re.search(r"\b(when|if|after|before|with|without|for|on|in|to|via|from|while|where)\b", text))
-    concrete_subject = bool(
+    introduced = bool(re.search(r"\b(changed line|new branch|introduced|now)\b", text))
+    harmful_behavior = bool(
         re.search(
-            r"\b(invoice|rounding|retry|charge|customer|timezone|due date|cache|auth|login|redirect|filename|visibility|session|token|header|api|request|response|caller|input|path|parser|helper|format|endpoint|email|user|client|admin|migration)\b",
+            r"\b(regress|overcharg\w*|double[- ]charg\w*|shifts?|breaks?|corrupts?|drops?|exposes?|fails?|hangs?|ignores?|includes?|leaks?|misroutes?|omits?|raises?|rejects?|returns?|skips?|bypasses?|cannot|stale|unauthorized|open redirect|path traversal|unauthenticated access)\b",
             text,
         )
     )
-    changed_or_harm = bool(
+    harmful_broad_access = bool(
         re.search(
-            r"\b(changed line|new branch|introduced|now|regress|overcharg|double charg|shifts?|breaks?|corrupts?|drops?|exposes?|fails?|hangs?|ignores?|includes?|leaks?|misroutes?|omits?|raises?|rejects?|returns?|skips?|allows?|accepts?|bypasses?|permits?|cannot|stale|unauthorized|open redirect|path traversal|unauthenticated access)\b",
+            r"\b(allows?|accepts?|permits?)\b.*\b(unauthenticated access|unauthorized|open redirect|path traversal|user-controlled|private|leak|expos|bypass|admin|token|session|email|charge|overcharg|double charg)\b",
             text,
         )
     )
-    return scenario and concrete_subject and changed_or_harm
+    return scenario and introduced and (harmful_behavior or harmful_broad_access)
 
 
 def _require_fields(data: dict[str, Any], fields: tuple[str, ...], label: str) -> None:
