@@ -29,7 +29,7 @@ The product point is restraint. ReviewGraph should prefer no finding over a plau
 ## Current Code Snapshot
 
 - `src/reviewgraph/models.py` already defines `RawReviewerFinding`, `ClassifiedFinding`, `DiffAnchor`, `LocalNote`, `SuggestedReply`, `SuppressedReviewerOutput`, `ClarificationRequest`, `ReviewVerdict`, and graph-owned-field rejection.
-- `src/reviewgraph/reviewers.py` already normalizes deterministic fake reviewer items into typed `ReviewerResult` fields, but the runner still re-parses `raw_output` for policy. `AUR-201` should make typed normalized artifacts the policy input.
+- `src/reviewgraph/reviewers.py` already normalizes deterministic fake reviewer items into typed `ReviewerResult` fields, but that typed path currently strips graph-owned fields before constructing raw findings. The runner still re-parses `raw_output` for policy, which is why reviewer-owned priority/fingerprint/blocking attempts are still suppressible today. `AUR-201` must make typed normalized artifacts the policy input without silently discarding graph-owned-field evidence.
 - `src/reviewgraph/runner.py` currently contains legacy in-run normalization/classification helpers such as `_classify_reviewer_output`, `_is_postable_finding`, `_local_verdict`, evidence-provenance checks, and optional/required failure wiring. General and testing quality rules are currently interleaved here.
 - `src/reviewgraph/posting.py` already keeps suggested replies/local notes/suppressed output local-only, rejects public request-changes wording in candidate payloads, and validates inline candidates when explicitly requested.
 - `DiffAnchor` exists in models and posting validation, but runner-created findings do not yet attach anchors and the graph does not yet produce inline candidates.
