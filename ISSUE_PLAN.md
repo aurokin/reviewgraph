@@ -31,17 +31,19 @@ This issue should not add live LLM calls, live GitHub reads, approval UI, writer
 1. Strengthen `src/reviewgraph/redaction.py` as the shared redaction contract:
    - Keep `redact_text` deterministic and preserve existing replacement/category behavior.
    - Add a reusable JSON/data redaction helper for logs, traces, JSON errors, default JSON output, and future provider-bound request stubs.
-   - Add a small policy/result wrapper for provider-bound text that records whether raw submission was explicitly enabled; default must redact.
-   - Keep raw opt-in as a recorded policy result only, not as live provider behavior.
+   - Add small policy/result wrappers for provider-bound text and trace/log data that record whether raw submission/persistence was explicitly enabled; defaults must redact.
+   - Expose proof fields future adapters can rely on: `text` or `data`, `redaction_status`, `raw_content_enabled`, and `surface`.
+   - Keep raw opt-in as a recorded policy result only, not as live provider behavior or trace persistence.
 2. Add `tests/test_redaction.py`:
    - Direct pattern coverage for API keys, bearer tokens, GitHub tokens, private keys, `.env` assignments, and authorization headers.
    - Determinism checks for repeated redaction over the same text and nested JSON-like structures.
-   - Surface checks for fixture title/body, labels, patches, comments, reviews, review-thread comments, rendered markdown/JSON, candidate payloads, JSON error payloads, trace/log dictionaries, and provider-bound request stubs.
-   - Fail-closed checks proving provider-bound payloads are redacted by default and raw provider submission requires explicit opt-in recorded in the result.
+   - Surface checks for fixture title/body, labels, patches, comments, reviews, review-thread comments, rendered markdown/JSON, candidate payloads, final-payload-shaped `GitHubReviewPayload` instances, JSON error payloads, trace/log dictionaries, and provider-bound request stubs.
+   - Fail-closed checks proving provider-bound payloads and trace/log payloads are redacted by default and raw provider submission/raw trace persistence require explicit opt-in recorded in the result.
+   - State-ordering checks proving payload validation/final-payload checks cannot treat a missing or failing `ReviewState.redaction_status` as safe. This should be a deterministic contract helper or model-level validation test, not a writer/finalization implementation.
 3. Integrate narrowly where useful:
    - Replace or share runner-local JSON redaction with the redaction module helper if it reduces duplication without changing output shape.
    - Preserve existing render/posting behavior and redaction status accounting.
-   - Ensure `ReviewState.redaction_status` and `GitHubReviewPayload.redaction_status` remain the state-facing proof points before payload validation/finalization.
+   - Ensure `ReviewState.redaction_status` and `GitHubReviewPayload.redaction_status` remain the state-facing proof points before payload validation/finalization, with focused tests for missing/failing status.
 4. Update durable docs only if implementation names or policies need alignment:
    - `docs/architecture/llm-data-handling.md`
    - `docs/harnesses/harness-engineering.md`
@@ -52,6 +54,7 @@ This issue should not add live LLM calls, live GitHub reads, approval UI, writer
 - No live GitHub read.
 - No approval/final-payload UI.
 - No writer/finalization implementation.
+- No live final payload construction. Final-payload redaction proof uses existing payload contracts or deterministic final-payload-shaped stubs.
 - No broad context package implementation; provider-bound payloads in this issue are deterministic redaction stubs only.
 
 ## Validation
