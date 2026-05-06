@@ -1,47 +1,61 @@
-# MILESTONE PLAN: PRD 0003 Contracts
+# MILESTONE PLAN: PRD 0010 Agent Context And Adapter Boundaries
 
 Active execution artifact for this milestone. Linear remains the durable source for issue status, milestone order, blockers, and handoff details; if this file conflicts with Linear, Linear wins. Re-fetch current Linear state before starting each issue.
 
 ## Linear Scope Snapshot
 
-- Milestone: `PRD 0003: Contracts`
-- Milestone ID: `1a431524-5899-43e1-9dce-e626d8de8796`
+- Milestone: `PRD 0010: Agent Context And Adapter Boundaries`
+- Milestone ID: `0dea2cdd-6433-41d8-b1a4-b91b07d3acc9`
 - Current status: 0% complete when this plan was drafted.
-- Implementation issues:
-  - `AUR-312` / `RG-059: Define Core Contract Models And Schema Harness`
-  - `AUR-192` / `RG-003: Parse Fixture PR With Review Target`
-  - `AUR-237` / `RG-048: Add Core Redaction Service`
-  - `AUR-211` / `RG-022: Enforce Context Budget And Truncation Notes`
-- Gate issue: `AUR-254` / `Complete PRD 0003: Contracts`
-- Issue chain: `AUR-312` blocks `AUR-192`, `AUR-192` blocks `AUR-237`, `AUR-237` blocks `AUR-211`, and `AUR-211` blocks `AUR-254`.
-- Gate note: `AUR-254` has a Linear checklist comment requiring issue evidence, focused harnesses, full validation, backlog export validation, docs audit, and fresh subagent review before closure.
+- Implementation issue:
+  - `AUR-231` / `RG-042: Define Reviewer Context Package`
+- Gate issue:
+  - `AUR-255` / `Complete PRD 0010: Agent Context And Adapter Boundaries`
+- Current issue statuses:
+  - `AUR-231`: `Backlog`
+  - `AUR-255`: `Backlog`
+- Known Linear note: `AUR-231` has a PRD 0003 gate comment explaining that the existing `src/reviewgraph/reviewer_context.py` is only the minimal context-budget stub from `AUR-211`. The fuller reviewer context package contract remains valid PRD 0010 work.
 
 ## Milestone Intent
 
-PRD 0003 turns the PRD 0002 tracer's intentionally thin contracts into durable schemas and validation harnesses. The milestone should make fixture parsing, review target binding, context budgeting, truncation notes, and redaction explicit enough that later graph, memory, live LLM, live GitHub read, approval, and writer milestones cannot smuggle safety decisions through prompts or ad hoc dictionaries.
+PRD 0010 makes reviewer agents explicit context boundaries. A reviewer should receive a scoped package of prompt inputs, bounded diff context, memory references, truncation state, selected-reviewer metadata, and capability policy. It should not receive GitHub transports, approval state, payload builders, finalization code, writer clients, or ambient process state.
 
-This milestone does not need live adapters, prompt wording, persistence, formal approval UI, or provider-specific LLM calls. It should preserve the current fixture dry-run behavior while hardening the contracts underneath it.
+The milestone also hardens the design point that PR conversation memory is shared data, not an instruction stream. Trusted actionable memory may help route reviewers when configured. Untrusted memory must remain passive in MVP: it cannot select reviewers, override prompts, satisfy evidence, influence verdicts, approve posting, or enter public payload text.
 
 ## Current Code Snapshot
 
-- `src/reviewgraph/models.py` has a minimal dataclass surface for `ReviewTarget`, `DiffAnchor`, classified outputs, selected reviewers, memory references, truncation notices, and redaction status. `AUR-312` owns the missing PRD 0003 `ReviewState`, `ReviewerRunKey`, raw reviewer output, risk, read-gap, approval, finalization, permission, marker reconciliation, and writer-result contracts before later issue work builds on them.
-- `src/reviewgraph/fixtures.py` can load packaged JSON fixtures, validate a small fixture shape, validate reviewer config fields, parse changed files/ranges, and produce `FixturePR` records. It does not yet provide the required fixture corpus, target hash helpers, manifest consumption validation, PR metadata/comments/reviews/thread schemas, or typed `ReviewTarget` parsing.
-- `src/reviewgraph/redaction.py` has deterministic regex redaction for private keys, authorization headers, bearer tokens, GitHub tokens, API-key-like assignments, `.env` assignments, and standalone key shapes. Coverage is currently exercised through tracer/render tests, not a dedicated redaction harness across all required surfaces.
-- `src/reviewgraph/runner.py` owns a fixture-only dry-run shell. It should keep using fixture/fake data, but PRD 0003 work should move reusable contracts into focused modules instead of expanding runner-local policy.
-- `src/reviewgraph/fixtures_data/manifest.json` contains only the PRD 0002 tracer fixtures: `basic-pr`, `specialized-review-pr`, and `ambiguous-logic-pr`. Harness engineering requires the broader corpus names before later milestones build on them.
-- Current default tests prove the PRD 0002 slice. PRD 0003 should add focused harnesses instead of relying on tracer tests as proxy evidence.
+- `src/reviewgraph/reviewer_context.py` currently defines a small `ReviewerContextPackage` containing review target, active stage, selected reviewer, changed files, memory references, truncation notices, omitted context, local notes, and context budget. It does not yet expose reviewer config metadata, capability policy, context policy, passive-memory separation, prompt inputs, trace metadata, or adapter-boundary proof.
+- `src/reviewgraph/models.py` already has `ReviewTarget`, `SelectedReviewer`, `MemoryReference`, `ContextBudget`, `ReviewerAgentConfig`, `ReviewerResult`, and raw/classified reviewer contracts. It should grow only the contracts needed for this milestone, keeping graph-owned decisions out of reviewer output.
+- `src/reviewgraph/config.py` validates optional `model`, `context`, and `capabilities`; it currently rejects `tools` outright. PRD 0010 and `AUR-231` require tool metadata to be represented while tool-using reviewers remain out of scope. This milestone will treat `tools` as inert, validated metadata only: non-empty string names may be recorded in the context package trace, but they do not grant execution rights, live calls, GitHub access, repository access, or write capability.
+- `src/reviewgraph/memory.py` already computes trusted/passive/actionable memory from typed PR context and allowlists.
+- `src/reviewgraph/context_budget.py` already applies file, patch, memory, reviewer-count, and live-call budget decisions before reviewer execution and emits omitted-context markers/local notes.
+- `src/reviewgraph/runner.py` still executes fixture raw outputs directly after routing; reviewer adapters are not implemented yet. PRD 0010 should not build live adapter execution, but it should make the package that future fake/live adapters receive testable.
+- `tests/test_context_budget.py` has a minimal package test. This milestone should add a dedicated `tests/test_reviewer_context.py` and boundary coverage instead of treating context-budget tests as proxy evidence.
 
 ## Execution Order
 
-1. `AUR-312` first: core PRD 0003 schema coverage is broader than fixture parsing. Add `ReviewState`, `ReviewerRunKey`, reviewer status, raw reviewer output contracts, state-facing gate/finalization/writer contracts, deterministic target hash helpers, config validation harnesses, invalid enum/priority coverage, and import-boundary tests.
-2. `AUR-192` second: fixture schema and immutable review target parsing build on the core model contracts. Add the required manifest scenarios, typed fixture PR context, stable target hash behavior, invalid-shape errors, and manifest consumption validation.
-3. `AUR-237` third: harden the redaction service before context-budget outputs can persist or render PR-derived snippets. Add focused redaction coverage over fixture text, logs/traces/error payloads, rendered output, candidate/final payload text, and future provider-bound request text. Tie redaction status into state-facing contracts before payload validation.
-4. `AUR-211` fourth: context budgets depend on parsed changed files, patches, conversation memory fields, fixture corpus entries, and redaction-safe output. Add explicit budget models, deterministic truncation/defer decisions, omitted-context markers, and structured local-note candidates. If reviewer context packages are not yet implemented, use minimal typed stubs and keep full reviewer context behavior out of scope.
-5. `AUR-254` last: complete the milestone audit only after all implementation issues are `Done`, docs are refactored for PRD 0003 drift, default validation is green, Linear-derived backlog validation is green, and fresh subagent review reports no material issues.
+1. `AUR-231` first: define the full reviewer context package contract and harness. This should include:
+   - review target
+   - active stage
+   - selected reviewer metadata
+   - reviewer config metadata: model, tools/tool policy, context policy, capabilities, required flag, and verdict power
+   - bounded diff context from the budgeted PR
+   - trusted actionable memory references
+   - passive memory references or explicit passive-memory exclusion metadata
+   - truncation notices and omitted-context markers
+   - capability policy that defaults to `diff_context` and disallows GitHub writes
+   - trace data showing included memory IDs, trust labels, resolved status, passive/actionable state, and truncation status
+   - prompt-input structure with separate instruction fields and data fields; memory bodies may appear only in labeled data fields, and passive/untrusted memory bodies must never appear in instruction fields
+   - golden prompt-input tests using `untrusted-comment-injection` to prove prompt-like untrusted PR text remains passive data or explicit exclusion metadata
+   - non-live provider request preview built from the context package, with minimized fields, redaction status, provider/model metadata, raw-provider submission disabled by default, and no network/client dependency
+   - provider-bound golden tests proving secret-like fixture text is redacted and omitted/passive context remains governed before any later live LLM adapter can submit it
+   - adapter-boundary tests proving reviewer context/prompt modules do not import or receive GitHub writer, approval, finalization, payload builder, live LLM, or transport clients
+   - field/signature tests proving `ReviewerContextPackage`, prompt-input models, and builders cannot accept writer/client/approval/payload/LLM objects or ambient side-effect handles
+2. `AUR-255` second: close the milestone only after `AUR-231` is Done, focused and full validation pass, docs reflect the durable context boundary, and fresh subagent review finds no material gaps.
 
 ## Issue Workflow
 
-For each implementation issue:
+For each issue:
 
 1. Re-fetch the issue, its comments, and current related milestone state from Linear.
 2. Move the issue to `In Progress`.
@@ -55,44 +69,51 @@ For each implementation issue:
 
 ## Harness Strategy
 
-- `AUR-312` harness target: `python -m pytest tests/test_models.py tests/test_config.py tests/test_contract_boundaries.py`
-- `AUR-192` harness target: `python -m pytest tests/test_fixtures.py`
-- `AUR-237` harness target: `python -m pytest tests/test_redaction.py`
-- `AUR-211` harness target: `python -m pytest tests/test_context_budget.py`
-- Regression target after each issue: run affected existing tests plus `python -m pytest` when shared contracts change.
-- Documentation target after each behavior/doc shift: `python scripts/check_docs.py`
-- Backlog target at gate: export the Linear-derived PRD 0003 order and run `python scripts/check_docs.py --backlog-export <tmp-file>`.
+- `AUR-231` focused harness: `python -m pytest tests/test_reviewer_context.py tests/test_config.py tests/test_contract_boundaries.py tests/test_cli.py`
+- Boundary regression harness: static AST tests proving context, prompt, and future reviewer-adapter boundary modules do not import forbidden side-effect modules.
+- Boundary shape harness: tests inspect dataclass fields and builder signatures so reviewer context and prompt-input contracts cannot accept writer/client/approval/payload/LLM objects or side-effect handles.
+- Prompt-input golden harness: tests prove system/developer instruction fields are separate from context data, trusted/actionable memory and passive memory are labeled, and untrusted prompt-like bodies from `untrusted-comment-injection` never appear as instructions.
+- Provider-bound preview harness: non-live tests build the would-be provider request from `ReviewerContextPackage`, assert context minimization, redaction status, provider/model trace metadata, no raw-provider opt-in by default, no network/client dependency, and no secret-like raw fixture content.
+- Trusted-memory routing harness: include the existing conversation-pattern tests, or move them into a focused routing test, so `conversation_patterns` are proven to match only trusted actionable memory as part of `AUR-231` evidence.
+- Tracer regression harness: `python -m pytest tests/test_context_budget.py tests/test_memory.py tests/test_tracer_fixture_run.py tests/test_render.py`
+- Full validation after shared contract changes:
+  - `python -m pytest`
+  - `python -m py_compile src/reviewgraph/*.py`
+  - `python scripts/check_docs.py`
+  - `git diff --check`
+- Gate validation for `AUR-255`: re-run the focused and full validation, create a fresh Linear-derived PRD 0010 backlog export, run `python scripts/check_docs.py --backlog-export <tmp-file>`, record the export hash in Linear evidence, audit Linear status/comments/blockers immediately before closing, remove the temporary export, and confirm no `.ws/` or temporary export files remain.
 
 ## Contract Guardrails
 
-- Preserve dry-run by default. No PRD 0003 work should introduce live GitHub reads, live LLM calls, approval prompts, or writer reachability.
-- Keep GitHub writes behind later side-effect gates. Fixture parsing, context budgeting, and redaction may prepare state, but must not call or import writer code.
-- Keep reviewer output separated from graph-owned decisions. Raw reviewer contracts may propose issues; classified findings, postability, final priority, blocking, fingerprints, and destinations remain graph-owned.
-- Keep `ReviewTarget` immutable and hashable from owner/repo, PR number, base SHA, head SHA, merge-base SHA, and diff basis. Hashes must change when base/head/diff basis changes.
-- Keep untrusted PR comments passive. They may exist in fixture memory, but must not select reviewers, satisfy evidence, influence verdicts, approve posting, or enter public payload text in MVP.
-- Redact secret-like content before rendering, tracing, errors, payload validation, future provider-bound requests, and public payload generation. Raw-content tracing or raw provider submission must remain opt-in and off by default.
-- Until `AUR-237` lands, any new budget/truncation artifacts must either use the existing redaction shim or avoid raw PR-derived snippets entirely.
-- Do not couple reviewer prompts or context packages to GitHub transport or side-effect modules.
+- Preserve dry-run by default. No PRD 0010 work should introduce live GitHub reads, live LLM calls, approval prompts, or writer reachability.
+- A reviewer agent is a configured prompt/context boundary that returns structured output. It does not mutate graph state and does not create GitHub payloads.
+- Reviewer adapters receive only `ReviewerContextPackage` and return `ReviewerResult`.
+- Reviewer context and prompt modules must not import GitHub transports, writer clients, approval/finalization code, or posting payload builders.
+- Capabilities default to `diff_context`; MVP reviewer capabilities remain `none` and `diff_context`. GitHub writes are never a reviewer capability.
+- `tools` are inert metadata in this milestone. They may be validated and recorded for future policy, but they must not grant live tool execution, repository reads, GitHub reads, GitHub writes, process access, or provider calls.
+- `conversation_patterns` may match only trusted actionable memory. Untrusted memory cannot route reviewers or appear as instruction text.
+- Passive memory may be included only as explicitly labeled data or represented by exclusion metadata; prompt instruction fields and public payload text must not include untrusted comment bodies in MVP.
+- Context budget decisions remain graph-owned. Reviewers receive retained context plus explicit truncation/omitted-context markers, not silent omissions.
+- Redaction status and context minimization must be proven in a non-live provider request preview before any context package can be used for provider-bound requests in later milestones.
 
 ## Documentation Work
 
 Update the narrowest durable docs alongside behavior:
 
-- Fixture schema, manifest expectations, target hashing, and fixture corpus guidance belong in `docs/harnesses/harness-engineering.md`, `docs/plans/implementation-plan.md`, or a focused architecture doc if the contract needs one.
-- State, gate, raw reviewer, approval, and writer-result schema decisions belong in `docs/architecture/state-graph.md`, `docs/architecture/findings-contract.md`, `docs/architecture/side-effects.md`, or a new ADR if the decision constrains future implementation.
-- Redaction and live-data handling belong in `docs/architecture/llm-data-handling.md` and any relevant harness guidance.
-- Do not copy the full Linear issue tree into repo docs. Keep Linear as the executable backlog and docs as progressive-disclosure contracts.
+- Reviewer context package fields and adapter-boundary rules belong in `docs/architecture/state-graph.md`, `docs/architecture/reviewer-config.md`, `docs/prds/0010-agent-context-and-adapter-boundaries.md`, and `docs/harnesses/harness-engineering.md`.
+- If the milestone settles a durable tradeoff around passive memory inclusion, tool metadata validation, or prompt-input shape, add or update an ADR in `docs/decisions/`.
+- Keep Linear as the executable backlog. Do not copy the issue tree into repository docs beyond this active execution plan.
 
 ## Milestone Completion Criteria
 
-`AUR-254` must build a prompt-to-artifact checklist for PRD 0003 plus all four implementation issues. PRD 0003 is complete when:
+`AUR-255` can close only when:
 
-- `AUR-312`, `AUR-192`, `AUR-237`, and `AUR-211` are `Done` in Linear with evidence comments.
-- `AUR-254` is `Done` only after the final gate audit.
-- `MILESTONE_PLAN.md` and the historical committed `ISSUE_PLAN.md` versions document the plan used for each issue.
-- Focused harnesses exist and pass for core models/config/boundaries, fixtures, redaction, and context budget.
-- The full default test suite passes.
-- `python scripts/check_docs.py`, `git diff --check`, and a PRD 0003 Linear-derived backlog export check pass.
-- Documentation has been audited and refactored for the PRD 0003 contracts an implementation agent needs when dropping into the repo.
-- Fresh subagent review of the final code/docs reports no material issues.
+- `AUR-231` is `Done` in Linear with an evidence comment.
+- A fresh Linear milestone inventory proves every active PRD 0010 non-gate issue is complete and every active blocker is resolved or has an explicit stale/canceled/not-applicable rationale in Linear.
+- A fresh Linear-derived backlog export for PRD 0010 passes `python scripts/check_docs.py --backlog-export <tmp-file>`; the temporary export is removed after validation and its hash is recorded in the `AUR-255` evidence comment.
+- `ReviewerContextPackage` has a focused contract and harness proving every `AUR-231` acceptance criterion.
+- Reviewer config metadata, inert tool metadata, capability policy, prompt-input instruction/data separation, non-live provider-bound minimization/redaction preview, passive/trusted memory separation, truncation traces, and adapter-boundary behavior are represented in code and tests.
+- Focused validation, tracer regression validation, full validation, docs check, py-compile, and diff check pass.
+- Durable docs have been audited and refactored for the agent context boundary an implementation agent needs when dropping into the repo.
+- Fresh subagent review of code, tests, docs, Linear issue evidence, and milestone gate plan reports no material issues.
 - No unapproved live API, live LLM, approval, or GitHub writer behavior has been introduced.
