@@ -22,6 +22,8 @@ class StageCursorFields(Protocol):
     suspended_stage: ReviewStage | None
     stage_queue: list[ReviewStage]
     completed_stages: list[ReviewStage]
+    ready_clarification_ids: list[str]
+    active_clarification_id: str | None
 
 
 @dataclass
@@ -30,6 +32,8 @@ class StageCursor:
     suspended_stage: ReviewStage | None
     stage_queue: list[ReviewStage]
     completed_stages: list[ReviewStage]
+    ready_clarification_ids: list[str]
+    active_clarification_id: str | None
 
 
 @dataclass(frozen=True)
@@ -68,6 +72,8 @@ def initial_stage_cursor() -> StageCursor:
         suspended_stage=None,
         stage_queue=initial_stage_queue(),
         completed_stages=[],
+        ready_clarification_ids=[],
+        active_clarification_id=None,
     )
 
 
@@ -76,9 +82,12 @@ def validate_stage_cursor(cursor: StageCursorFields) -> None:
     suspended = cursor.suspended_stage
     queue = tuple(cursor.stage_queue)
     completed = tuple(cursor.completed_stages)
+    ready_ids = tuple(cursor.ready_clarification_ids)
 
     _validate_stage_tuple(queue, "stage_queue")
     _validate_stage_tuple(completed, "completed_stages")
+    _validate_string_tuple(ready_ids, "ready_clarification_ids")
+    _require_optional_non_empty(cursor.active_clarification_id, "active_clarification_id")
     if active is not None and not isinstance(active, ReviewStage):
         raise StageCursorError("active_stage must be a ReviewStage or None")
     if suspended is not None and not isinstance(suspended, ReviewStage):
@@ -93,12 +102,26 @@ def validate_stage_cursor(cursor: StageCursorFields) -> None:
         raise StageCursorError("stage_queue must contain only future stages")
     if active in completed:
         raise StageCursorError("active_stage must not already be completed")
+    if active == ReviewStage.CLARIFICATION_REVIEW:
+        if suspended is None:
+            raise StageCursorError("clarification_review requires suspended_stage")
+        if cursor.active_clarification_id is None:
+            raise StageCursorError("clarification_review requires active_clarification_id")
+    elif suspended is not None:
+        raise StageCursorError("suspended_stage is only valid during clarification_review")
+    elif cursor.active_clarification_id is not None:
+        raise StageCursorError("active_clarification_id is only valid during clarification_review")
     overlap = set(queue).intersection(completed)
     if overlap:
         raise StageCursorError("stage_queue must not contain completed stages")
     _validate_no_duplicates(queue, "stage_queue")
     _validate_no_duplicates(completed, "completed_stages")
-    _validate_normal_stage_order(active=active, queue=queue, completed=completed)
+    _validate_normal_stage_order(
+        active=active,
+        suspended=suspended,
+        queue=queue,
+        completed=completed,
+    )
 
 
 def advance_or_finish_stage(cursor: StageCursorFields) -> StageCursorTransition:
@@ -117,7 +140,18 @@ def advance_or_finish_stage(cursor: StageCursorFields) -> StageCursorTransition:
             reason = f"start_{after_active.value}"
             cursor.active_stage = after_active
     elif before_active == ReviewStage.CLARIFICATION_REVIEW:
-        raise StageCursorError("clarification_review resume is not implemented in this slice")
+        if before_suspended is None:
+            raise StageCursorError("clarification_review requires suspended_stage")
+        cursor.active_stage = before_suspended
+        cursor.suspended_stage = None
+        cursor.active_clarification_id = None
+        reason = f"finish_clarification_review_restore_{before_suspended.value}"
+    elif cursor.ready_clarification_ids:
+        clarification_id = cursor.ready_clarification_ids.pop(0)
+        cursor.suspended_stage = before_active
+        cursor.active_stage = ReviewStage.CLARIFICATION_REVIEW
+        cursor.active_clarification_id = clarification_id
+        reason = "enter_clarification_review"
     else:
         cursor.completed_stages.append(before_active)
         if cursor.stage_queue:
@@ -152,6 +186,16 @@ def _validate_stage_tuple(stages: tuple[ReviewStage, ...], label: str) -> None:
         raise StageCursorError(f"{label} must contain ReviewStage values")
 
 
+def _validate_string_tuple(values: tuple[str, ...], label: str) -> None:
+    if any(not isinstance(value, str) or not value for value in values):
+        raise StageCursorError(f"{label} must contain non-empty strings")
+
+
+def _require_optional_non_empty(value: str | None, label: str) -> None:
+    if value is not None and (not isinstance(value, str) or not value):
+        raise StageCursorError(f"{label} must be a non-empty string or None")
+
+
 def _validate_no_duplicates(stages: tuple[ReviewStage, ...], label: str) -> None:
     if len(set(stages)) != len(stages):
         raise StageCursorError(f"{label} must not contain duplicate stages")
@@ -160,6 +204,7 @@ def _validate_no_duplicates(stages: tuple[ReviewStage, ...], label: str) -> None
 def _validate_normal_stage_order(
     *,
     active: ReviewStage | None,
+    suspended: ReviewStage | None,
     queue: tuple[ReviewStage, ...],
     completed: tuple[ReviewStage, ...],
 ) -> None:
@@ -167,7 +212,12 @@ def _validate_normal_stage_order(
     if completed != NORMAL_REVIEW_STAGES[:completed_count]:
         raise StageCursorError("completed_stages must be an ordered normal-stage prefix")
     if active == ReviewStage.CLARIFICATION_REVIEW:
-        expected_queue = NORMAL_REVIEW_STAGES[completed_count:]
+        if completed_count >= len(NORMAL_REVIEW_STAGES):
+            raise StageCursorError("clarification_review cannot follow completed normal stages")
+        expected_suspended = NORMAL_REVIEW_STAGES[completed_count]
+        expected_queue = NORMAL_REVIEW_STAGES[completed_count + 1 :]
+        if suspended != expected_suspended:
+            raise StageCursorError("suspended_stage must be the current normal stage")
         if queue != expected_queue:
             raise StageCursorError("stage_queue must preserve normal-stage order during clarification_review")
         return

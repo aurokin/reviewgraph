@@ -14,7 +14,11 @@ from reviewgraph.fixtures import (
     load_reviewer_config,
     redact_for_error,
 )
-from reviewgraph.clarification import ClarificationGateResult, evaluate_clarification_gate
+from reviewgraph.clarification import (
+    ClarificationGateResult,
+    evaluate_clarification_gate,
+    ingest_clarification_answer,
+)
 from reviewgraph.context_budget import (
     BudgetedInputContext,
     apply_input_context_budget,
@@ -28,6 +32,7 @@ from reviewgraph.hashing import canonical_json_hash
 from reviewgraph.memory import build_conversation_memory
 from reviewgraph.models import (
     ClarificationRequest,
+    ClarificationAnswer,
     ClassifiedFinding,
     ContextBudget,
     GraphError,
@@ -96,6 +101,7 @@ def run_fixture_dry_run(
     fixture_ref: str,
     reviewer_config_path: str | None = None,
     writer_sentinel: object | None = None,
+    clarification_answers: tuple[ClarificationAnswer, ...] = (),
 ) -> DryRunResult:
     writer_call_count_before = _writer_call_count(writer_sentinel)
     fixture = load_fixture_pr(fixture_ref)
@@ -124,6 +130,7 @@ def run_fixture_dry_run(
         risk=risk_assessment,
         omitted_file_paths=budgeted_context.context_budget.omitted_file_paths,
         omitted_memory_ids=budgeted_context.context_budget.omitted_memory_ids,
+        clarification_answers=clarification_answers,
     )
     selected_reviewers = stage_run.selected_reviewers
     graph_trace = stage_run.graph_trace
@@ -216,7 +223,12 @@ def _run_review_stages(
     risk: RiskAssessment,
     omitted_file_paths: tuple[str, ...] = (),
     omitted_memory_ids: tuple[str, ...] = (),
+    clarification_answers: tuple[ClarificationAnswer, ...] = (),
 ) -> _StageRunResult:
+    answers_by_request_id = {
+        answer.request_id: answer
+        for answer in clarification_answers
+    }
     raw_outputs_by_key = _raw_outputs_by_key(fixture)
     fake_adapter = FakeReviewerAdapter(
         fixture_id=fixture.id,
@@ -250,8 +262,13 @@ def _run_review_stages(
         if cursor.active_stage is None:
             raise RunnerError("stage cursor did not activate a review stage")
         routing_state.active_stage = cursor.active_stage
+        routing_state.suspended_stage = cursor.suspended_stage
         routing_state.stage_queue = list(cursor.stage_queue)
         routing_state.completed_stages = list(cursor.completed_stages)
+        routing_state.ready_clarification_ids = list(cursor.ready_clarification_ids)
+        routing_state.active_clarification_id = cursor.active_clarification_id
+        if transition.transition_reason.startswith("finish_clarification_review_restore_"):
+            continue
         stage = cursor.active_stage.value
 
         selected_stage_reviewers = select_reviewers_for_active_stage(routing_state)
@@ -355,6 +372,15 @@ def _run_review_stages(
             )
         clarification_gate = evaluate_clarification_gate(classified["clarification_requests"])
         if clarification_gate.blocks_posting:
+            answered = _ingest_available_clarification_answers(
+                routing_state,
+                classified=classified,
+                clarification_gate=clarification_gate,
+                answers_by_request_id=answers_by_request_id,
+            )
+            if answered:
+                cursor.ready_clarification_ids = list(routing_state.ready_clarification_ids)
+                continue
             clarification_needed = True
             break
 
@@ -404,6 +430,28 @@ def _stage_cursor_terminal_trace(cursor: StageCursor, *, transition_reason: str)
     ).to_json()
 
 
+def _ingest_available_clarification_answers(
+    review_state: ReviewState,
+    *,
+    classified: dict[str, list[Any]],
+    clarification_gate: ClarificationGateResult,
+    answers_by_request_id: dict[str, ClarificationAnswer],
+) -> bool:
+    answered = False
+    review_state.clarification_requests = list(classified["clarification_requests"])
+    review_state.pending_clarification_ids = list(clarification_gate.pending_ids)
+    review_state.clarification_status = dict(clarification_gate.status)
+    for request_id in clarification_gate.blocking_pending_ids:
+        answer = answers_by_request_id.get(request_id)
+        if answer is None:
+            continue
+        ingest_clarification_answer(review_state, answer)
+        answered = True
+    if answered:
+        classified["clarification_requests"] = list(review_state.clarification_requests)
+    return answered
+
+
 def _routing_review_state(
     config: ReviewerConfig,
     fixture: FixturePR,
@@ -441,6 +489,8 @@ def _routing_review_state(
         suppressed_outputs=[],
         clarification_requests=[],
         pending_clarification_ids=[],
+        ready_clarification_ids=[],
+        active_clarification_id=None,
         clarifications=[],
         clarification_status={},
         ranked_findings=[],

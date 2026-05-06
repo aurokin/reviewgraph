@@ -1469,6 +1469,8 @@ class ReviewState:
     suppressed_outputs: list[SuppressedReviewerOutput]
     clarification_requests: list[ClarificationRequest]
     pending_clarification_ids: list[str]
+    ready_clarification_ids: list[str]
+    active_clarification_id: str | None
     clarifications: list[ClarificationAnswer]
     clarification_status: dict[str, ClarificationStatus]
     ranked_findings: list[Finding]

@@ -162,13 +162,36 @@ def retry_after_failure(
 
 
 def reviewer_run_key_for_selection(review_state: ReviewState, reviewer: SelectedReviewer) -> ReviewerRunKey:
+    candidates: list[ReviewerRunKey] = []
     for run_key in review_state.reviewer_run_keys:
-        if run_key.reviewer == reviewer.name and run_key.stage.value == reviewer.stage:
-            return run_key
+        if run_key.reviewer != reviewer.name or run_key.stage.value != reviewer.stage:
+            continue
+        if run_key.stage == ReviewStage.CLARIFICATION_REVIEW:
+            if run_key.clarification_id != review_state.active_clarification_id:
+                continue
+        candidates.append(run_key)
+    if candidates:
+        active_candidates = [
+            run_key
+            for run_key in candidates
+            if (
+                status := review_state.reviewer_run_status.get(run_key.stable_key())
+            ) is None
+            or status.status in {ReviewerRunStatusValue.SELECTED, ReviewerRunStatusValue.RUNNING}
+        ]
+        return max(active_candidates or candidates, key=lambda run_key: run_key.attempt)
     raise ValueError(f"reviewer run key missing for {reviewer_key(reviewer)}")
 
 
 def _same_reviewer_identity(left: ReviewerRunKey, right: ReviewerRunKey) -> bool:
+    if left.clarification_id is not None or right.clarification_id is not None:
+        return (
+            left.target_hash == right.target_hash
+            and left.config_hash == right.config_hash
+            and left.stage == right.stage
+            and left.reviewer == right.reviewer
+            and left.clarification_id == right.clarification_id
+        )
     return (
         left.target_hash == right.target_hash
         and left.config_hash == right.config_hash

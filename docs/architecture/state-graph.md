@@ -34,6 +34,8 @@ class ReviewState(TypedDict):
     suppressed_outputs: list[SuppressedReviewerOutput]
     clarification_requests: list[ClarificationRequest]
     pending_clarification_ids: list[str]
+    ready_clarification_ids: list[str]
+    active_clarification_id: str | None
     clarifications: list[ClarificationAnswer]
     clarification_status: dict[str, ClarificationStatus]
     ranked_findings: list[Finding]
@@ -216,7 +218,9 @@ ingest_clarification_answer
   -> advance_or_finish_stage
 ```
 
-On resume, `ingest_clarification_answer` records the answer, changes the clarification status from `pending` to `answered`, removes the ID from `pending_clarification_ids`, and records the ID for the next clarification run, but it does not mutate stage cursor fields. The next `advance_or_finish_stage` stores the prior normal stage in `suspended_stage`, sets `active_stage` to `clarification_review`, and routes to `select_reviewers`. The resumed `ReviewerRunKey` includes the answered clarification ID, and `select_reviewers` runs only the affected reviewer(s). After `clarification_gate` passes, `advance_or_finish_stage` treats `clarification_review` as non-queue work: it restores `active_stage` from `suspended_stage`, clears `suspended_stage`, marks the clarification `in_review` or `resolved` according to reviewer output, and then completes or continues that source stage according to the source stage's reviewer statuses. It must not pop an unrelated queued stage or restart unrelated completed stages.
+On resume, `ingest_clarification_answer` records the answer, changes the clarification status from `pending` to `answered`, removes the ID from `pending_clarification_ids`, and records the ID for the next clarification run, but it does not mutate stage cursor fields. The next `advance_or_finish_stage` stores the prior normal stage in `suspended_stage`, sets `active_stage` to `clarification_review`, and routes to `select_reviewers`. The resumed `ReviewerRunKey` includes the answered clarification ID, and `select_reviewers` runs only the affected reviewer(s). After `clarification_gate` passes, `advance_or_finish_stage` treats `clarification_review` as non-queue work: it restores `active_stage` from `suspended_stage`, clears `suspended_stage` and `active_clarification_id`, and then completes or continues that source stage according to the source stage's reviewer statuses. It must not pop an unrelated queued stage or restart unrelated completed stages.
+
+Answered clarification IDs move from `pending_clarification_ids` into `ready_clarification_ids`; entering `clarification_review` consumes one ready ID into `active_clarification_id`, and leaving `clarification_review` clears it. This makes resume one-shot for a given answer and prevents stale pending IDs from keeping `post_enabled=false`.
 
 Graph traces should record `active_stage_before`, `active_stage_after`, `suspended_stage_before`, `suspended_stage_after`, `stage_queue_before`, `stage_queue_after`, and `transition_reason` for each cursor transition.
 

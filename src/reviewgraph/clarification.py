@@ -1,9 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Iterable
 
-from reviewgraph.models import ClarificationRequest, ClarificationState, ClarificationStatus
+from reviewgraph.models import (
+    ClarificationAnswer,
+    ClarificationRequest,
+    ClarificationState,
+    ClarificationStatus,
+    ReviewState,
+)
 
 
 @dataclass(frozen=True)
@@ -37,3 +43,35 @@ def evaluate_clarification_gate(
         status=status,
         blocks_posting=bool(blocking_pending_ids),
     )
+
+
+def ingest_clarification_answer(review_state: ReviewState, answer: ClarificationAnswer) -> None:
+    request_index, request = _pending_request(review_state, answer.request_id)
+    review_state.clarifications.append(answer)
+    answered_request = replace(request, status=ClarificationState.ANSWERED)
+    review_state.clarification_requests[request_index] = answered_request
+    review_state.clarification_status[answer.request_id] = ClarificationStatus(
+        request_id=answer.request_id,
+        status=ClarificationState.ANSWERED,
+    )
+    review_state.pending_clarification_ids[:] = [
+        request_id
+        for request_id in review_state.pending_clarification_ids
+        if request_id != answer.request_id
+    ]
+    if answer.request_id not in review_state.ready_clarification_ids:
+        review_state.ready_clarification_ids.append(answer.request_id)
+
+
+def _pending_request(
+    review_state: ReviewState,
+    request_id: str,
+) -> tuple[int, ClarificationRequest]:
+    for index, request in enumerate(review_state.clarification_requests):
+        if request.id != request_id:
+            continue
+        status = request.status or ClarificationState.PENDING
+        if status != ClarificationState.PENDING:
+            raise ValueError(f"clarification request {request_id} is not pending")
+        return index, request
+    raise ValueError(f"clarification request {request_id} was not found")

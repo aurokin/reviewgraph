@@ -35,6 +35,8 @@ def test_empty_fixture_graph_initializes_dry_run_state_without_reviewers() -> No
         "suspended_stage": None,
         "stage_queue": ["initial_triage", "specialized_review", "logic_review"],
         "completed_stages": [],
+        "ready_clarification_ids": [],
+        "active_clarification_id": None,
     }
     assert data["selected_reviewers"] == []
     assert data["local_verdict"] is None

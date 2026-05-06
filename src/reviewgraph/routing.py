@@ -69,6 +69,8 @@ def select_reviewers_for_active_stage(
 ) -> tuple[SelectedReviewer, ...]:
     if review_state.active_stage is None:
         return ()
+    if review_state.active_stage == ReviewStage.CLARIFICATION_REVIEW:
+        return _select_clarification_resume_reviewers(review_state)
     if review_state.pr is None:
         raise ValueError("review state pr is required for reviewer selection")
     if memory_references is None:
@@ -91,6 +93,48 @@ def select_reviewers_for_active_stage(
             continue
         runnable_selection.append(reviewer)
     return tuple(runnable_selection)
+
+
+def _select_clarification_resume_reviewers(review_state: ReviewState) -> tuple[SelectedReviewer, ...]:
+    clarification_id = review_state.active_clarification_id
+    if clarification_id is None:
+        raise ValueError("active_clarification_id is required during clarification_review")
+    request = next(
+        (
+            request
+            for request in review_state.clarification_requests
+            if request.id == clarification_id
+        ),
+        None,
+    )
+    if request is None:
+        raise ValueError(f"clarification request {clarification_id} was not found")
+    if not request.resume_target_reviewers:
+        raise ValueError(f"clarification request {clarification_id} has no resume target reviewers")
+    missing_reviewers = [
+        reviewer_name
+        for reviewer_name in request.resume_target_reviewers
+        if reviewer_name not in review_state.config.agents
+    ]
+    if missing_reviewers:
+        missing = ", ".join(sorted(missing_reviewers))
+        raise ValueError(f"clarification request {clarification_id} resume reviewers unavailable: {missing}")
+    selected: list[SelectedReviewer] = []
+    for reviewer_name in request.resume_target_reviewers:
+        reviewer = SelectedReviewer(
+            name=reviewer_name,
+            stage=ReviewStage.CLARIFICATION_REVIEW.value,
+            reasons=(f"clarification_review resume.clarification_id={clarification_id}",),
+        )
+        run_key = register_selected_reviewer(
+            review_state,
+            reviewer,
+            clarification_id=clarification_id,
+        )
+        if run_key is None:
+            continue
+        selected.append(reviewer)
+    return tuple(selected)
 
 
 def _trigger_reasons(

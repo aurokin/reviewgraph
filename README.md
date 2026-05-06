@@ -72,4 +72,4 @@ Read in this order:
 
 ## Repository status
 
-Fixture dry-run tracer, context budgeting, reviewer context package, inert reviewer tool metadata, passive-memory prompt boundaries, prompt-injection memory harness, provider preview redaction, staged reviewer selection, deterministic risk/size gates, reviewer run status, fake reviewer execution, required-reviewer fail-closed dry-run output, and side-effect import boundaries are implemented. Clarification resume, live GitHub reads, live LLM reviewers, approval finalization, and GitHub writers are still future milestones.
+Fixture dry-run tracer, context budgeting, reviewer context package, inert reviewer tool metadata, passive-memory prompt boundaries, prompt-injection memory harness, provider preview redaction, staged reviewer selection, deterministic risk/size gates, reviewer run status, fake reviewer execution, required-reviewer fail-closed dry-run output, clarification stop/resume primitives, and side-effect import boundaries are implemented. Live GitHub reads, live LLM reviewers, approval finalization, and GitHub writers are still future milestones.
