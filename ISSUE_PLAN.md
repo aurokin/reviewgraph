@@ -1,74 +1,82 @@
-# ISSUE PLAN: AUR-237 Add Core Redaction Service
+# ISSUE PLAN: AUR-211 Enforce Context Budget And Truncation Notes
 
-Active issue plan for `AUR-237` / `RG-048: Add Core Redaction Service`.
+Active issue plan for `AUR-211` / `RG-022: Enforce Context Budget And Truncation Notes`.
 
 ## Linear Snapshot
 
-- Issue: `AUR-237`
+- Issue: `AUR-211`
 - Status at start: `In Progress`
 - Milestone: `PRD 0003: Contracts`
-- Blocks: `AUR-211`, then milestone gate `AUR-254`
-- Blocked by: `AUR-192` (Done)
+- Blocks: milestone gate `AUR-254`
+- Blocked by: `AUR-237` (Done)
 - Comments at start: none
-- Harness from Linear: `python -m pytest tests/test_redaction.py`
+- Harness from Linear: `python -m pytest tests/test_context_budget.py`
 
 ## Goal
 
-Promote redaction from an indirectly tested helper into a focused contract that future render, tracing, payload, and live LLM adapter work can safely reuse.
+Apply explicit context-budget contracts before reviewer fanout and make truncation/deferred-reviewer decisions deterministic, structured, and visible to later renderer/reviewer-context work.
 
-This issue should not add live LLM calls, live GitHub reads, approval UI, writer behavior, or raw-content tracing. It should make the safe default explicit: redacted text is the only normal path for external PR-derived text.
+This issue should not add live GitHub reads, live LLM calls, approval UI, writer behavior, or quality/posting enforcement beyond budget state. It may add minimal reviewer-context package contracts so the budget output has a durable consumer.
 
 ## Current Code
 
-- `src/reviewgraph/redaction.py` already redacts private keys, authorization headers, bearer tokens, GitHub tokens, API-key-like assignments, `.env` assignments, and standalone key shapes.
-- `src/reviewgraph/posting.py` redacts candidate issue-comment bodies before hashing.
-- `src/reviewgraph/render.py` redacts rendered markdown/JSON fields and absorbs candidate payload redaction status.
-- `src/reviewgraph/runner.py` redacts the top-level JSON envelope and CLI-facing errors through fixture error helpers.
-- Existing coverage lives in `tests/test_render.py`, `tests/test_posting.py`, `tests/test_cli.py`, and tracer tests. There is no focused `tests/test_redaction.py` harness.
+- `ContextBudget` and `TruncationNotice` exist in `src/reviewgraph/models.py`, but budget decisions are not calculated by a dedicated module.
+- Fixture parsing preserves changed files, patches, labels, PR comments/reviews/review threads, and fixture-authored truncation notices.
+- `src/reviewgraph/runner.py` currently renders fixture truncation notices but does not calculate changed-file, patch-byte, memory-byte, reviewer-count, or live-call budgets.
+- There is no `src/reviewgraph/context_budget.py`, no `src/reviewgraph/reviewer_context.py`, and no `tests/test_context_budget.py`.
+- `oversized-change` already represents a fixture with omitted patch text and should be part of the focused harness.
 
 ## Implementation Plan
 
-1. Strengthen `src/reviewgraph/redaction.py` as the shared redaction contract:
-   - Keep `redact_text` deterministic and preserve existing replacement/category behavior.
-   - Add a reusable JSON/data redaction helper for logs, traces, JSON errors, default JSON output, and future provider-bound request stubs.
-   - Add small policy/result wrappers for provider-bound text and trace/log data that record whether raw submission/persistence was explicitly enabled; defaults must redact.
-   - Expose proof fields future adapters can rely on: `text` or `data`, `redaction_status`, `surface`, `raw_provider_submission_enabled`, and `raw_trace_persistence_enabled`.
-   - Keep raw opt-in as a recorded policy result only, not as live provider behavior or trace persistence.
-2. Add `tests/test_redaction.py`:
-   - Direct pattern coverage for API keys, bearer tokens, GitHub tokens, private keys, `.env` assignments, and authorization headers.
-   - Determinism checks for repeated redaction over the same text and nested JSON-like structures.
-   - Surface checks for fixture title/body, labels, patches, comments, reviews, review-thread comments, rendered markdown/JSON, candidate payloads, final-payload-shaped `GitHubReviewPayload` instances, JSON error payloads, trace/log dictionaries, and provider-bound request stubs.
-   - Fail-closed checks proving provider-bound payloads and trace/log payloads are redacted by default; raw provider submission and raw trace persistence require separate explicit opt-ins, and enabling one does not enable the other.
-   - State-ordering checks proving payload validation/final-payload checks cannot treat a missing or failing `ReviewState.redaction_status` as safe. This should be a deterministic contract helper or model-level validation test, not a writer/finalization implementation.
-3. Integrate narrowly where useful:
-   - Replace or share runner-local JSON redaction with the redaction module helper if it reduces duplication without changing output shape.
-   - Preserve existing render/posting behavior and redaction status accounting.
-   - Ensure `ReviewState.redaction_status` and `GitHubReviewPayload.redaction_status` remain the state-facing proof points before payload validation/finalization, with focused tests for missing/failing status.
-4. Update durable docs only if implementation names or policies need alignment:
-   - `docs/architecture/llm-data-handling.md`
-   - `docs/harnesses/harness-engineering.md`
+1. Add explicit budget limits and decisions:
+   - Extend `ReviewConfig` parsing with an optional top-level `context_budget` object.
+   - Support deterministic limits for `max_changed_files`, `max_patch_bytes`, `max_memory_bytes`, `max_reviewers`, and `max_live_calls`, with conservative defaults for fixture runs.
+   - Reject unknown or non-positive budget fields.
+2. Add `src/reviewgraph/context_budget.py`:
+   - Input: typed `PullRequestContext`, `PRConversationMemory`, selected reviewer candidates, and budget limits/config.
+   - Output: a budget result containing `ContextBudget`, retained changed files, retained memory entries, retained/deferred reviewers, structured `TruncationNotice` entries, omitted-context markers, and structured `LocalNote` candidates for deferred reviewers or omitted context.
+   - Count patch bytes deterministically from available patch text; treat missing/truncated fixture patches as explicit truncation input, not as an error.
+   - Count memory bytes from memory bodies and metadata needed by reviewer context packages.
+   - Keep ordering stable: retain existing fixture/reviewer order and defer overflow deterministically.
+3. Add `src/reviewgraph/reviewer_context.py`:
+   - Define a minimal `ReviewerContextPackage` that includes review target, active stage, selected reviewer metadata, retained changed files, retained memory references, truncation notices, omitted-context markers, local-note candidates, and budget limits.
+   - Keep this as a typed package/stub only; no prompt construction or live adapter behavior.
+4. Integrate narrowly with the fixture runner:
+   - Calculate context budget before reviewer execution/fanout.
+   - Apply reviewer count caps before raw reviewer output execution.
+   - Merge budget-generated truncation notices and local-note candidates into rendered dry-run output without changing posting policy.
+   - Preserve existing fixture-authored truncation notices, but make budget-generated notices graph-owned and deterministic.
+5. Add `tests/test_context_budget.py`:
+   - Caps changed files, patch bytes, conversation memory bytes, reviewer count, and live-call count.
+   - Proves `oversized-change` receives truncation markers.
+   - Proves deferred reviewers become structured `LocalNote` candidates and are not executed.
+   - Proves reviewer context packages include truncation status and omitted-context markers.
+   - Proves repeated runs produce identical budget decisions and rendered JSON.
+   - Proves invalid budget config fails clearly.
+6. Update durable docs only where behavior changes:
+   - `docs/architecture/reviewer-config.md` for top-level `context_budget` config.
+   - `docs/architecture/review-quality.md` or `docs/harnesses/harness-engineering.md` if budget/deferred-reviewer semantics need clarification.
 
 ## Out Of Scope
 
-- No live LLM adapter or provider call.
-- No live GitHub read.
-- No approval/final-payload UI.
-- No writer/finalization implementation.
-- No live final payload construction. Final-payload redaction proof uses existing payload contracts or deterministic final-payload-shaped stubs.
-- No broad context package implementation; provider-bound payloads in this issue are deterministic redaction stubs only.
+- No live LLM adapter or provider budget consumption.
+- No live GitHub read or pagination.
+- No prompt construction.
+- No quality/posting enforcement beyond adding local notes and truncation state.
+- No side effects, approval, finalization, or writer behavior.
 
 ## Validation
 
 Focused:
 
 ```bash
-python -m pytest tests/test_redaction.py
+python -m pytest tests/test_context_budget.py
 ```
 
 Regression:
 
 ```bash
-python -m pytest tests/test_render.py tests/test_posting.py tests/test_cli.py tests/test_tracer_fixture_run.py
+python -m pytest tests/test_config.py tests/test_models.py tests/test_cli.py tests/test_tracer_fixture_run.py tests/test_render.py
 python -m pytest
 python -m py_compile src/reviewgraph/*.py
 python scripts/check_docs.py
@@ -78,7 +86,8 @@ git diff --check
 ## Completion Evidence To Comment On Linear
 
 - Files changed.
-- Focused redaction harness output.
+- Focused context-budget harness output.
 - Regression/full validation output.
-- Explicit confirmation that no live provider, live GitHub, approval, or writer behavior was introduced.
+- Evidence that reviewers beyond budget are deferred as local notes and not executed.
+- Evidence that no live provider, live GitHub, approval, or writer behavior was introduced.
 - Subagent plan/code review results.
