@@ -112,7 +112,8 @@
           "type": "clarification_request",
           "id": "clarify-expired-coupon-intent",
           "question": "Should expired coupons preserve legacy discounts for existing carts?",
-          "why_it_matters": "Without product intent, the reviewer cannot decide whether the changed billing behavior is a bug or an intended migration."
+          "why_it_matters": "Without product intent, the reviewer cannot decide whether the changed billing behavior is a bug or an intended migration.",
+          "evidence_sources": ["diff"]
         }
       ]
     }

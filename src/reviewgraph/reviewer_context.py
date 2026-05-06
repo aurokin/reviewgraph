@@ -258,7 +258,7 @@ def _memory_trace_dict(memory: MemoryReference) -> dict[str, Any]:
         "source_type": memory.source_type,
         "actionable": memory.actionable,
         "passive_reason": memory.passive_reason,
-        "body_included": memory.body is not None,
+        "body_included": memory.actionable and memory.body is not None,
     }
 
 
@@ -272,7 +272,7 @@ def _prompt_memory_dict(memory: MemoryReference) -> dict[str, Any]:
         "author": memory.author,
         "path": memory.path,
         "line": memory.line,
-        "body": memory.body,
+        "body": memory.body if memory.actionable else None,
         "passive_reason": memory.passive_reason,
     }
 

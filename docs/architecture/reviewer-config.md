@@ -148,7 +148,7 @@ Reviewer capabilities must default to `diff_context`, with GitHub writes unavail
 - a capability policy with GitHub writes, repository access, and live provider calls disabled by default
 - a trace of memory IDs, trust labels, resolved status, passive/actionable state, truncation state, and omitted-context IDs
 
-Prompt inputs built from the package must keep instructions separate from context data. PR conversation memory is labeled data, not instruction text. Passive or untrusted memory bodies may appear only as passive data or exclusion metadata; they must not appear in system/developer instructions, satisfy evidence, change verdicts, approve posting, or enter public payload text in MVP.
+Prompt inputs built from the package must keep instructions separate from context data. PR conversation memory is labeled data, not instruction text. Passive or untrusted memory is represented as passive metadata only in MVP; bodies stay out of reviewer prompt data. Passive or untrusted memory must not appear in system/developer instructions, satisfy evidence, change verdicts, approve posting, or enter public payload text.
 
 Provider-bound request previews are non-live harness artifacts. They serialize the minimized package data, apply redaction, record redaction status, and keep `raw_provider_submission_enabled` and `raw_trace_persistence_enabled` false by default. They do not create network clients or provider tool schemas.
 

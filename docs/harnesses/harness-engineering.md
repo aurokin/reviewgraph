@@ -107,6 +107,7 @@ Golden tests should protect product behavior without freezing incidental wording
 - Trusted humans, trusted bots, untrusted humans, unlisted bots, resolved threads, unresolved threads, and unknown thread state are distinct.
 - Fixture and adapter memory inputs must include explicit actor type; missing or unknown actor type fails closed for trust.
 - Untrusted comments are passive data. They cannot route reviewers, override prompts, satisfy evidence requirements, influence verdicts, approve posting, or enter public payload text in MVP.
+- Prompt-injection memory harnesses must prove passive memory is labeled as data, not instructions, and that reviewer findings citing PR memory use explicit trusted-memory IDs rather than copied passive comment text.
 - Unknown required thread state fails closed for actionability until a later policy proves otherwise.
 
 ### Reviewer Boundaries
@@ -115,7 +116,7 @@ Golden tests should protect product behavior without freezing incidental wording
 - Reviewer adapters do not receive GitHub transports, approval state, finalization code, payload builders, or writer clients.
 - Fake and live reviewers share the same input/output contract.
 - Capabilities default to `none` or `diff_context`; tool-using reviewers are future work. Any `tools` config accepted before that policy exists is inert metadata only and must not become callable handles, provider tool schemas, live-call budget, repository access, GitHub access, or write access.
-- Prompt-input harnesses must prove instructions are separate from context data. Untrusted or passive memory bodies may appear only as labeled data or exclusion metadata, never as instruction text.
+- Prompt-input harnesses must prove instructions are separate from context data. Untrusted or passive memory is exposed only as labeled metadata in MVP; bodies must not enter prompt instructions or prompt data.
 - Context-package traces must include selected reviewer config metadata, memory IDs, trust labels, resolved status, passive/actionable state, truncation status, omitted-context IDs, and capability policy.
 - Provider-bound preview harnesses are non-live. They must prove minimized/redacted request text, redaction status, provider identity absent unless explicitly supplied by a future live caller, and separate `raw_provider_submission_enabled=false` and `raw_trace_persistence_enabled=false` defaults.
 - Context-budget harnesses must prove changed-file, patch-byte, memory-byte, reviewer-count, and live-call caps before reviewer execution. Deferred reviewers are selected-then-skipped, become local notes, and their raw fixture output is not consumed.
@@ -123,6 +124,7 @@ Golden tests should protect product behavior without freezing incidental wording
 ### Review Quality
 
 - Postable findings require changed-code evidence, an actionable scenario, graph-owned classification, and a precise changed-code location when available.
+- Findings that cite `trusted_memory` must cite concrete actionable memory IDs; findings that cite unknown, passive, or untrusted memory are suppressed before rendering.
 - Low-confidence or intent-dependent mergeability concerns become clarification requests.
 - Generic, speculative, pre-existing, duplicate-without-new-analysis, or locationless issues are local notes or suppressed output.
 - Suggested replies are local-only in MVP.

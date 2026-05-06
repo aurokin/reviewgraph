@@ -153,6 +153,7 @@ def test_rendered_markdown_and_json_include_required_sections() -> None:
         "trust_label": "untrusted",
         "resolved_status": "unresolved",
         "source_type": "issue_comment",
+        "role": "passive_data",
         "body": None,
         "author": None,
         "author_association": None,

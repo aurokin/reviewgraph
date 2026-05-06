@@ -25,6 +25,7 @@ from reviewgraph.context_budget import (
 from reviewgraph.memory import build_conversation_memory
 from reviewgraph.posting import canonical_json_hash
 from reviewgraph.models import (
+    ALLOWED_RAW_FINDING_EVIDENCE_SOURCES,
     ClarificationRequest,
     ClassifiedFinding,
     Confidence,
@@ -241,6 +242,7 @@ def _run_review_stages(
                 fixture,
                 reviewer_output=reviewer_output,
                 classified=classified,
+                memory_references=memory_references,
                 omitted_file_paths=omitted_file_paths,
             )
         if classified["clarification_requests"]:
@@ -526,6 +528,7 @@ def _classify_reviewer_output(
     *,
     reviewer_output: dict[str, Any],
     classified: dict[str, list[Any]],
+    memory_references: tuple[MemoryReference, ...],
     omitted_file_paths: tuple[str, ...] = (),
 ) -> None:
     reviewer = _required_str(reviewer_output, "reviewer", "raw_reviewer_outputs[]")
@@ -560,7 +563,18 @@ def _classify_reviewer_output(
                 raw_finding=raw_finding,
             )
             if _is_postable_finding(finding):
-                classified["findings"].append(finding)
+                if _finding_has_unsafe_evidence_provenance(
+                    raw_finding,
+                    memory_references=memory_references,
+                ):
+                    classified["suppressed_outputs"].append(
+                        SuppressedOutput(
+                            id=raw_finding.id,
+                            reason="Finding candidate used passive or untrusted memory as evidence.",
+                        )
+                    )
+                else:
+                    classified["findings"].append(finding)
             else:
                 classified["suppressed_outputs"].append(
                     SuppressedOutput(
@@ -580,14 +594,30 @@ def _classify_reviewer_output(
             )
         elif item_type == "clarification_request":
             _require_fields(item, ("id", "question", "why_it_matters"), "clarification_request")
-            classified["clarification_requests"].append(
-                ClarificationRequest(
-                    id=_required_str(item, "id", "clarification_request"),
-                    reviewer=reviewer,
-                    question=_required_str(item, "question", "clarification_request"),
-                    why_it_matters=_required_str(item, "why_it_matters", "clarification_request"),
+            clarification_id = _required_str(item, "id", "clarification_request")
+            question = _required_str(item, "question", "clarification_request")
+            why_it_matters = _required_str(item, "why_it_matters", "clarification_request")
+            if _raw_output_has_unsafe_evidence_provenance(
+                item,
+                memory_references=memory_references,
+                text_values=(question, why_it_matters),
+                require_provenance_with_passive_memory=True,
+            ):
+                classified["suppressed_outputs"].append(
+                    SuppressedOutput(
+                        id=clarification_id,
+                        reason="Clarification request used passive or untrusted memory as evidence.",
+                    )
                 )
-            )
+            else:
+                classified["clarification_requests"].append(
+                    ClarificationRequest(
+                        id=clarification_id,
+                        reviewer=reviewer,
+                        question=question,
+                        why_it_matters=why_it_matters,
+                    )
+                )
         elif item_type == "suggested_reply":
             _require_fields(item, ("id", "source_comment_id", "proposed_body"), "suggested_reply")
             classified["suggested_replies"].append(
@@ -621,6 +651,111 @@ def _finding_depends_on_omitted_context(
         if changed_file.path == raw_finding.path and changed_file.contains_line(raw_finding.line):
             return changed_file.patch_status != "available"
     return False
+
+
+def _finding_has_unsafe_evidence_provenance(
+    raw_finding: RawReviewerFinding,
+    *,
+    memory_references: tuple[MemoryReference, ...],
+) -> bool:
+    return _unsafe_evidence_provenance(
+        evidence_sources=raw_finding.evidence_sources,
+        evidence_memory_ids=raw_finding.evidence_memory_ids,
+        memory_references=memory_references,
+        text_values=(raw_finding.evidence,),
+        require_provenance_with_passive_memory=False,
+    )
+
+
+def _raw_output_has_unsafe_evidence_provenance(
+    item: dict[str, Any],
+    *,
+    memory_references: tuple[MemoryReference, ...],
+    text_values: tuple[str, ...],
+    require_provenance_with_passive_memory: bool,
+) -> bool:
+    evidence_sources = _optional_str_tuple(item, "evidence_sources", "raw reviewer output")
+    _require_supported_evidence_sources(evidence_sources, "raw reviewer output evidence_sources")
+    evidence_memory_ids = _optional_str_tuple(item, "evidence_memory_ids", "raw reviewer output")
+    return _unsafe_evidence_provenance(
+        evidence_sources=evidence_sources,
+        evidence_memory_ids=evidence_memory_ids,
+        memory_references=memory_references,
+        text_values=text_values,
+        require_provenance_with_passive_memory=require_provenance_with_passive_memory,
+    )
+
+
+def _unsafe_evidence_provenance(
+    *,
+    evidence_sources: tuple[str, ...],
+    evidence_memory_ids: tuple[str, ...],
+    memory_references: tuple[MemoryReference, ...],
+    text_values: tuple[str, ...],
+    require_provenance_with_passive_memory: bool,
+) -> bool:
+    if require_provenance_with_passive_memory:
+        has_passive_memory = any(not memory.actionable for memory in memory_references)
+        if has_passive_memory and not evidence_sources and not evidence_memory_ids:
+            return True
+    if "trusted_memory" in evidence_sources and not evidence_memory_ids:
+        return True
+    if evidence_memory_ids and "trusted_memory" not in evidence_sources:
+        return True
+    memory_by_id = {memory.id: memory for memory in memory_references}
+    if any(
+        (memory := memory_by_id.get(memory_id)) is None or not memory.actionable
+        for memory_id in evidence_memory_ids
+    ):
+        return True
+    if _text_copies_passive_memory(text_values, memory_references=memory_references):
+        return True
+    if evidence_sources:
+        return False
+    return False
+
+
+def _text_copies_passive_memory(
+    text_values: tuple[str, ...],
+    *,
+    memory_references: tuple[MemoryReference, ...],
+) -> bool:
+    values = [
+        normalized
+        for value in text_values
+        if len(normalized := _normalized_provenance_text(value)) >= 30
+    ]
+    if not values:
+        return False
+    for memory in memory_references:
+        if memory.actionable:
+            continue
+        body = _normalized_provenance_text(memory.body)
+        if len(body) < 30:
+            continue
+        for value in values:
+            if value in body or body in value:
+                return True
+    return False
+
+
+def _normalized_provenance_text(value: str) -> str:
+    return " ".join(value.casefold().split())
+
+
+def _optional_str_tuple(data: dict[str, Any], field: str, label: str) -> tuple[str, ...]:
+    if field not in data:
+        return ()
+    value = data[field]
+    if not isinstance(value, list) or any(not isinstance(item, str) or not item for item in value):
+        raise RunnerError(f"{label}.{field} must be an array of non-empty strings")
+    return tuple(value)
+
+
+def _require_supported_evidence_sources(value: tuple[str, ...], field_name: str) -> None:
+    invalid = [item for item in value if item not in ALLOWED_RAW_FINDING_EVIDENCE_SOURCES]
+    if invalid:
+        raise RunnerError(f"{field_name} contains unsupported values: {', '.join(sorted(invalid))}")
 
 
 def _raw_reviewer_finding_or_suppression(

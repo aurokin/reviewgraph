@@ -335,6 +335,7 @@ def test_reviewer_owned_fingerprint_with_clarification_fails_closed(
             "id": "clarify-intent",
             "question": "Is this behavior intentional?",
             "why_it_matters": "The mergeability decision depends on product intent.",
+            "evidence_sources": ["diff"],
         }
     )
     fixture_path.write_text(json.dumps(fixture))
@@ -363,6 +364,7 @@ def test_duplicate_graph_fingerprints_with_clarification_fail_closed(
             "id": "clarify-intent",
             "question": "Is this behavior intentional?",
             "why_it_matters": "The mergeability decision depends on product intent.",
+            "evidence_sources": ["diff"],
         }
     )
     fixture_path.write_text(json.dumps(fixture))
@@ -385,6 +387,7 @@ def test_duplicate_output_item_ids_with_clarification_fail_closed(
             "id": "clarify-intent",
             "question": "Is this behavior intentional?",
             "why_it_matters": "The mergeability decision depends on product intent.",
+            "evidence_sources": ["diff"],
         }
     )
     fixture_path.write_text(json.dumps(fixture))
@@ -1336,6 +1339,7 @@ def test_clarification_only_fixture_is_not_post_enabled(tmp_path: Path) -> None:
             "id": "clarify-intent",
             "question": "Is this behavior intentional?",
             "why_it_matters": "The mergeability decision depends on product intent.",
+            "evidence_sources": ["diff"],
         }
     ]
     fixture_path.write_text(json.dumps(fixture))
@@ -1359,6 +1363,7 @@ def test_finding_with_clarification_keeps_posting_plan_local_only(tmp_path: Path
             "id": "clarify-intent",
             "question": "Is this behavior intentional?",
             "why_it_matters": "The mergeability decision depends on product intent.",
+            "evidence_sources": ["diff"],
         }
     )
     fixture_path.write_text(json.dumps(fixture))

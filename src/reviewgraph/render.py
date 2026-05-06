@@ -772,6 +772,7 @@ def _memory_json(memory: MemoryReference, context: "_RenderContext") -> dict[str
         "trust_label": context.redact(memory.trust_label),
         "resolved_status": context.redact(memory.resolved_status),
         "source_type": context.redact(memory.source_type),
+        "role": "trusted_actionable_data" if memory.actionable else "passive_data",
         "body": context.redact(memory.body) if memory.body and _can_render_memory_body(memory) else None,
         "author": context.redact(memory.author) if memory.author is not None else None,
         "author_association": context.redact(memory.author_association)

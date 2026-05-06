@@ -104,6 +104,7 @@ class PostingDestination(StrEnum):
 
 ALLOWED_REVIEWER_CAPABILITIES = frozenset({"none", "diff_context"})
 ALLOWED_REVIEWER_VERDICT_POWERS = frozenset({"comment", "request_changes"})
+ALLOWED_RAW_FINDING_EVIDENCE_SOURCES = frozenset({"diff", "trusted_memory"})
 INERT_REVIEWER_TOOL_PREFIX = "future-"
 
 
@@ -165,6 +166,13 @@ def _require_string_tuple(value: tuple[str, ...], field_name: str, *, allow_empt
         raise ValueError(f"{field_name} must include at least one reason")
 
 
+def _require_allowed_str_tuple(value: tuple[str, ...], field_name: str, allowed: frozenset[str]) -> None:
+    _require_string_tuple(value, field_name)
+    invalid = [item for item in value if item not in allowed]
+    if invalid:
+        raise ValueError(f"{field_name} contains unsupported values: {', '.join(sorted(invalid))}")
+
+
 def _require_inert_tool_identifiers(value: tuple[str, ...], field_name: str) -> None:
     allowed_chars = set("abcdefghijklmnopqrstuvwxyz0123456789_-")
     invalid = [
@@ -204,6 +212,15 @@ def _optional_mapping_str(data: Mapping[str, object], field_name: str, label: st
     if field_name not in data:
         return None
     return _required_mapping_str(data, field_name, label)
+
+
+def _optional_mapping_str_tuple(data: Mapping[str, object], field_name: str, label: str) -> tuple[str, ...]:
+    if field_name not in data:
+        return ()
+    value = data[field_name]
+    if not isinstance(value, list) or any(not isinstance(item, str) or not item for item in value):
+        raise ValueError(f"{label} {field_name} must be an array of non-empty strings")
+    return tuple(value)
 
 
 @dataclass(frozen=True)
@@ -468,6 +485,8 @@ class RawReviewerFinding:
     evidence: str
     line_end: int | None = None
     suggested_fix: str | None = None
+    evidence_sources: tuple[str, ...] = ()
+    evidence_memory_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         for name in ("id", "path", "title", "rationale", "evidence"):
@@ -481,6 +500,12 @@ class RawReviewerFinding:
         if self.line_end is not None and (type(self.line_end) is not int or self.line_end < self.line):
             raise ValueError("raw reviewer finding line_end must be an integer greater than or equal to line")
         _require_optional_non_empty(self.suggested_fix, "raw reviewer finding suggested_fix")
+        _require_allowed_str_tuple(
+            self.evidence_sources,
+            "raw reviewer finding evidence_sources",
+            ALLOWED_RAW_FINDING_EVIDENCE_SOURCES,
+        )
+        _require_string_tuple(self.evidence_memory_ids, "raw reviewer finding evidence_memory_ids")
 
     @classmethod
     def from_mapping(cls, data: dict[str, object]) -> "RawReviewerFinding":
@@ -512,6 +537,12 @@ class RawReviewerFinding:
             evidence=_required_mapping_str(data, "evidence", "raw reviewer finding"),
             line_end=line_end,
             suggested_fix=_optional_mapping_str(data, "suggested_fix", "raw reviewer finding"),
+            evidence_sources=_optional_mapping_str_tuple(data, "evidence_sources", "raw reviewer finding"),
+            evidence_memory_ids=_optional_mapping_str_tuple(
+                data,
+                "evidence_memory_ids",
+                "raw reviewer finding",
+            ),
         )
 
 

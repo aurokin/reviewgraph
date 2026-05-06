@@ -22,9 +22,18 @@ Reviewers may propose findings, but they do not decide postability, blocking sta
   "title": "User-controlled path reaches file read",
   "rationale": "The new code joins user input into a filesystem path without normalization.",
   "evidence": "diff excerpt or PR context reference",
+  "evidence_sources": ["diff"],
+  "evidence_memory_ids": [],
   "suggested_fix": "Normalize and validate path under an allowed root before reading."
 }
 ```
+
+`evidence_sources` may include `diff` or `trusted_memory`. If a finding cites
+`trusted_memory`, it must also cite concrete `evidence_memory_ids`. Unknown,
+untrusted, resolved-passive, or otherwise non-actionable memory cannot support a
+postable finding. Existing path, line, and evidence fields still carry the human
+readable claim; provenance fields let the graph decide whether PR conversation
+memory is being used safely.
 
 ## Classified finding schema
 
@@ -87,9 +96,17 @@ If a reviewer cannot make a high-confidence mergeability recommendation without 
   "line": 42,
   "question": "Is this endpoint intentionally allowed to bypass the normal authorization path?",
   "why_it_matters": "If not intentional, the change may expose data across tenants.",
+  "evidence_sources": ["diff"],
+  "evidence_memory_ids": [],
   "blocks_verdict": true
 }
 ```
+
+Clarification requests affect the local verdict, so they follow the same memory
+provenance rule as findings. If passive memory metadata is visible to a reviewer, a
+clarification request must declare safe evidence provenance; copied passive
+comment text cannot create a verdict-blocking clarification, even if mislabeled
+as diff evidence.
 
 ## Local note schema
 
@@ -138,7 +155,7 @@ Suggested replies are local-only output for human-authored PR comments or review
 
 ## Filtering policy
 
-Suppress findings when they are generic, unsupported by the PR context, duplicate the existing PR conversation without adding new analysis, lack an actionable fix, cannot identify a scenario where the issue occurs, or attempt to self-declare postability/blocking without evidence. Semantic deduplication across reviewer outputs is deferred until a deterministic policy is designed and tested.
+Suppress findings when they are generic, unsupported by the PR context, duplicate the existing PR conversation without adding new analysis, lack an actionable fix, cannot identify a scenario where the issue occurs, attempt to self-declare postability/blocking without evidence, or use passive/untrusted memory as evidence. Semantic deduplication across reviewer outputs is deferred until a deterministic policy is designed and tested.
 
 ## Location policy
 

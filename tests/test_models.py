@@ -229,6 +229,17 @@ def test_raw_reviewer_finding_serialization_excludes_graph_owned_fields() -> Non
         assert field not in serialized
 
 
+def test_raw_reviewer_finding_records_evidence_memory_ids() -> None:
+    raw = _raw_finding()
+    raw["evidence_sources"] = ["trusted_memory"]
+    raw["evidence_memory_ids"] = ["comment-1", "thread-1"]
+
+    finding = RawReviewerFinding.from_mapping(raw)
+
+    assert finding.evidence_sources == ("trusted_memory",)
+    assert finding.evidence_memory_ids == ("comment-1", "thread-1")
+
+
 @pytest.mark.parametrize(
     ("field_name", "bad_value"),
     [
@@ -238,6 +249,10 @@ def test_raw_reviewer_finding_serialization_excludes_graph_owned_fields() -> Non
         ("line", 0),
         ("title", ""),
         ("evidence", ["x"]),
+        ("evidence_sources", ["diff", "unsupported"]),
+        ("evidence_sources", "diff"),
+        ("evidence_memory_ids", ["comment-1", ""]),
+        ("evidence_memory_ids", "comment-1"),
         ("line_end", 1),
         ("suggested_fix", ""),
     ],
