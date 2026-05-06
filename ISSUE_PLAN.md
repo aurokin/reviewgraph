@@ -1,100 +1,75 @@
-# ISSUE PLAN: AUR-211 Enforce Context Budget And Truncation Notes
+# ISSUE PLAN: AUR-254 Complete PRD 0003 Contracts
 
-Active issue plan for `AUR-211` / `RG-022: Enforce Context Budget And Truncation Notes`.
+Active issue plan for `AUR-254` / `Complete PRD 0003: Contracts`.
 
 ## Linear Snapshot
 
-- Issue: `AUR-211`
+- Issue: `AUR-254`
 - Status at start: `In Progress`
 - Milestone: `PRD 0003: Contracts`
-- Blocks: milestone gate `AUR-254`
-- Blocked by: `AUR-237` (Done)
-- Comments at start: none
-- Harness from Linear: `python -m pytest tests/test_context_budget.py`
+- Gate requirement: close only after implementation issues in this milestone are complete.
+- Blocking context: this gate blocks the first issues in the next PRD milestone.
+- Gate comment requires: confirm issue completion/evidence, re-fetch Linear state, build prompt-to-artifact checklist, run focused and full validation, run Linear-derived backlog export check, audit durable docs, use fresh subagent review, and confirm no live side effects.
+
+## Milestone Issue Status
+
+- `AUR-312` / `RG-059: Define Core Contract Models And Schema Harness`: `Done`; evidence comment present.
+- `AUR-192` / `RG-003: Parse Fixture PR With Review Target`: `Done`; evidence comment present.
+- `AUR-237` / `RG-048: Add Core Redaction Service`: `Done`; evidence comment present.
+- `AUR-211` / `RG-022: Enforce Context Budget And Truncation Notes`: `Done`; evidence comment present.
+- `AUR-254` / `Complete PRD 0003: Contracts`: active gate issue.
 
 ## Goal
 
-Apply explicit context-budget contracts before reviewer fanout and make truncation/deferred-reviewer decisions deterministic, structured, and visible to later renderer/reviewer-context work.
+Close PRD 0003 only if the repository and Linear state prove the contract milestone is complete, ordered, reviewed, and side-effect safe.
 
-This issue should not add live GitHub reads, live LLM calls, approval UI, writer behavior, or quality/posting enforcement beyond budget state. It may add minimal reviewer-context package contracts so the budget output has a durable consumer.
+This issue should not add product behavior unless the gate audit finds a durable documentation or harness gap. If docs change, update only the narrowest durable docs needed by future implementation agents.
 
-## Current Code
+## Prompt-To-Artifact Checklist
 
-- `ContextBudget` and `TruncationNotice` exist in `src/reviewgraph/models.py`, but budget decisions are not calculated by a dedicated module.
-- Fixture parsing preserves changed files, patches, labels, PR comments/reviews/review threads, and fixture-authored truncation notices.
-- `src/reviewgraph/runner.py` currently renders fixture truncation notices but does not calculate changed-file, patch-byte, memory-byte, reviewer-count, or live-call budgets.
-- There is no `src/reviewgraph/context_budget.py`, no `src/reviewgraph/reviewer_context.py`, and no `tests/test_context_budget.py`.
-- `oversized-change` already represents a fixture with omitted patch text and should be part of the focused harness.
+- Typed graph/state contracts: `src/reviewgraph/models.py`, `tests/test_models.py`, `tests/test_contract_boundaries.py`.
+- Review target and fixture PR contracts: `src/reviewgraph/fixtures.py`, packaged fixture corpus, `tests/test_fixtures.py`, `tests/test_fixture_manifest.py`.
+- Reviewer config validation: `src/reviewgraph/config.py`, `tests/test_config.py`, `examples/review_agents.example.yaml`.
+- Raw vs classified reviewer output and quality downgrade proof: `src/reviewgraph/models.py`, `src/reviewgraph/runner.py`, `tests/test_models.py`, `tests/test_cli.py`, `tests/test_tracer_fixture_run.py`.
+- Redaction service and status gates: `src/reviewgraph/redaction.py`, `src/reviewgraph/render.py`, `tests/test_redaction.py`, `tests/test_render.py`.
+- Context budget and reviewer context package contracts: `src/reviewgraph/context_budget.py`, `src/reviewgraph/reviewer_context.py`, `tests/test_context_budget.py`.
+- Durable docs: `docs/prds/0003-contracts.md`, `docs/architecture/state-graph.md`, `docs/architecture/reviewer-config.md`, `docs/harnesses/harness-engineering.md`, `docs/implementation/README.md`.
+- Linear ordering proof: temporary PRD 0003 backlog export checked with `python scripts/check_docs.py --backlog-export <tmp-file>`.
 
 ## Implementation Plan
 
-1. Add explicit budget limits and decisions:
-   - Extend `ReviewConfig` parsing with an optional top-level `context_budget` object.
-   - Support deterministic limits for `max_changed_files`, `max_patch_bytes`, `max_memory_bytes`, `max_reviewers`, and `max_live_calls`, with conservative defaults for fixture runs.
-   - Reject unknown or non-positive budget fields.
-   - Extend the state-facing `ContextBudget` contract so it records decisions, not just limits: original/retained counts and bytes, retained file paths, retained memory IDs, retained reviewer IDs, deferred reviewer IDs, planned live-call count, retained/deferred live-call reviewer IDs, omitted-context marker IDs, generated local-note IDs, truncation notices, and reasons.
-2. Add `src/reviewgraph/context_budget.py`:
-   - Input: typed `PullRequestContext`, `PRConversationMemory`, selected reviewer candidates, and budget limits/config.
-   - Output: a budget result containing the state-facing `ContextBudget` decision object, retained changed files, retained memory entries, retained/deferred reviewers, structured `TruncationNotice` entries, omitted-context markers, and structured `LocalNote` candidates for deferred reviewers or omitted context.
-   - Count patch bytes as UTF-8 bytes of raw fixture patch text before redaction; this is conservative and platform-stable.
-   - Count memory bytes as UTF-8 bytes of deterministic reviewer-package memory text, including body and required metadata.
-   - If a single file or memory entry exceeds its cap, retain marker-only metadata, omit the body/patch text, and emit an omitted-context marker plus truncation notice.
-   - Treat missing/truncated fixture patches as explicit truncation input, not as an error.
-   - Keep ordering stable: retain existing fixture/reviewer order and defer overflow deterministically.
-   - Model live-call budgeting as a deterministic ledger only: fake reviewers have planned live-call cost `0` by default; tests can pass synthetic live-call costs to prove `max_live_calls` overflow without making provider calls.
-   - Deferred reviewers are selected-then-skipped: preserve their trigger reasons in the budget decision, assign policy-approved `skipped` reviewer status/run-key data where available, generate local-note candidates, and do not execute raw reviewer outputs.
-   - Omitted-context markers must include stable ID, source (`fixture` or `budget`), reason code, budget dimension, affected path or memory/reviewer ID, original/retained counts or bytes, and merge/dedupe by stable ID.
-3. Add `src/reviewgraph/reviewer_context.py`:
-   - Define a minimal `ReviewerContextPackage` that includes review target, active stage, selected reviewer metadata, retained changed files, retained memory references, truncation notices, omitted-context markers, local-note candidates, and the full `ContextBudget` decision object.
-   - Keep this as a typed package/stub only; no prompt construction or live adapter behavior.
-4. Integrate narrowly with the fixture runner:
-   - Calculate context budget before reviewer execution/fanout.
-   - Apply reviewer count caps before raw reviewer output execution.
-   - Merge budget-generated truncation notices and local-note candidates into rendered dry-run output without changing posting policy.
-   - Preserve existing fixture-authored truncation notices, but make budget-generated notices graph-owned and deterministic.
-5. Add `tests/test_context_budget.py`:
-   - Caps changed files, patch bytes, conversation memory bytes, reviewer count, and live-call count.
-   - Proves `oversized-change` receives truncation markers.
-   - Proves deferred reviewers are recorded as selected-then-skipped, become structured `LocalNote` candidates, and are not executed.
-   - Proves reviewer context packages include truncation status and omitted-context markers.
-   - Proves repeated runs produce identical `ContextBudget` decisions and rendered JSON.
-   - Proves invalid budget config fails clearly.
-   - Asserts budget decision objects directly, including retained/deferred IDs, omitted markers, generated local-note IDs, and planned live-call counts.
-6. Update durable docs only where behavior changes:
-   - `docs/architecture/reviewer-config.md` for top-level `context_budget` config.
-   - `docs/architecture/review-quality.md` or `docs/harnesses/harness-engineering.md` if budget/deferred-reviewer semantics need clarification.
+1. Generate a temporary canonical Linear backlog export for PRD 0003 with the ordered issue list and blocker references:
+   - `AUR-312` no blockers.
+   - `AUR-192` blocked by `AUR-312`.
+   - `AUR-237` blocked by `AUR-192`.
+   - `AUR-211` blocked by `AUR-237`.
+   - `AUR-254` blocked by `AUR-312`, `AUR-192`, `AUR-237`, and `AUR-211`.
+2. Run the backlog export checker and remove the temporary export afterward.
+3. Run focused gate harnesses:
+   - `python -m pytest tests/test_models.py tests/test_config.py tests/test_contract_boundaries.py tests/test_fixtures.py tests/test_fixture_manifest.py tests/test_redaction.py tests/test_context_budget.py`
+4. Run full validation:
+   - `python -m pytest`
+   - `python -m py_compile src/reviewgraph/*.py`
+   - `python scripts/check_docs.py`
+   - `git diff --check`
+5. Audit durable docs against PRD 0003 and the gate checklist. Patch only durable gaps.
+6. Use fresh subagent review of the gate proof and any doc changes. Iterate until material findings are gone.
+7. Commit the gate plan and any gate/doc proof changes.
+8. Comment on AUR-254 with evidence, mark it `Done`, and update the milestone if Linear supports a completion status for milestones.
 
 ## Out Of Scope
 
-- No live LLM adapter or provider budget consumption.
-- No live GitHub read or pagination.
-- No prompt construction.
-- No quality/posting enforcement beyond adding local notes and truncation state.
-- No side effects, approval, finalization, or writer behavior.
+- No live GitHub reads or writes.
+- No live LLM calls.
+- No approval UI.
+- No finalization/writer implementation.
+- No `.ws/` or temporary planning tree recreation.
 
-## Validation
+## Validation Evidence To Collect
 
-Focused:
-
-```bash
-python -m pytest tests/test_context_budget.py
-```
-
-Regression:
-
-```bash
-python -m pytest tests/test_config.py tests/test_models.py tests/test_cli.py tests/test_tracer_fixture_run.py tests/test_render.py
-python -m pytest
-python -m py_compile src/reviewgraph/*.py
-python scripts/check_docs.py
-git diff --check
-```
-
-## Completion Evidence To Comment On Linear
-
-- Files changed.
-- Focused context-budget harness output.
-- Regression/full validation output.
-- Evidence that reviewers beyond budget are deferred as local notes and not executed.
-- Evidence that no live provider, live GitHub, approval, or writer behavior was introduced.
-- Subagent plan/code review results.
+- Linear issue statuses and evidence comments.
+- Backlog export check output.
+- Focused harness output.
+- Full validation output.
+- Subagent final no-findings result.
+- Confirmation that `.ws/` is absent and no temporary export remains in the repo.
