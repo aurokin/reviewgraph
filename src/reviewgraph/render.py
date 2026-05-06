@@ -473,7 +473,18 @@ def _compact_fragment_in_candidate(compact_fragment: str, normalized_candidate: 
         for index in range(0, len(words) - size + 1):
             if "".join(words[index : index + size]) == compact_fragment:
                 return True
+    if _high_signal_compact_fragment(compact_fragment) and compact_fragment in normalized_candidate.replace(" ", ""):
+        return True
     return False
+
+
+def _high_signal_compact_fragment(compact_fragment: str) -> bool:
+    if compact_fragment in _COMMON_TECH_TOKENS or _common_word_numeric_prefix(compact_fragment) is not None:
+        return False
+    return len(compact_fragment) >= 5 and (
+        _looks_mixed_identifier_like(compact_fragment)
+        or any(token in compact_fragment for token in ("secret", "codename"))
+    )
 
 
 def _full_memory_fragment_is_meaningful(normalized: str) -> bool:

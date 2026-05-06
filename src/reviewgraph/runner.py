@@ -426,12 +426,17 @@ def _has_testing_finding_shape(text: str) -> bool:
     return (
         missing_coverage
         and _has_concrete_finding_shape(text)
-        and not _has_vague_testing_scenario(text)
+        and not _has_only_vague_testing_scenario(text)
     )
 
 
-def _has_vague_testing_scenario(text: str) -> bool:
-    return any(phrase in text for phrase in ("for this change", "when this changes", "this changes", "changed behavior"))
+def _has_only_vague_testing_scenario(text: str) -> bool:
+    has_vague = any(phrase in text for phrase in ("for this change", "when this changes", "this changes", "changed behavior"))
+    has_specific = bool(
+        re.search(r"\b(when|if|after|before|with|without|on|in|to|via|from|while|where)\b", text)
+        and not re.search(r"\b(when this changes|for this change)\b", text)
+    )
+    return has_vague and not has_specific
 
 
 def _is_generic_speculative_advice(text: str) -> bool:
@@ -451,7 +456,12 @@ def _is_generic_speculative_advice(text: str) -> bool:
         "still fail",
         "still broken",
         "already fails",
+        "already fail",
+        "already failing",
+        "already broken",
+        "was already",
         "pre-existing",
+        "preexisting",
     )
     return any(term in text for term in speculative_terms)
 
@@ -461,11 +471,11 @@ def _has_non_testing_finding_shape(text: str) -> bool:
 
 
 def _has_concrete_finding_shape(text: str) -> bool:
-    scenario = bool(re.search(r"\b(when|if|after|before|with|without|for|on|in|to|via|from|while|where)\b", text))
+    scenario = bool(re.search(r"\b(whenever|when|if|after|before|with|without|for|on|in|to|via|from|while|where)\b", text))
     introduced = bool(re.search(r"\b(changed line|new branch|introduced|now)\b", text))
     harmful_behavior = bool(
         re.search(
-            r"\b(regress|overcharg\w*|double[- ]charg\w*|shifts?|breaks?|corrupts?|drops?|exposes?|fails?|hangs?|ignores?|includes?|leaks?|misroutes?|omits?|raises?|rejects?|returns?|skips?|bypasses?|cannot|stale|unauthorized|open redirect|path traversal|unauthenticated access)\b",
+            r"\b(regress|overcharg\w*|double[- ]charg\w*|duplicate emails?|loops? forever|shifts?|breaks?|corrupts?|drops?|exposes?|fails?|hangs?|ignores?|includes?|leaks?|misroutes?|omits?|raises?|rejects?|returns?|sends?|skips?|bypasses?|cannot|stale|unauthorized|open redirect|path traversal|unauthenticated access)\b",
             text,
         )
     )

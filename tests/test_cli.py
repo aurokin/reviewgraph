@@ -557,6 +557,21 @@ def test_high_confidence_speculative_raw_finding_is_suppressed(tmp_path: Path) -
             "The cache still fails when callers pass empty input.",
             "Changed line 12 returns stale value when callers pass empty input.",
         ),
+        (
+            "Cache was already failing",
+            "The cache was already failing when callers pass empty input.",
+            "Changed line 12 returns stale value when callers pass empty input.",
+        ),
+        (
+            "Cache already broken",
+            "The cache is already broken when callers pass empty input.",
+            "Changed line 12 returns stale value when callers pass empty input.",
+        ),
+        (
+            "Preexisting failure",
+            "This is a preexisting failure when callers pass empty input.",
+            "Changed line 12 returns stale value when callers pass empty input.",
+        ),
     ),
 )
 def test_uncertain_or_preexisting_raw_finding_is_suppressed(
@@ -856,6 +871,60 @@ def test_concrete_domain_finding_without_known_subject_word_is_postable(tmp_path
     assert result.json_data["local_verdict"] == "comment"
     assert result.json_data["post_enabled"] is True
     assert review["classified_output"]["postable_findings"][0]["id"] == "finding-cart-discount"
+    assert review["classified_output"]["suppressed"] == []
+
+
+@pytest.mark.parametrize(
+    ("title", "body", "evidence"),
+    (
+        (
+            "Upstream 204 returns success",
+            "The new branch returns status 0 whenever upstream responds 204.",
+            "Changed line 12 returns status 0 whenever upstream responds 204.",
+        ),
+        (
+            "Retry count loops forever",
+            "The new branch loops forever when retry count reaches zero.",
+            "Changed line 12 loops forever when retry count reaches zero.",
+        ),
+        (
+            "Retry sends duplicate emails",
+            "The new branch sends duplicate emails when retry runs after timeout.",
+            "Changed line 12 sends duplicate emails when retry runs after timeout.",
+        ),
+    ),
+)
+def test_concrete_findings_with_general_harm_wording_are_postable(
+    tmp_path: Path,
+    title: str,
+    body: str,
+    evidence: str,
+) -> None:
+    fixture_path = tmp_path / "general-harm.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["items"] = [
+        {
+            "type": "postable_finding",
+            "id": "finding-general-harm",
+            "title": title,
+            "body": body,
+            "evidence": evidence,
+            "path": "src/cache.py",
+            "line": 12,
+            "priority": 1,
+            "severity": "warning",
+            "confidence": "high",
+            "fingerprint": "fixture-general-harm",
+        }
+    ]
+    fixture_path.write_text(json.dumps(fixture))
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path))
+    review = result.json_data["review"]
+
+    assert result.json_data["local_verdict"] == "comment"
+    assert result.json_data["post_enabled"] is True
+    assert review["classified_output"]["postable_findings"][0]["id"] == "finding-general-harm"
     assert review["classified_output"]["suppressed"] == []
 
 
