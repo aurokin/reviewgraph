@@ -1,50 +1,89 @@
-# ISSUE PLAN: AUR-234 Add Minimal Context Budget Before Fanout
+# ISSUE PLAN: AUR-254 Complete PRD 0003 Contracts
 
-Active issue plan for `AUR-234` / `RG-045: Add Minimal Context Budget Before Fanout`.
+Active issue plan for `AUR-254` / `Complete PRD 0003: Contracts`.
 
 ## Linear Snapshot
 
-- Issue: `AUR-234`
-- Status at start: `In Progress`
+- Issue: `AUR-254`
+- Status: `In Progress`
 - Milestone: `PRD 0003: Contracts`
-- Direct blocker context: this stale blocker must be closed before `AUR-254` can complete.
-- Comments at start: none.
-- Harness from Linear: `python -m pytest tests/test_context_budget_contract.py`
+- Gate requirement: close only after all implementation issues in this PRD milestone are complete.
+- Gate comment requires issue evidence, focused harnesses, full validation, backlog export validation, docs audit, fresh subagent review, and no live side effects.
+
+## Full Milestone Issue Set
+
+Fresh Linear audit expanded the gate scope beyond the reduced issue list:
+
+- `AUR-190` / `RG-001: Project Skeleton And Empty Test Harness`: `Done`; evidence comment present.
+- `AUR-191` / `RG-002: Validate Example Reviewer Config`: `Done`; verified as stale blocker; evidence comment present.
+- `AUR-230` / `RG-041: Seed Fixture Corpus Manifest`: `Done`; evidence comment present.
+- `AUR-312` / `RG-059: Define Core Contract Models And Schema Harness`: `Done`; evidence comment present.
+- `AUR-192` / `RG-003: Parse Fixture PR With Review Target`: `Done`; evidence comment present.
+- `AUR-193` / `RG-004: Build Trusted Conversation Memory`: `Done`; evidence comment present.
+- `AUR-237` / `RG-048: Add Core Redaction Service`: `Done`; evidence comment present.
+- `AUR-234` / `RG-045: Add Minimal Context Budget Before Fanout`: `Done`; verified as stale blocker; evidence comment present.
+- `AUR-211` / `RG-022: Enforce Context Budget And Truncation Notes`: `Done`; evidence comment present.
+- `AUR-254` / `Complete PRD 0003: Contracts`: active gate issue.
 
 ## Goal
 
-Verify and, if needed, complete the minimal context-budget contract that runs before reviewer selection and fanout.
+Close PRD 0003 only if the repository and Linear state prove the full contract milestone is complete, ordered, reviewed, and side-effect safe.
 
-This appears already superseded by the stricter AUR-211 implementation in `tests/test_context_budget.py`. Treat this as verification-only unless the existing context-budget harness misses an AUR-234 acceptance criterion.
+This issue should not add product behavior unless the gate audit finds a durable documentation or harness gap. If docs change, update only the narrowest durable docs needed by future implementation agents.
 
-## Acceptance Mapping
+## Prompt-To-Artifact Checklist
 
-- Budget caps changed files, patch bytes, memory bytes, reviewer count, and live-call count:
-  - Covered by `tests/test_context_budget.py::test_budget_caps_changed_files_patch_and_memory` and `test_reviewer_count_and_live_call_budgets_defer_reviewers`.
-- Budget decisions are recorded before reviewer selection:
-  - Covered by runner integration using budgeted fixture view before `_select_reviewers_for_stage`, plus `test_runner_routes_against_budgeted_changed_files`.
-- Truncation markers are available to reviewer context packages:
-  - Covered by `test_reviewer_context_package_contains_budget_truncation_and_markers`.
-- Skipped or deferred reviewers can be represented as structured budget decisions:
-  - Covered by `test_reviewer_count_and_live_call_budgets_defer_reviewers` and `test_runner_defers_reviewers_before_executing_raw_outputs`.
-- No live calls are made when the live-call cap is zero:
-  - Covered by the deterministic live-call ledger in `apply_reviewer_budget`, default `max_live_calls=0`, and full dry-run/no-writer regression tests. No live provider adapter exists in this milestone.
+- Package skeleton and default harness: `pyproject.toml`, `src/reviewgraph/__init__.py`, `python -m pytest`.
+- Reviewer config validation: `src/reviewgraph/config.py`, `examples/review_agents.example.yaml`, `tests/test_config.py`.
+- Fixture corpus manifest and schema-valid fixture PRs: `src/reviewgraph/fixtures_data/manifest.json`, packaged fixtures, `tests/test_fixture_manifest.py`, `tests/test_fixtures.py`.
+- Typed graph/state contracts: `src/reviewgraph/models.py`, `tests/test_models.py`, `tests/test_contract_boundaries.py`.
+- Review target and fixture PR contracts: `src/reviewgraph/fixtures.py`, `ReviewTarget` hashing tests, `tests/test_fixtures.py`.
+- Trusted/passive conversation memory: `src/reviewgraph/memory.py`, `tests/test_memory.py`.
+- Raw vs classified reviewer output and quality downgrade proof: `src/reviewgraph/models.py`, `src/reviewgraph/runner.py`, `tests/test_models.py`, `tests/test_cli.py`, `tests/test_tracer_fixture_run.py`.
+- Redaction service and status gates: `src/reviewgraph/redaction.py`, `src/reviewgraph/render.py`, `tests/test_redaction.py`, `tests/test_render.py`.
+- Context budget and reviewer context package contracts: `src/reviewgraph/context_budget.py`, `src/reviewgraph/reviewer_context.py`, `tests/test_context_budget.py`.
+- Durable docs: `docs/prds/0003-contracts.md`, `docs/architecture/state-graph.md`, `docs/architecture/findings-contract.md`, `docs/architecture/side-effects.md`, `docs/architecture/llm-data-handling.md`, `docs/architecture/review-quality.md`, `docs/architecture/reviewer-config.md`, `docs/harnesses/harness-engineering.md`, and `docs/implementation/README.md`.
+- Linear ordering proof: temporary PRD 0003 backlog export derived from freshly fetched Linear milestone, issue, relationship, and comment data, checked with `python scripts/check_docs.py --backlog-export <tmp-file>`.
 
 ## Implementation Plan
 
-1. Run the focused context-budget harness:
-   - `python -m pytest tests/test_context_budget.py`
-2. Run targeted runner/no-side-effect regression:
-   - `python -m pytest tests/test_context_budget.py tests/test_tracer_fixture_run.py tests/test_cli.py tests/test_render.py`
-3. Run static checks:
+1. Re-fetch all PRD 0003 issues, comments, and the milestone from Linear immediately before final validation.
+2. Generate a temporary canonical backlog export from fetched Linear data. Include all active PRD 0003 issues in dependency order. Filter `blocked_by` to blockers inside the exported PRD 0003 issue set and separately document any external blockers/status in the gate evidence.
+3. Run the backlog export checker and remove the temporary export afterward:
+   - `python scripts/check_docs.py --backlog-export <tmp-file>`
+4. Run focused gate harnesses:
+   - `python -m pytest tests/test_models.py tests/test_config.py tests/test_contract_boundaries.py tests/test_fixture_manifest.py tests/test_fixtures.py tests/test_memory.py tests/test_redaction.py tests/test_context_budget.py`
+5. Run side-effect guard harnesses:
+   - `python -m pytest tests/test_posting.py tests/test_render.py tests/test_cli.py tests/test_tracer_fixture_run.py`
+6. Run full validation:
+   - `python -m pytest`
    - `python -m py_compile src/reviewgraph/*.py`
    - `python scripts/check_docs.py`
    - `git diff --check`
-4. Use a fresh subagent review to verify the acceptance mapping is complete and this is safe to close as a verification-only stale blocker.
-5. If no material findings remain, commit this issue plan, comment evidence on Linear, and mark `AUR-234` Done.
+7. Run a static no-live-side-effect audit over the repo:
+   - Search for live GitHub, LLM, approval, finalization, writer, network, and subprocess transport introductions.
+   - Confirm contract/config/context modules still avoid importing writer, approval/finalization implementations, live LLM clients, or transport modules.
+   - Confirm dry-run/no-writer behavior remains covered by tests.
+8. Audit durable docs against PRD 0003 and the full issue set. Patch only durable gaps.
+9. Use fresh subagent review of the fetched Linear proof, backlog export, validation results, side-effect audit, and any doc changes. Iterate until material findings are gone.
+10. Commit any gate/doc proof changes.
+11. Comment on `AUR-254` with evidence, mark it `Done`, and update the milestone if Linear supports a completion status for milestones.
 
 ## Out Of Scope
 
-- No rendered-note refinements beyond what AUR-211 already implemented.
-- No downstream posting enforcement beyond the already-tested omitted-context suppression.
-- No live GitHub reads, live LLM calls, approval UI, or writer behavior.
+- No live GitHub reads or writes.
+- No live LLM calls.
+- No approval UI.
+- No finalization/writer implementation.
+- No `.ws/` or temporary planning tree recreation.
+
+## Validation Evidence To Collect
+
+- Full Linear issue status/comment snapshot.
+- Backlog export check output and note about any external blockers filtered out.
+- Focused harness output.
+- Side-effect guard harness output.
+- Full validation output.
+- Static no-live-side-effect audit output.
+- Subagent final no-findings result.
+- Confirmation that `.ws/` is absent and no temporary export remains in the repo.
