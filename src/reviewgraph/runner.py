@@ -425,7 +425,7 @@ def _has_testing_finding_shape(text: str) -> bool:
     )
     return (
         missing_coverage
-        and _has_concrete_finding_shape(text)
+        and _has_concrete_testing_shape(text)
         and not _has_only_vague_testing_scenario(text)
     )
 
@@ -440,36 +440,27 @@ def _has_only_vague_testing_scenario(text: str) -> bool:
 
 
 def _is_generic_speculative_advice(text: str) -> bool:
-    speculative_terms = (
-        "could cause problems",
-        "could fail",
-        "may fail",
-        "may cause",
-        "may cause problems",
-        "might fail",
-        "might cause",
-        "might cause problems",
-        "potential issue",
-        "requires investigation",
-        "should investigate",
-        "still fails",
-        "still fail",
-        "still broken",
-        "already fails",
-        "already fail",
-        "already failing",
-        "already broken",
-        "was already failing",
-        "was already broken",
-        "was already present",
-        "pre-existing",
-        "preexisting",
+    speculative_pattern = (
+        r"\b(could|may|might)\s+(?:cause|fail|break|regress|leak|expose)"
+        r"|potential issue|requires investigation|should investigate"
+        r"|still (?:fail|fails|failing|broken)"
+        r"|already (?:fail|fails|failing|broken|present|known)"
+        r"|was already (?:fail|failing|broken|present|known)"
+        r"|was previously (?:present|known|failing|broken)"
+        r"|pre[\s-]?existing"
     )
-    return any(term in text for term in speculative_terms)
+    return bool(re.search(speculative_pattern, text))
 
 
 def _has_non_testing_finding_shape(text: str) -> bool:
     return _has_concrete_finding_shape(text)
+
+
+def _has_concrete_testing_shape(text: str) -> bool:
+    scenario = bool(re.search(r"\b(whenever|when|if|after|before|with|without|on|in|to|via|from|while|where)\b", text))
+    introduced = bool(re.search(r"\b(changed line|new branch|introduced|now)\b", text))
+    coverage_target = bool(re.search(r"\b(regression test|regression coverage|coverage|test)\b", text))
+    return scenario and introduced and coverage_target
 
 
 def _has_concrete_finding_shape(text: str) -> bool:

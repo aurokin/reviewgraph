@@ -777,6 +777,35 @@ def test_exact_common_tech_token_untrusted_memory_does_not_block_candidate_paylo
     assert rendered.json_data["candidate_payload_preview"]["body"] == payload.body
 
 
+def test_short_non_sensitive_partial_phrase_cannot_enter_candidate_payload_preview() -> None:
+    untrusted_body = "The unresolved thread said Ship-it now."
+    findings = [finding(body="Copied: Ship it")]
+    plan = build_posting_plan(findings=findings)
+    payload = build_candidate_issue_comment_payload(
+        review_target=target(),
+        posting_plan=plan,
+        findings=findings,
+    )
+
+    with pytest.raises(RenderError, match="untrusted memory"):
+        render_review(
+            review_target=target(),
+            selected_reviewers=selected_reviewers(),
+            findings=findings,
+            posting_plan=plan,
+            candidate_payload=payload,
+            memory_references=[
+                MemoryReference(
+                    "mem-short-partial",
+                    "untrusted",
+                    "unresolved",
+                    "issue_comment",
+                    untrusted_body,
+                )
+            ],
+        )
+
+
 @pytest.mark.parametrize(
     ("untrusted_body", "finding_body"),
     (
@@ -786,6 +815,10 @@ def test_exact_common_tech_token_untrusted_memory_does_not_block_candidate_paylo
         ("I saw cache-123456 in this PR.", "Cache 123456 is handled by the new branch."),
         ("cache-123456", "Cache 123456 is handled by the new branch."),
         ("cache 123456", "Cache 123456 is handled by the new branch."),
+        ("python-3", "The python3 runtime path now fails."),
+        ("node-18", "The node18 runtime path now fails."),
+        ("go1.22", "The go122 runtime path now fails."),
+        ("version1.2", "The version12 migration path now fails."),
         ("Authentication 123456 failed locally.", "Authentication 123456 fails for valid sessions."),
     ),
 )

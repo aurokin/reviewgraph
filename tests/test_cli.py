@@ -572,6 +572,21 @@ def test_high_confidence_speculative_raw_finding_is_suppressed(tmp_path: Path) -
             "This is a preexisting failure when callers pass empty input.",
             "Changed line 12 returns stale value when callers pass empty input.",
         ),
+        (
+            "Pre existing failure",
+            "This is a pre existing failure when callers pass empty input.",
+            "Changed line 12 returns stale value when callers pass empty input.",
+        ),
+        (
+            "Already present failure",
+            "This issue is already present when callers pass empty input.",
+            "Changed line 12 returns stale value when callers pass empty input.",
+        ),
+        (
+            "Previously present failure",
+            "This issue was previously present when callers pass empty input.",
+            "Changed line 12 returns stale value when callers pass empty input.",
+        ),
     ),
 )
 def test_uncertain_or_preexisting_raw_finding_is_suppressed(
@@ -717,6 +732,38 @@ def test_concrete_testing_finding_with_generic_lead_in_is_postable(tmp_path: Pat
     assert result.json_data["local_verdict"] == "comment"
     assert result.json_data["post_enabled"] is True
     assert review["classified_output"]["postable_findings"][0]["id"] == "finding-coverage-generic-leadin"
+    assert review["classified_output"]["suppressed"] == []
+
+
+def test_concrete_testing_finding_outside_non_testing_harm_allowlist_is_postable(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "coverage-oauth-signup.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["items"] = [
+        {
+            "type": "postable_finding",
+            "id": "finding-oauth-signup-coverage",
+            "title": "Missing OAuth signup coverage",
+            "body": (
+                "The new branch accepts empty usernames when signup uses OAuth, "
+                "but there is no regression test for OAuth signup."
+            ),
+            "evidence": "Changed line 12 accepts empty usernames when signup uses OAuth.",
+            "path": "src/cache.py",
+            "line": 12,
+            "priority": 2,
+            "severity": "warning",
+            "confidence": "high",
+            "fingerprint": "fixture-oauth-signup-coverage",
+        }
+    ]
+    fixture_path.write_text(json.dumps(fixture))
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path))
+    review = result.json_data["review"]
+
+    assert result.json_data["local_verdict"] == "comment"
+    assert result.json_data["post_enabled"] is True
+    assert review["classified_output"]["postable_findings"][0]["id"] == "finding-oauth-signup-coverage"
     assert review["classified_output"]["suppressed"] == []
 
 

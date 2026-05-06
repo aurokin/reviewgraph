@@ -343,6 +343,15 @@ def _memory_body_overlaps_candidate(memory_body: str | None, candidate_body: str
     candidate_words = set(normalized_candidate.split())
     compact_candidate = normalized_candidate.replace(" ", "")
     meaningful_fragments = _meaningful_memory_fragments(memory_body)
+    for raw_token in (token for token in re.split(r"\s+", memory_body.strip()) if token):
+        compact_token = _compact_raw_token(raw_token)
+        if (
+            compact_token
+            and _raw_token_has_delimiter_signal(raw_token)
+            and _has_meaningful_delimited_alpha_token_signal(compact_token)
+            and _compact_fragment_in_candidate(compact_token, normalized_candidate)
+        ):
+            return True
     for fragment in meaningful_fragments:
         if (
             " " in fragment
@@ -424,6 +433,8 @@ def _meaningful_memory_fragments(memory_body: str) -> tuple[str, ...]:
 
 
 def _has_enough_fragment_signal(fragment: str) -> bool:
+    if _is_common_numeric_memory_fragment(fragment):
+        return False
     words = fragment.split()
     if len(words) >= 3:
         return len(fragment) >= 10 and len(set(fragment.replace(" ", ""))) >= 5
@@ -432,7 +443,7 @@ def _has_enough_fragment_signal(fragment: str) -> bool:
         return (
             len(fragment) >= 10
             and len(set(fragment.replace(" ", ""))) >= 5
-            and any(word in sensitive_words for word in words)
+            and (any(word in sensitive_words for word in words) or not all(word in _COMMON_MEMORY_WORDS for word in words))
         )
     compact = fragment.replace(" ", "")
     return len(fragment) >= 7 and len(set(compact)) >= 5
@@ -443,7 +454,7 @@ def _is_common_numeric_memory_fragment(normalized: str) -> bool:
     if len(words) != 2:
         return False
     first, second = words
-    return first in _COMMON_MEMORY_WORDS and second.isdigit()
+    return (first in _COMMON_MEMORY_WORDS and second.isdigit()) or (first.isdigit() and second in _COMMON_MEMORY_WORDS)
 
 
 def _exact_memory_body_is_meaningful(normalized: str) -> bool:
@@ -451,6 +462,9 @@ def _exact_memory_body_is_meaningful(normalized: str) -> bool:
     if not words:
         return False
     if all(word in _COMMON_MEMORY_WORDS for word in words):
+        return False
+    compact = normalized.replace(" ", "")
+    if compact in _COMMON_TECH_TOKENS:
         return False
     if _is_common_numeric_memory_fragment(normalized):
         return False
@@ -578,6 +592,16 @@ def _has_meaningful_compact_raw_token_signal(compact_token: str, words: list[str
     if compact_token.isdigit():
         return any(token in _HIGH_SIGNAL_CONTEXT_WORDS for token in context_window)
     return _looks_mixed_identifier_like(compact_token) or len(compact_token) >= 5
+
+
+def _has_meaningful_delimited_alpha_token_signal(compact_token: str) -> bool:
+    return (
+        compact_token.isalpha()
+        and compact_token not in _COMMON_MEMORY_WORDS
+        and compact_token not in _COMMON_TECH_TOKENS
+        and len(compact_token) >= 5
+        and len(set(compact_token)) >= 4
+    )
 
 
 def _common_word_numeric_prefix(compact_token: str) -> str | None:
