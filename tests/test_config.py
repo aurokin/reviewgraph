@@ -30,6 +30,16 @@ def test_missing_capabilities_default_to_diff_context() -> None:
     )
 
     assert config.agents["correctness"].capabilities == ("diff_context",)
+    assert config.agents["correctness"].tools == ()
+
+
+def test_tools_parse_as_inert_metadata() -> None:
+    data = _valid_config()
+    data["agents"]["correctness"]["tools"] = ["future-search"]
+
+    config = parse_reviewer_config(data)
+
+    assert config.agents["correctness"].tools == ("future-search",)
 
 
 def test_trusted_actor_allowlists_parse_from_reviewer_config() -> None:
@@ -51,7 +61,9 @@ def test_trusted_actor_allowlists_parse_from_reviewer_config() -> None:
         (lambda data: data["agents"]["correctness"]["triggers"].update({"stages": ["logic_review"]}), "unsupported trigger"),
         (lambda data: data["agents"]["correctness"].update({"capabilities": ["diff_context", "diff_context"]}), "duplicates"),
         (lambda data: data["agents"]["correctness"].update({"capabilities": ["read_repo"]}), "unsupported capabilities"),
-        (lambda data: data["agents"]["correctness"].update({"tools": ["github"]}), "unsupported tools"),
+        (lambda data: data["agents"]["correctness"].update({"tools": ["github.write"]}), "inert future"),
+        (lambda data: data["agents"]["correctness"].update({"tools": ["future-search", "future-search"]}), "duplicates"),
+        (lambda data: data["agents"]["correctness"].update({"tools": [""]}), "non-empty strings"),
         (lambda data: data["agents"]["correctness"].update({"context": {"mode": "diff_context"}}), "context must be a string"),
         (lambda data: data["agents"]["correctness"].update({"stages": ["unknown"]}), "unsupported stage"),
         (lambda data: data["agents"]["correctness"].update({"stages": ["initial_triage", "initial_triage"]}), "duplicate stages"),

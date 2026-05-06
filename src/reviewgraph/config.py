@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,8 @@ ALLOWED_TRIGGER_FIELDS = {
     "paths",
     "risk_min",
 }
+
+TOOL_IDENTIFIER_PATTERN = re.compile(r"^future-[a-z0-9][a-z0-9_-]*$")
 
 
 class ConfigError(ValueError):
@@ -122,8 +125,7 @@ def _parse_reviewer_agent(name: str, agent: dict[str, Any]) -> ReviewerAgentConf
         raise ConfigError(f"reviewer config agent {name} has unsupported verdict_power")
     capabilities = _parse_capabilities(name, agent.get("capabilities", ["diff_context"]))
     model = _optional_str(agent, "model", name)
-    if "tools" in agent:
-        raise ConfigError(f"reviewer config agent {name} has unsupported tools")
+    tools = _parse_tools(name, agent.get("tools", []))
     context_value = agent.get("context")
     if context_value is not None and not isinstance(context_value, str):
         raise ConfigError(f"reviewer config agent {name}.context must be a string")
@@ -137,6 +139,7 @@ def _parse_reviewer_agent(name: str, agent: dict[str, Any]) -> ReviewerAgentConf
         capabilities=capabilities,
         model=model,
         context=context_value,
+        tools=tools,
     )
 
 
@@ -191,6 +194,23 @@ def _parse_capabilities(name: str, value: object) -> tuple[str, ...]:
     unsupported = sorted(set(value) - ALLOWED_REVIEWER_CAPABILITIES)
     if unsupported:
         raise ConfigError(f"reviewer config agent {name} has unsupported capabilities")
+    return tuple(value)
+
+
+def _parse_tools(name: str, value: object) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        raise ConfigError(f"reviewer config agent {name}.tools must be a list")
+    if not value:
+        return ()
+    if not all(isinstance(tool, str) and tool for tool in value):
+        raise ConfigError(f"reviewer config agent {name}.tools must contain non-empty strings")
+    if len(set(value)) != len(value):
+        raise ConfigError(f"reviewer config agent {name}.tools must not contain duplicates")
+    invalid = [tool for tool in value if not TOOL_IDENTIFIER_PATTERN.fullmatch(tool)]
+    if invalid:
+        raise ConfigError(
+            f"reviewer config agent {name} has unsupported tools; tools must contain inert future-* identifiers"
+        )
     return tuple(value)
 
 

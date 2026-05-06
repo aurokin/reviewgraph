@@ -8,6 +8,7 @@ Decision records capture durable tradeoffs that should outlive individual implem
 2. [Staged LangGraph review](0002-langgraph-staged-review.md)
 3. [Codex-inspired review quality bar](0003-codex-review-quality-reference.md)
 4. [Linear backlog, docs as contracts](0004-linear-backlog-docs-are-contracts.md)
+5. [Inert reviewer tool metadata](0005-inert-reviewer-tool-metadata.md)
 
 ## Rule
 

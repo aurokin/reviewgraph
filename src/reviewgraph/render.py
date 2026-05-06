@@ -333,7 +333,11 @@ def _validate_candidate_payload_binding(
 
 
 def _is_unsafe_memory(memory: MemoryReference) -> bool:
-    return memory.trust_label != "trusted"
+    return not memory.actionable
+
+
+def _can_render_memory_body(memory: MemoryReference) -> bool:
+    return memory.trust_label == "trusted"
 
 
 def _memory_body_overlaps_candidate(memory_body: str | None, candidate_body: str) -> bool:
@@ -768,7 +772,7 @@ def _memory_json(memory: MemoryReference, context: "_RenderContext") -> dict[str
         "trust_label": context.redact(memory.trust_label),
         "resolved_status": context.redact(memory.resolved_status),
         "source_type": context.redact(memory.source_type),
-        "body": context.redact(memory.body) if memory.body and not _is_unsafe_memory(memory) else None,
+        "body": context.redact(memory.body) if memory.body and _can_render_memory_body(memory) else None,
         "author": context.redact(memory.author) if memory.author is not None else None,
         "author_association": context.redact(memory.author_association)
         if memory.author_association is not None

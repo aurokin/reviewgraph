@@ -445,7 +445,17 @@ private-material
         suppressed_outputs=[suppressed],
         posting_plan=plan,
         candidate_payload=payload,
-        memory_references=[MemoryReference("mem-1", "trusted", "resolved", "issue_comment", secret_text)],
+        memory_references=[
+            MemoryReference(
+                "mem-1",
+                "trusted",
+                "unresolved",
+                "issue_comment",
+                secret_text,
+                author_type="user",
+                actionable=True,
+            )
+        ],
         truncation_notices=[TruncationNotice("patch", True, secret_text)],
     )
 

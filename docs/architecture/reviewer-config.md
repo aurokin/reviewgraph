@@ -126,13 +126,31 @@ Reviewers beyond budget are selected-then-skipped: their trigger reasons remain 
 ## Optional agent fields
 
 - `model`: preferred model for this reviewer.
-- `tools`: named tool capabilities the reviewer may use in later phases.
+- `tools`: inert future tool identifiers. In MVP, accepted tool names are metadata only and must not create callable handles, provider tool schemas, extra capabilities, repository access, GitHub access, live calls, or write access.
 - `context`: context policy, such as diff-only, diff-plus-comments, or focused-files.
 - `capabilities`: allowed reviewer capabilities. MVP supports `none` and `diff_context`; later phases may add `github_read`, `read_repo`, or `run_tests`.
 
-These fields should be validated but do not need live implementations in the first tracer bullets.
+These fields should be validated but do not need live implementations in the first tracer bullets. Tool identifiers use the `future-*` namespace until a later explicit tool policy exists.
 
 Reviewer capabilities must default to `diff_context`, with GitHub writes unavailable to reviewer agents. `read_repo` means full checkout or repository file access and is out of scope for MVP. A reviewer may recommend a postable finding, but only the graph and side-effect adapter can create a GitHub payload.
+
+## Reviewer Context Package
+
+`ReviewerContextPackage` is the only input a reviewer adapter may receive. It includes:
+
+- review target and active stage
+- selected reviewer name, stage, and trigger reasons
+- selected reviewer config metadata: model, inert tools, context policy, capabilities, required flag, and verdict power
+- bounded changed-file context after context-budget decisions
+- trusted actionable memory references
+- passive memory references or explicit passive/excluded metadata
+- truncation notices, omitted-context markers, and local budget notes
+- a capability policy with GitHub writes, repository access, and live provider calls disabled by default
+- a trace of memory IDs, trust labels, resolved status, passive/actionable state, truncation state, and omitted-context IDs
+
+Prompt inputs built from the package must keep instructions separate from context data. PR conversation memory is labeled data, not instruction text. Passive or untrusted memory bodies may appear only as passive data or exclusion metadata; they must not appear in system/developer instructions, satisfy evidence, change verdicts, approve posting, or enter public payload text in MVP.
+
+Provider-bound request previews are non-live harness artifacts. They serialize the minimized package data, apply redaction, record redaction status, and keep `raw_provider_submission_enabled` and `raw_trace_persistence_enabled` false by default. They do not create network clients or provider tool schemas.
 
 ## Selection output
 

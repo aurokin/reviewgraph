@@ -130,6 +130,14 @@ Before any GitHub write, `finalize_github_payload` must re-fetch the PR head/bas
 
 Oversized context should be retained as marker-only metadata when possible. Reviewers must receive explicit truncation and omitted-context markers through `ReviewerContextPackage`; they should not infer missing context from absent text. A reviewer selected after routing but over budget is skipped before raw output execution and represented as a local note.
 
+## Reviewer context boundary
+
+`run_reviewers` may pass only a `ReviewerContextPackage` to a reviewer adapter. The package is built from the selected reviewer, the selected reviewer config metadata, the immutable review target, budgeted changed files, structured conversation memory, truncation notices, omitted-context markers, local budget notes, and read-only capability policy.
+
+The package must not include the full reviewer config map, GitHub transports, approval state, finalization state, posting payload builders, writer clients, repository checkout handles, provider clients, process handles, or ambient tool callables. Tool names in reviewer config are inert metadata until a later explicit tool policy exists.
+
+Prompt input built from the package separates instructions from context data. PR conversation memory is labeled data; untrusted or passive memory cannot become instructions, routing evidence, verdict pressure, approval input, or public payload text. Provider-bound previews are non-live harness artifacts: they serialize minimized package data, apply redaction, record redaction status, and keep raw-provider and raw-trace opt-ins disabled by default.
+
 ## Staged reviewer introduction
 
 Valid MVP `ReviewStage` values are:

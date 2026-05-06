@@ -28,12 +28,12 @@ MVP reviewer agents are mostly prompts plus deterministic fake outputs. Live LLM
 ## Implementation Decisions
 
 - A reviewer agent is a configured prompt/context boundary that returns structured output; it is not allowed to mutate graph state or create GitHub payloads.
-- `ReviewerContextPackage` should include review target, active stage, selected reviewer metadata, bounded diff context, trusted memory references, optional quoted passive memory, truncation notes, and capability policy.
+- `ReviewerContextPackage` should include review target, active stage, selected reviewer metadata, selected reviewer config metadata, bounded diff context, trusted memory references, optional quoted passive memory or passive/excluded metadata, truncation notes, omitted-context markers, and capability policy.
 - Reviewer adapters receive `ReviewerContextPackage` and return `ReviewerResult`. They do not receive GitHub read transports, GitHub write transports, approval state, or writer payload builders.
 - Prompt templates are stored separately from GitHub adapters and side-effect code.
 - `conversation_patterns` may match only trusted actionable memory. Untrusted comments cannot select reviewers, affect verdicts, satisfy evidence requirements, or appear in public payloads in MVP. A later explicit quoting policy may relax this, but it is out of scope until it has deterministic tests.
 - MVP capabilities are `none` and `diff_context`. `github_read`, `read_repo`, `run_tests`, and tool-using reviewer agents are future work.
-- Optional `model`, `tools`, `context`, and `capabilities` config fields are validated early even when most are not implemented.
+- Optional `model`, `tools`, `context`, and `capabilities` config fields are validated early even when most are not implemented. Before a tool policy exists, `tools` is inert metadata only and cannot create callable handles, provider tool schemas, live calls, repository access, GitHub access, or write access.
 - Live LLM reviewer requests must pass through context minimization and redaction policy before provider submission, or the run must explicitly record that raw provider submission was enabled by a human.
 
 ## Testing Decisions
@@ -43,7 +43,7 @@ MVP reviewer agents are mostly prompts plus deterministic fake outputs. Live LLM
 - Add malicious-comment fixtures proving untrusted memory cannot select reviewers, override prompts, change verdicts, approve posting, or enter public payload text.
 - Add trusted-memory routing tests proving `conversation_patterns` can select a reviewer only from trusted actionable comments or unresolved trusted review threads.
 - Add context package golden tests showing included memory IDs, trust labels, resolved status, truncation status, and reviewer-specific context policy.
-- Add live LLM request tests proving provider-bound payloads are minimized and redacted by default.
+- Add non-live provider-bound preview tests proving would-be provider request data is minimized and redacted by default, records redaction status, and keeps raw-provider and raw-trace opt-ins disabled.
 
 ## Out of Scope
 

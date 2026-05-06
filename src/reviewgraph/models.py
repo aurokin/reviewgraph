@@ -104,6 +104,7 @@ class PostingDestination(StrEnum):
 
 ALLOWED_REVIEWER_CAPABILITIES = frozenset({"none", "diff_context"})
 ALLOWED_REVIEWER_VERDICT_POWERS = frozenset({"comment", "request_changes"})
+INERT_REVIEWER_TOOL_PREFIX = "future-"
 
 
 def validate_priority(priority: int) -> int:
@@ -162,6 +163,19 @@ def _require_string_tuple(value: tuple[str, ...], field_name: str, *, allow_empt
         raise ValueError(f"{field_name} must be a tuple of non-empty strings")
     if not allow_empty and not value:
         raise ValueError(f"{field_name} must include at least one reason")
+
+
+def _require_inert_tool_identifiers(value: tuple[str, ...], field_name: str) -> None:
+    allowed_chars = set("abcdefghijklmnopqrstuvwxyz0123456789_-")
+    invalid = [
+        item
+        for item in value
+        if not item.startswith(INERT_REVIEWER_TOOL_PREFIX)
+        or not item.removeprefix(INERT_REVIEWER_TOOL_PREFIX)
+        or any(char not in allowed_chars for char in item)
+    ]
+    if invalid:
+        raise ValueError(f"{field_name} must contain inert future-* identifiers")
 
 
 def _require_optional_positive_int(value: int | None, field_name: str) -> None:
@@ -986,12 +1000,17 @@ class ReviewerAgentConfig:
     capabilities: tuple[str, ...] = ("diff_context",)
     model: str | None = None
     context: str | None = None
+    tools: tuple[str, ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
         _require_non_empty(self.name, "reviewer agent name")
         _require_optional_non_empty(self.description, "reviewer agent description")
         _require_optional_non_empty(self.model, "reviewer agent model")
         _require_optional_non_empty(self.context, "reviewer agent context")
+        _require_string_tuple(self.tools, "reviewer agent tools")
+        if len(set(self.tools)) != len(self.tools):
+            raise ValueError("reviewer agent tools must not contain duplicates")
+        _require_inert_tool_identifiers(self.tools, "reviewer agent tools")
         if not isinstance(self.stages, tuple) or not self.stages:
             raise ValueError("reviewer agent stages must be a non-empty tuple")
         if any(not isinstance(stage, ReviewStage) for stage in self.stages):

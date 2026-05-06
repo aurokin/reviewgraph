@@ -114,7 +114,10 @@ Golden tests should protect product behavior without freezing incidental wording
 - Reviewer adapters receive only `ReviewerContextPackage` and return structured `ReviewerResult`.
 - Reviewer adapters do not receive GitHub transports, approval state, finalization code, payload builders, or writer clients.
 - Fake and live reviewers share the same input/output contract.
-- Capabilities default to `none` or `diff_context`; tool-using reviewers are future work.
+- Capabilities default to `none` or `diff_context`; tool-using reviewers are future work. Any `tools` config accepted before that policy exists is inert metadata only and must not become callable handles, provider tool schemas, live-call budget, repository access, GitHub access, or write access.
+- Prompt-input harnesses must prove instructions are separate from context data. Untrusted or passive memory bodies may appear only as labeled data or exclusion metadata, never as instruction text.
+- Context-package traces must include selected reviewer config metadata, memory IDs, trust labels, resolved status, passive/actionable state, truncation status, omitted-context IDs, and capability policy.
+- Provider-bound preview harnesses are non-live. They must prove minimized/redacted request text, redaction status, provider identity absent unless explicitly supplied by a future live caller, and separate `raw_provider_submission_enabled=false` and `raw_trace_persistence_enabled=false` defaults.
 - Context-budget harnesses must prove changed-file, patch-byte, memory-byte, reviewer-count, and live-call caps before reviewer execution. Deferred reviewers are selected-then-skipped, become local notes, and their raw fixture output is not consumed.
 
 ### Review Quality
