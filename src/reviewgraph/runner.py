@@ -149,6 +149,10 @@ def run_fixture_dry_run(
     _validate_output_item_ids(classified)
     _validate_finding_fingerprints(classified["findings"])
     clarification_gate = evaluate_clarification_gate(classified["clarification_requests"])
+    partial_review = _partial_review_metadata(
+        config=config,
+        reviewer_results=stage_run.reviewer_results,
+    )
     local_verdict = _local_verdict(
         findings=classified["findings"],
         clarification_gate=clarification_gate,
@@ -204,6 +208,7 @@ def run_fixture_dry_run(
         writer_call_count=writer_call_count,
         rendered=rendered,
         clarification_gate=clarification_gate,
+        partial_review=partial_review,
     )
     return DryRunResult(
         markdown=rendered.markdown,
@@ -817,6 +822,34 @@ def _candidate_payload(
     )
 
 
+def _partial_review_metadata(
+    *,
+    config: ReviewerConfig,
+    reviewer_results: tuple[ReviewerResult, ...],
+) -> dict[str, Any]:
+    failed_optional_reviewers: list[dict[str, Any]] = []
+    for result in reviewer_results:
+        agent = config.agents.get(result.run_key.reviewer)
+        required = bool(agent.required) if agent is not None else False
+        if required or result.status != ReviewerRunStatusValue.FAILED:
+            continue
+        errors = tuple(redact_for_error(error) for error in result.errors)
+        failed_optional_reviewers.append(
+            {
+                "reviewer": result.run_key.reviewer,
+                "stage": result.run_key.stage.value,
+                "status": result.status.value,
+                "required": False,
+                "reason": errors[0] if errors else None,
+                "errors": list(errors),
+            }
+        )
+    return {
+        "has_partial_review": bool(failed_optional_reviewers),
+        "failed_optional_reviewers": failed_optional_reviewers,
+    }
+
+
 def _local_only_posting_plan(posting_plan: PostingPlan) -> PostingPlan:
     return PostingPlan(
         items=tuple(
@@ -858,12 +891,14 @@ def _json_envelope(
     writer_call_count: int,
     rendered: RenderedReview,
     clarification_gate: ClarificationGateResult,
+    partial_review: dict[str, Any],
 ) -> dict[str, Any]:
     return _redact_json_value({
         "run_mode": "dry_run",
         "post_enabled": post_enabled,
         "fixture_id": fixture.id,
         "fixture_ref": fixture.pr_ref,
+        "partial_review": partial_review,
         "graph_trace": graph_trace,
         "local_verdict": local_verdict.value,
         "pending_clarification_ids": list(clarification_gate.pending_ids),
