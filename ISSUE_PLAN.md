@@ -31,19 +31,24 @@ This issue should preserve trust, source, timestamp, body, and location metadata
 3. Trust policy:
    - Trusted human authors are `OWNER`, `MEMBER`, or `COLLABORATOR`.
    - The authenticated operator is trusted when explicitly provided.
-   - Bot/unknown/external/contributor authors remain passive/untrusted unless the operator allowlist says otherwise.
+   - Trusted review bots are configured by explicit allowlist and default deny.
+   - Bot/unknown/external/contributor authors remain passive/untrusted unless the operator or trusted-bot allowlist says otherwise.
    - Fixture-provided `trust_label` must not upgrade an untrusted `author_association`; it can only preserve source metadata for tests.
 4. Resolved/actionable policy:
    - Top-level comments and reviews are unresolved/passive memory by default unless their source says otherwise.
    - Review-thread comments inherit the thread's resolved status.
-   - Resolved threads are non-actionable unless the thread contains an unresolved follow-up.
+   - Resolved threads are non-actionable in this slice.
+   - The “resolved thread with newer unresolved follow-up” exception is deferred until the typed model has explicit follow-up event metadata.
    - Unknown thread state remains passive for routing/actionability.
 5. Add `tests/test_memory.py`:
    - Builds memory from the `untrusted-comment-injection`, `stale-approval-change`, `ambiguous-logic-change`, and `basic-pr` fixtures.
    - Asserts author, author association, timestamp, body, URL/path/line, source type, trust label, resolved status, and actionable/passive fields are preserved.
    - Asserts owner/member/collaborator/operator comments are trusted and contributor/external comments stay passive.
+   - Asserts allowlisted bots are trusted and unlisted bots stay passive/default-deny.
+   - Asserts fixture `trust_label=trusted` cannot upgrade a contributor/external author to trusted.
    - Asserts untrusted comments remain passive memory even if their body looks like an instruction.
-   - Asserts resolved threads are non-actionable unless a newer unresolved follow-up exists.
+   - Asserts generated memory comes only from `PullRequestContext`, not legacy fixture `memory` entries.
+   - Asserts resolved and unknown threads are non-actionable.
 
 ## Out Of Scope
 
@@ -52,6 +57,7 @@ This issue should preserve trust, source, timestamp, body, and location metadata
 - No live GitHub read or pagination. `AUR-213` and follow-ups own fake/live transport.
 - No redaction behavior changes; existing render/redaction protections remain regression coverage.
 - No graph runtime changes.
+- No resolved-thread follow-up event policy until the model can represent explicit follow-up metadata.
 
 ## Validation
 
