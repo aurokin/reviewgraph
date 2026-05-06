@@ -1,53 +1,52 @@
-# MILESTONE PLAN: PRD 0005 Review Quality
+# MILESTONE PLAN: PRD 0006 GitHub Read And Memory
 
 Active execution artifact for this milestone. Linear remains the durable source for issue status, milestone order, blockers, relationships, and handoff details; if this file conflicts with Linear, Linear wins. Re-fetch current Linear state before starting each issue.
 
 ## Linear Scope Snapshot
 
-- Milestone: `PRD 0005: Review Quality`
-- Milestone ID: `7c623166-927e-43d7-a14d-41af005a2587`
-- Current execution status: all PRD 0005 implementation issues are `Done`; `AUR-257` milestone gate is `In Progress`.
-- Implementation issues:
-  - `AUR-201` / `RG-012: Normalize Reviewer Output` / `Done`
-  - `AUR-202` / `RG-013: Classify Review Quality` / `Done`
-  - `AUR-203` / `RG-014: Classify Testing Feedback Quality` / `Done`
-  - `AUR-204` / `RG-015: Validate Diff Anchors For Inline Candidates` / `Done`
-  - `AUR-205` / `RG-016: Stop For Clarification Requests` / `Done`
-  - `AUR-206` / `RG-017: Resume From Clarification Answers` / `Done`
-  - `AUR-207` / `RG-018: Compute Local Verdict` / `Done`
-  - `AUR-226` / `RG-037: Continue After Optional Reviewer Failure` / `Done`
-  - `AUR-227` / `RG-038: Repair Or Record Malformed Reviewer JSON` / `Done`
+- Milestone: `PRD 0006: GitHub Read And Memory`
+- Milestone ID: `d5570b49-93a7-453b-af77-9e8a5396d21b`
+- Current execution status: all active PRD 0006 issues are `Backlog`.
+- Active implementation issues:
+  - `AUR-213` / `RG-024: Read GitHub PR Metadata With Fake Transport` / `Backlog`
+  - `AUR-214` / `RG-025: Paginate GitHub Files Comments And Reviews` / `Backlog`
+  - `AUR-215` / `RG-026: Apply GitHub Trust Rules To Memory` / `Backlog`
+  - `AUR-236` / `RG-047: Select Conversation Pattern Reviewers` / `Backlog`
+  - `AUR-247` / `RG-058: Fail Closed On GitHub Read Gaps` / `Backlog`
+  - `AUR-239` / `RG-050: Add GitHub PR Dry-Run Adapter Path` / `Backlog`
+  - `AUR-216` / `RG-027: Add Opt-In Live Read Smoke` / `Backlog`
 - Gate issue:
-  - `AUR-257` / `Complete PRD 0005: Review Quality` / `In Progress`
+  - `AUR-259` / `Complete PRD 0006: GitHub Read And Memory` / `Backlog`
+- Canceled duplicate:
+  - `AUR-252` / `RG-058: Fail Closed On GitHub Read Gaps` / `Duplicate`
+- Linear comments: fetched on 2026-05-06; active PRD 0006 issues had no comments.
 
 ## Milestone Intent
 
-PRD 0005 is the trust bar for ReviewGraph output. The milestone turns reviewer output into graph-owned quality decisions before rendering or posting can see it: postable findings, local notes, clarification requests, suggested replies, and suppressed non-findings.
+PRD 0006 moves ReviewGraph from fixture-only review targets toward GitHub PR read targets without introducing write behavior. The milestone should prove that PR metadata, changed files, comments, review comments, reviews, and thread state can be read through adapters, represented as explicit state, transformed into structured conversation memory, and fed into the existing dry-run graph safely.
 
-The product point is restraint. ReviewGraph should prefer no finding over a plausible weak finding. Agents may propose issues, questions, notes, and replies, but the graph owns postability, priority, blocking status, fingerprints, local verdicts, and side-effect eligibility.
+The product point is safe memory. PR discussion is shared context across reviewer agents, but it is labeled data, not an instruction stream. Trusted actionable memory may route reviewers through explicit graph state. Untrusted, resolved, unknown, truncated, or partially-read memory remains passive and cannot create routing pressure, public findings, approval input, local verdict pressure, or provider instructions.
 
 ## Current Code Snapshot
 
-- `src/reviewgraph/models.py` already defines `RawReviewerFinding`, `ClassifiedFinding`, `DiffAnchor`, `LocalNote`, `SuggestedReply`, `SuppressedReviewerOutput`, `ClarificationRequest`, `ReviewVerdict`, and graph-owned-field rejection.
-- `src/reviewgraph/reviewers.py` now normalizes deterministic fake reviewer items into typed `ReviewerResult` fields. `AUR-201` made typed normalized artifacts the policy input and records reviewer attempts to set graph-owned fields as structured suppressed output/normalization errors instead of silently stripping them.
-- `src/reviewgraph/quality.py` now owns general typed review-quality classification from normalized `ReviewerResult` artifacts into postable findings, local notes, clarification requests, suggested replies, and suppressed output. `AUR-202` also added neutral hashing and shared passive-memory provenance helpers, and `AUR-203` tightened the testing-reviewer quality bar with a focused harness.
-- `src/reviewgraph/runner.py` delegates normalized reviewer result classification to `classify_review_quality` and local verdict/post-eligibility policy to `src/reviewgraph/verdict.py`. It also records required-failure fail-closed state, optional-failure partial-review metadata, clarification stop-state, and clarification resume state in dry-run output.
-- `src/reviewgraph/posting.py` already keeps suggested replies/local notes/suppressed output local-only, rejects public request-changes wording in candidate payloads, and validates inline candidates when explicitly requested.
-- `src/reviewgraph/diff_anchor.py` now derives fixture-safe `DiffAnchor` metadata from changed ranges. Runner-created findings render derived anchors in dry-run JSON, while inline candidates remain explicit, dry-run-only, and excluded from public payloads.
-- Existing CLI/tracer tests cover many quality behaviors in broad integration form. PRD 0005 should add focused harnesses as each issue lands and extract policy into narrow modules without broad behavior drift.
+- `src/reviewgraph/fixtures.py` parses fixture PRs into `PullRequestContext` and `ReviewTarget`.
+- `src/reviewgraph/models.py` already defines `ReviewTarget`, `PullRequestContext`, `PullRequestComment`, `PullRequestReview`, `PullRequestReviewThread`, `PullRequestChangedFile`, `PRConversationMemory`, `MemoryReference`, and `ReadGap`.
+- `src/reviewgraph/memory.py` builds conversation memory from parsed PR context. It trusts owner/member/collaborator users plus configured operators, trusts bots only by allowlist, treats unknown actor types as untrusted, and makes resolved or unknown thread state passive.
+- `src/reviewgraph/routing.py` already supports `conversation_patterns`, but matching is currently body-text based over all actionable memory and does not include matched memory IDs or trust labels in selection reasons.
+- `src/reviewgraph/runner.py` is fixture-oriented. It loads fixture data, builds memory, applies context budgets, runs staged fake reviewers, classifies quality, computes local verdict, builds a dry-run posting plan, and renders markdown/JSON. There is no `src/reviewgraph/github.py` read adapter yet.
+- `src/reviewgraph/cli.py` accepts `--fixture-pr` only. GitHub PR refs/URLs are not yet accepted as review targets.
+- Existing tests cover fixture parsing, memory trust basics, prompt-injection memory boundaries, context budgeting, routing, rendering, and CLI dry-run output. PRD 0006 should add focused GitHub-read harnesses without weakening existing fixture behavior.
 
 ## Execution Order
 
-1. `AUR-201` first: extract reviewer-output normalization into a focused contract. Valid reviewer output should become typed raw findings, local notes, clarification requests, suggested replies, and suppressible non-findings. Malformed raw strings or malformed mappings must flow to the explicit repair/error policy rather than being silently coerced. Graph-owned fields must not be stripped silently; they should be preserved as rejection/suppression evidence for policy.
-2. `AUR-227` second: add the deterministic fake repair/error path for malformed reviewer JSON. This should happen before broader quality classification so malformed inputs have one clear lifecycle: repair once, normalize on success, record required/optional failure on exhaustion.
-3. `AUR-202` third: extract and harden the general quality classifier. Linear marks `AUR-204`, `AUR-203`, `AUR-205`, `AUR-226`, and `AUR-207` as blocked by `AUR-202`, so this issue moved ahead of diff anchors even though the original local ordering placed `AUR-204` first. It ignores reviewer self-declared postability/blocking, requires changed-code evidence, safe evidence provenance, a changed-code location, an actionable scenario, concise/matter-of-fact public text, graph-owned priority/fingerprint/blocking decisions, and logic-review rules. Generic/speculative/pre-existing/locationless output is suppressed.
-4. `AUR-204` fourth: model and validate `DiffAnchor` for dry-run inline candidates, and define the local-only path for findings that cannot be precisely anchored. Build on AUR-202's classifier; do not re-open raw normalization, general quality heuristics, ranking, approval, or live inline posting.
-5. `AUR-203` fifth: layer testing-reviewer quality rules on the extracted classifier. Testing output is postable only with changed behavior, a concrete regression scenario, and identifiable missing coverage; generic "add tests" remains local-only or suppressed.
-6. `AUR-205` sixth: make clarification-stop behavior a focused graph contract. Pending blocking clarification requests set `post_enabled=false`, render the question and why it matters, and prevent the ambiguous issue from producing a local blocking verdict.
-7. `AUR-206` seventh: implement answered clarification resume. `ingest_clarification_answer` records answers without mutating cursor fields; `advance_or_finish_stage` activates transient `clarification_review`; only affected reviewers rerun.
-8. `AUR-226` eighth: confirm optional reviewer failures continue through later stages with partial-review metadata. Earlier PRD 0004 work already covers much of this behavior; this issue should add focused quality-era proof and avoid changing required-failure semantics.
-9. `AUR-207` ninth: extract local verdict policy from classified outputs and failure/clarification state. Local verdict remains private/dry-run state and does not imply GitHub review events or public request-changes wording.
-10. `AUR-257` last: close the milestone only after all implementation issues are `Done`, focused/full validation passes, durable docs capture the final review-quality contracts, Linear evidence is complete, and fresh subagent review reports no material gaps.
+1. `AUR-213` first: introduce a fake GitHub read adapter and PR ref parser for metadata and changed files. This establishes the adapter contract, `ReviewTarget` parity with fixtures, and read-without-write-credentials posture.
+2. `AUR-214` second: extend the fake adapter with pagination for files, issue comments, review comments, reviews, and thread state. Pagination must complete before context-budget truncation is applied.
+3. `AUR-247` third: model GitHub read gaps and fail-closed partial reads. This belongs before trust/routing integration so later work cannot accidentally treat incomplete reads as complete context.
+4. `AUR-215` fourth: apply GitHub-derived trust, allowlisted bots, seen-state, and resolved/unknown thread-state behavior to conversation memory. Reuse and harden `memory.py`; do not move trust policy into prompts.
+5. `AUR-236` fifth: allow trusted actionable GitHub memory to select reviewers through `conversation_patterns`, with selection reasons that name matching memory IDs and trust status. Untrusted, unlisted bot, resolved, and unknown-state memory must not route reviewers.
+6. `AUR-239` sixth: wire GitHub PR refs/URLs into the CLI and graph dry-run path using fake transport by default. The GitHub read result must feed the same target, memory, context budget, reviewer, quality, render, and dry-run path as fixtures; no writer path should be reachable.
+7. `AUR-216` seventh: add opt-in live-read smoke coverage. It must be skipped by default, read-only, clear when `gh` or token is missing, and separate from any write or approval behavior.
+8. `AUR-259` last: close the milestone only after every active implementation issue is `Done`, focused/full validation passes, durable docs explain the final read/memory contracts, Linear evidence is complete, and fresh subagent review reports no material gaps.
 
 ## Issue Workflow
 
@@ -65,23 +64,18 @@ For each issue:
 
 ## Harness Strategy
 
-- `AUR-201` focused harness: `python -m pytest tests/test_findings.py`
-- `AUR-227` focused harness: `python -m pytest tests/test_reviewer_json_repair.py`
-- `AUR-204` focused harness: `python -m pytest tests/test_diff_anchor.py`
-- `AUR-202` focused harness: `python -m pytest tests/test_quality.py`
-- `AUR-203` focused harness: `python -m pytest tests/test_quality_testing.py`
-- `AUR-205` focused harness: `python -m pytest tests/test_clarification.py`
-- `AUR-206` focused harness: `python -m pytest tests/test_clarification_resume.py`
-- `AUR-226` focused harness: `python -m pytest tests/test_optional_reviewer_failure.py`
-- `AUR-207` focused harness: `python -m pytest tests/test_verdict.py`
-- Focused harness note: several `tests/test_*.py` files named above do not exist at milestone intake. Each issue should create or extract its focused harness before implementation and keep existing broad CLI/tracer coverage green.
-- Tracer/CLI regression harness:
-  - `python -m pytest tests/test_tracer_fixture_run.py tests/test_cli.py tests/test_render.py`
-- Reviewer/failure regression harness:
-  - `python -m pytest tests/test_reviewers_fake.py tests/test_required_reviewer_failure.py tests/test_reviewer_runs.py`
-- Boundary regression harness:
-  - `python -m pytest tests/test_reviewer_context.py tests/test_contract_boundaries.py tests/test_context_budget.py tests/test_prompt_injection_memory.py tests/test_redaction.py`
-- Full validation after shared policy changes:
+- `AUR-213` focused harness: `python -m pytest tests/test_github_fake_read.py`
+- `AUR-214` focused harness: `python -m pytest tests/test_github_pagination.py`
+- `AUR-247` focused harness: `python -m pytest tests/test_github_read_gaps.py`
+- `AUR-215` focused harness: `python -m pytest tests/test_github_memory_trust.py`
+- `AUR-236` focused harness: `python -m pytest tests/test_conversation_routing.py`
+- `AUR-239` focused harness: `python -m pytest tests/test_github_dry_run_cli.py`
+- `AUR-216` focused harness: `python -m pytest -m live_read` only when explicitly enabled; default tests must prove it is skipped by default.
+- Fixture/CLI regression harness:
+  - `python -m pytest tests/test_fixtures.py tests/test_memory.py tests/test_routing.py tests/test_reviewer_context.py tests/test_context_budget.py tests/test_tracer_fixture_run.py tests/test_cli.py tests/test_render.py`
+- Quality and side-effect boundary regression harness:
+  - `python -m pytest tests/test_findings.py tests/test_quality.py tests/test_quality_testing.py tests/test_verdict.py tests/test_posting.py tests/test_prompt_injection_memory.py tests/test_redaction.py`
+- Full validation after shared adapter or CLI changes:
   - `python -m pytest -q`
   - `python -m py_compile src/reviewgraph/*.py`
   - `python scripts/check_docs.py`
@@ -89,66 +83,65 @@ For each issue:
 
 ## Contract Guardrails
 
-- Dry-run remains the default. No PRD 0005 work should introduce live GitHub reads, live LLM calls, approval prompts, or writer reachability.
-- Reviewer output cannot self-declare postability, final priority, blocking status, fingerprint, destination, approval, public verdict, or GitHub review event.
-- Findings must be structured before markdown rendering. Markdown is output, not policy state.
-- Postable findings require changed-code evidence, an actionable scenario, safe evidence provenance, and a precise changed-code location when available. Critical, blocking, or request-changes-driving findings require high confidence; medium-confidence findings may be postable only when non-blocking and still concrete enough for the author to act on. Low-confidence issues cannot drive public findings; ambiguous mergeability issues cannot drive blocking verdicts.
-- Logic-review findings may cite cross-file evidence, but public locations anchor to changed code that introduced or exposed the risk. Unclear product intent becomes clarification, not a blocking finding.
-- Testing findings are postable only with changed behavior, a concrete regression scenario, and identifiable missing coverage. Generic "add tests" output is local-only or suppressed.
-- Postable comment bodies should be concise, matter-of-fact, one issue per item, and free of public verdict pressure unless a later approval policy explicitly permits it.
-- Secret-like evidence must be redacted before rendering, JSON output, candidate payloads, final payloads, traces, logs, or provider-bound requests.
-- Suggested replies are local-only in MVP and never become automatic GitHub replies.
-- Inline candidates remain dry-run only. Inline GitHub posting is outside PRD 0005.
-- Passive or untrusted memory cannot support postable findings, verdict-blocking clarifications, routing pressure, approval input, or public payload text.
-- Optional reviewer failures may produce partial-review metadata and local notes without blocking post eligibility by themselves. Required reviewer failures remain fail-closed.
-- The local verdict is private ReviewGraph output. Public request-changes wording is excluded from candidate GitHub payloads by default.
+- Dry-run remains the default. PRD 0006 must not introduce GitHub writes, approval prompts, live LLM calls, inline comments, statuses, labels, or formal PR reviews.
+- Fake GitHub transport is the default implementation harness. Live read is opt-in and read-only.
+- GitHub read adapters may use REST API or `gh`, but the adapter contract must report whether thread resolution state is available.
+- Required read context includes owner/repo, PR number, title/body/author, base/head SHAs, merge base, labels, changed files, patches, comments, reviews, review comments, and thread state where available.
+- Adapters must paginate files, issue comments, review comments, reviews, and thread state. Partial pagination failure is a read gap, not context-budget truncation.
+- Conversation memory stores author, author association, timestamp, body, URL, path/line when available, source type, resolved status, trust label, actionable status, and passive reason.
+- Trusted human authors are owner/member/collaborator plus configured authenticated operators.
+- Trusted review bots are default-deny allowlisted. Unlisted bots are passive.
+- Untrusted comments, missing/unknown actor types, resolved threads, and unknown thread state cannot trigger `conversation_patterns`.
+- Unknown thread state is distinct from resolved/unresolved. It remains visible as passive memory but cannot support actionable routing or postable findings by default.
+- If truncation occurs after complete pagination, ReviewGraph emits local notes and avoids findings dependent on omitted context.
+- If read gaps occur before complete context is available, downstream review must fail closed or render the gap explicitly instead of proceeding with overconfident review output.
+- Selection reasons for conversation-pattern routing must be inspectable and include matching memory IDs and trust status.
+- Reviewer prompts remain decoupled from GitHub transports and write code. Reviewer agents receive scoped context packages, not adapter clients.
 
 ## Documentation Work
 
 Update the narrowest durable docs alongside behavior:
 
-- Quality classification, output classes, and finding eligibility belong in `docs/architecture/review-quality.md`.
-- Raw and classified schemas, diff anchors, clarification requests, and provenance rules belong in `docs/architecture/findings-contract.md`.
-- Clarification stop/resume graph behavior belongs in `docs/architecture/state-graph.md`.
-- Quality harness families and golden-case expectations belong in `docs/harnesses/harness-engineering.md`.
-- Sequencing narrative belongs in `docs/plans/implementation-plan.md` only if the project phase narrative changes materially.
-- Add an ADR only for a durable tradeoff that future implementers would otherwise reopen.
-- Keep Linear as the executable backlog. Do not copy the issue tree into durable product docs beyond this active execution plan.
+- Read adapter contract, PR ref parsing, thread-state availability, and live-read posture belong in `docs/architecture/github-integration.md`.
+- Memory trust, resolved/unknown thread-state actionability, and conversation-pattern routing rules belong in `docs/architecture/state-graph.md` and `docs/architecture/reviewer-config.md` when config semantics change.
+- Read-gap state and fail-closed behavior belong in `docs/architecture/state-graph.md` and, if a durable tradeoff is introduced, `docs/decisions/`.
+- Harness expectations for fake read, pagination, read gaps, and opt-in live smoke belong in `docs/harnesses/harness-engineering.md`.
+- Implementation sequencing belongs in `docs/plans/implementation-plan.md` only if the project phase narrative changes materially.
+- Keep Linear as the executable backlog. Do not copy the full issue tree into durable product docs beyond this active execution plan.
 
-## PRD 0005 Acceptance Surface
+## PRD 0006 Acceptance Surface
 
 The milestone is complete when ReviewGraph proves:
 
-- Valid reviewer output normalizes into typed raw artifacts before quality policy runs.
-- Malformed reviewer JSON gets one deterministic fake repair attempt and then either normalizes or records required/optional failure state.
-- Diff anchors and changed-line locations are validated before postable classification depends on them.
-- General quality classification separates postable findings, local notes, clarification requests, suggested replies, and suppressed non-findings.
-- Generic, speculative, self-declared-blocking, pre-existing, unsupported, unsafe-memory, unsafe-secret-bearing, and locationless output cannot become postable findings.
-- Postable findings have graph-owned priority `0..3`, severity/confidence preserved from typed evidence, graph-owned blocking status, and fingerprints. Tests must prove priority is not accepted from reviewer output and does not have to equal severity.
-- Postable comments are concise and matter-of-fact enough for public review text, while local verdict wording remains private by default.
-- Testing-reviewer output follows the stricter changed-behavior/regression-scenario/missing-coverage bar.
-- Diff anchors are modeled and validated for dry-run inline candidates without enabling inline posting.
-- Blocking clarification requests stop post eligibility and avoid fake certainty.
-- Answered clarifications can resume only affected reviewers through transient `clarification_review`.
-- Optional reviewer failure continuation is proven in the quality-era graph, while required failure remains fail-closed.
-- Local verdict computation is extracted from public GitHub behavior and excludes public request-changes pressure by default.
+- GitHub PR URL and `owner/repo#number` refs parse into a stable read target.
+- Fake GitHub read adapter returns PR metadata, labels, base/head SHAs, merge base, changed files, and patches without write credentials.
+- Fake read output produces the same `ReviewTarget` and `PullRequestContext` shape used by fixtures.
+- Adapter pagination covers files, issue comments, review comments, reviews, and thread state before truncation.
+- Read failures, partial pagination, unknown required thread state, and unavailable thread-state data become explicit read-gap state and fail closed where required.
+- GitHub conversation memory applies trusted-human, trusted-bot allowlist, untrusted-passive, seen-state, resolved-thread, and unknown-thread rules.
+- Trusted actionable memory can route reviewers through `conversation_patterns`; untrusted, unlisted bot, resolved, and unknown-state memory cannot.
+- Selection reasons expose matching memory IDs and trust status.
+- GitHub PR dry-run CLI path feeds the same graph and render contracts as fixture dry-run.
+- Default tests need no GitHub credentials and cannot reach writer code.
+- Live read smoke is opt-in, skipped by default, read-only, and clear about missing `gh` or token.
 
 ## Deferred Scope
 
-- Semantic deduplication remains deferred.
-- Inline GitHub comments remain deferred.
-- Automatic replies to human PR comments remain deferred.
-- Live GitHub reads, live LLM reviewers, approval finalization, marker reconciliation, and writer behavior remain later PRDs.
+- GitHub write behavior remains PRD 0007.
+- Live LLM behavior remains PRD 0008.
+- Long-running PR monitoring and webhooks remain out of scope.
+- Inline comments, formal PR reviews, labels, status checks, approvals, and request changes remain deferred.
 
 ## Milestone Completion Criteria
 
-`AUR-257` can close only when:
+`AUR-259` can close only when:
 
-- Every implementation issue listed in this plan is `Done` in Linear with an evidence comment.
-- A fresh Linear milestone inventory proves every active PRD 0005 blocker is complete or has an explicit stale/canceled/not-applicable rationale in Linear.
-- Focused validation for all PRD 0005 harness families passes.
-- Tracer, reviewer/failure, boundary, full validation, docs check, py-compile, and diff check pass.
-- Durable docs explain the final review-quality contracts an implementation agent needs when dropping into the repo.
+- Every active implementation issue listed in this plan is `Done` in Linear with an evidence comment.
+- `AUR-252` remains documented as the canceled duplicate of `AUR-247`.
+- A fresh Linear milestone inventory proves every active PRD 0006 blocker is complete or has an explicit stale/canceled/not-applicable rationale in Linear.
+- Focused validation for all PRD 0006 harness families passes.
+- Fixture/CLI, quality/boundary, full validation, docs check, py-compile, and diff check pass.
+- Durable docs explain the final GitHub read, memory trust, read-gap, and live-read contracts an implementation agent needs when dropping into the repo.
 - Fresh subagent review of code, tests, docs, Linear evidence, and the milestone gate reports no material issues.
-- No unapproved live API, live LLM, approval, inline-posting, or GitHub writer behavior has been introduced.
+- No GitHub writer, approval, inline-posting, live LLM, or unapproved live API behavior has been introduced.
 - No `.ws/` or temporary export artifacts remain.
