@@ -36,47 +36,60 @@ This issue should also establish the early bridge shape required by the mileston
    - parsed PR ref;
    - `PullRequestContext`;
    - `ReviewTarget`;
+   - PR author plus base/head ref names as GitHub metadata extras, because `PullRequestContext` currently stores SHAs but not these fields;
    - changed-line metadata derived from unified patches when possible;
    - anchor-unavailable metadata for files where changed lines cannot be derived;
-   - `read_gaps`, initially empty for this happy-path metadata/files slice;
-   - `thread_state_available`, initially `False` until later pagination/thread work;
+   - a resource-coverage/read-scope marker that says this result is `metadata_files_only`, with `metadata` and `files` complete but `comments`, `reviews`, `review_comments`, and `thread_state` not fetched yet;
+   - `read_gaps`, initially empty for metadata/files resources only;
+   - `thread_state_available` with an explicit reason such as `not_fetched_in_scope`, distinct from future `unavailable_from_transport`;
    - optional `actor_permission` snapshot, initially `None`;
    - redaction status.
-5. Do not fetch comments, reviews, review comments, or thread state in this issue. Later issues fill those resources and read-gap semantics.
+5. `GitHubChangedFileLines` must directly satisfy the current changed-file protocols used by `diff_anchor.py`: it should expose `path`, `changed_ranges`, `status`, `previous_path`, `patch_status`, and `contains_line()`. Unsupported or unavailable patch shapes must not create false anchors; they should produce explicit anchor-unavailable metadata.
 6. Do not wire the adapter into CLI or runner in this issue; keep `AUR-239` responsible for the end-to-end GitHub dry-run path.
+7. Do not fetch comments, reviews, review comments, or thread state in this issue. Later issues fill those resources and convert missing required resources into fail-closed read gaps before graph-ready use.
+8. Support only `github.com` PR URLs for MVP. GitHub Enterprise host support is deferred until a host policy exists.
+9. Preserve raw typed PR context in memory for later graph use, but expose redacted serialization/status/error helpers for any display, logging, trace, or persisted artifact.
 
 ## Implementation Plan
 
 1. Add focused failing tests in `tests/test_github_fake_read.py`.
    - PR ref parsing for `owner/repo#number`.
    - PR URL parsing for `https://github.com/owner/repo/pull/123`.
-   - Fake transport happy path returns metadata, labels, target SHAs, merge base, changed files, patches, and `ReviewTarget`.
+   - Invalid refs reject `#0`, negative and non-integer PR numbers, missing owner/repo, unsupported hosts or schemes, query/fragment URLs, and redacted invalid input in error text.
+   - Fake transport happy path returns metadata, PR author, base/head refs, labels, target SHAs, merge base, changed files, patches, and `ReviewTarget`.
+   - `GitHubReadResult` records resource coverage as metadata/files only and cannot be mistaken for graph-ready complete context.
    - Fake transport records only read calls and has no writer/write API requirement.
-   - Secret-like PR text or adapter error data is redacted in errors/status fields exposed by the adapter.
-   - Changed ranges are derived from simple unified patch hunks, or explicit anchor-unavailable metadata is recorded for unavailable patches.
+   - Secret-like PR title/body/patch text and adapter error data are redacted in serializable envelope/status/error helpers, while raw typed context remains available only as in-memory data.
+   - Changed ranges are derived from unified patch hunks and directly satisfy existing anchor protocols.
+   - Multi-hunk patches and multiline finding ranges are supported.
+   - Deleted, binary/no-patch, oversized/unavailable patch, unsupported hunk, and rename cases degrade to anchor-unavailable metadata instead of partial or false anchors.
 
 2. Implement `src/reviewgraph/github.py`.
-   - Define `GitHubPRRef`, `GitHubChangedFileLines`, `GitHubReadResult`, and a small fake transport contract.
+   - Define `GitHubPRRef`, `GitHubPRMetadata`, `GitHubChangedFileLines`, `GitHubReadResult`, resource coverage/status values, structured adapter errors, and a small fake transport contract.
    - Implement `parse_github_pr_ref`.
    - Implement `read_github_pr_with_fake_transport`.
    - Convert fake transport dictionaries into existing typed models.
-   - Keep validation errors specific and redacted.
+   - Keep validation errors specific, structured, and redacted.
 
-3. Keep package and default test posture unchanged.
+3. Add boundary and docs proof.
+   - Add or extend static import tests so `src/reviewgraph/github.py` cannot import live transports, network clients, approval, finalization, posting writer, or side-effect code.
+   - Document the new fake read contract, metadata extras, resource coverage, raw-vs-redacted result rule, and changed-line bridge in `docs/architecture/github-integration.md`.
+   - Add the AUR-213 harness expectation to `docs/harnesses/harness-engineering.md`.
+
+4. Keep package and default test posture unchanged.
    - No new runtime dependency unless unavoidable.
    - No live `gh`, network, `requests`, approval, finalization, or writer import.
    - No CLI behavior change yet.
-
-4. Update narrow docs only if the code introduces durable names or semantics not already covered by `MILESTONE_PLAN.md`.
 
 ## Verification
 
 - Focused:
   - `python -m pytest tests/test_github_fake_read.py -q`
 - Regression:
-  - `python -m pytest tests/test_fixtures.py tests/test_memory.py tests/test_routing.py tests/test_cli.py -q`
+  - `python -m pytest tests/test_fixtures.py tests/test_memory.py tests/test_routing.py tests/test_cli.py tests/test_redaction.py tests/test_contract_boundaries.py tests/test_reviewer_context.py tests/test_context_budget.py tests/test_render.py -q`
 - Hygiene:
   - `python -m py_compile src/reviewgraph/*.py`
+  - `python scripts/check_docs.py`
   - `git diff --check`
 
 ## Out Of Scope
