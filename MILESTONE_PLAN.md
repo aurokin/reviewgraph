@@ -6,13 +6,15 @@ Active execution artifact for this milestone. Linear remains the durable source 
 
 - Milestone: `PRD 0010: Agent Context And Adapter Boundaries`
 - Milestone ID: `0dea2cdd-6433-41d8-b1a4-b91b07d3acc9`
-- Current status: 0% complete when this plan was drafted.
-- Implementation issue:
+- Current status: `AUR-231` complete; `AUR-233` active; `AUR-255` gate blocked until all PRD 0010 implementation issues are complete.
+- Implementation issues:
   - `AUR-231` / `RG-042: Define Reviewer Context Package`
+  - `AUR-233` / `RG-044: Add Prompt Injection Memory Harness`
 - Gate issue:
   - `AUR-255` / `Complete PRD 0010: Agent Context And Adapter Boundaries`
 - Current issue statuses:
-  - `AUR-231`: `Backlog`
+  - `AUR-231`: `Done`
+  - `AUR-233`: `In Progress`
   - `AUR-255`: `Backlog`
 - Known Linear note: `AUR-231` has a PRD 0003 gate comment explaining that the existing `src/reviewgraph/reviewer_context.py` is only the minimal context-budget stub from `AUR-211`. The fuller reviewer context package contract remains valid PRD 0010 work.
 
@@ -24,13 +26,13 @@ The milestone also hardens the design point that PR conversation memory is share
 
 ## Current Code Snapshot
 
-- `src/reviewgraph/reviewer_context.py` currently defines a small `ReviewerContextPackage` containing review target, active stage, selected reviewer, changed files, memory references, truncation notices, omitted context, local notes, and context budget. It does not yet expose reviewer config metadata, capability policy, context policy, passive-memory separation, prompt inputs, trace metadata, or adapter-boundary proof.
-- `src/reviewgraph/models.py` already has `ReviewTarget`, `SelectedReviewer`, `MemoryReference`, `ContextBudget`, `ReviewerAgentConfig`, `ReviewerResult`, and raw/classified reviewer contracts. It should grow only the contracts needed for this milestone, keeping graph-owned decisions out of reviewer output.
-- `src/reviewgraph/config.py` validates optional `model`, `context`, and `capabilities`; it currently rejects `tools` outright. PRD 0010 and `AUR-231` require tool metadata to be represented while tool-using reviewers remain out of scope. This milestone will treat `tools` as inert, validated metadata only: non-empty string names may be recorded in the context package trace, but they do not grant execution rights, live calls, GitHub access, repository access, or write capability.
+- `src/reviewgraph/reviewer_context.py` now defines the post-`AUR-231` reviewer context package contract: review target, active stage, selected reviewer, changed files, trusted/passive memory references, truncation notices, omitted context, local notes, context budget, reviewer config metadata, read-only capability policy, trace metadata, prompt-input construction, and non-live provider request preview.
+- `src/reviewgraph/models.py` has `ReviewTarget`, `SelectedReviewer`, `MemoryReference`, `ContextBudget`, `ReviewerAgentConfig`, `ReviewerResult`, raw/classified reviewer contracts, and inert `future-*` tool metadata validation. Keep graph-owned decisions out of reviewer output.
+- `src/reviewgraph/config.py` validates optional `model`, inert `tools`, `context`, and `capabilities`. Tool names are recorded metadata only; they do not grant execution rights, live calls, GitHub access, repository access, or write capability.
 - `src/reviewgraph/memory.py` already computes trusted/passive/actionable memory from typed PR context and allowlists.
 - `src/reviewgraph/context_budget.py` already applies file, patch, memory, reviewer-count, and live-call budget decisions before reviewer execution and emits omitted-context markers/local notes.
 - `src/reviewgraph/runner.py` still executes fixture raw outputs directly after routing; reviewer adapters are not implemented yet. PRD 0010 should not build live adapter execution, but it should make the package that future fake/live adapters receive testable.
-- `tests/test_context_budget.py` has a minimal package test. This milestone should add a dedicated `tests/test_reviewer_context.py` and boundary coverage instead of treating context-budget tests as proxy evidence.
+- `tests/test_reviewer_context.py` and `tests/test_contract_boundaries.py` now carry the focused reviewer-context and adapter-boundary proof from `AUR-231`. `AUR-233` should add the missing named prompt-injection memory harness without redoing the AUR-231 contract.
 
 ## Execution Order
 
@@ -51,7 +53,15 @@ The milestone also hardens the design point that PR conversation memory is share
    - provider-bound golden tests proving secret-like fixture text is redacted and omitted/passive context remains governed before any later live LLM adapter can submit it
    - adapter-boundary tests proving reviewer context/prompt modules do not import or receive GitHub writer, approval, finalization, payload builder, live LLM, or transport clients
    - field/signature tests proving `ReviewerContextPackage`, prompt-input models, and builders cannot accept writer/client/approval/payload/LLM objects or ambient side-effect handles
-2. `AUR-255` second: close the milestone only after `AUR-231` is Done, focused and full validation pass, docs reflect the durable context boundary, and fresh subagent review finds no material gaps.
+2. `AUR-233` second: add the prompt-injection memory harness that proves untrusted PR comments remain shared data, not instructions. This should include:
+   - a focused `tests/test_prompt_injection_memory.py` harness using the `untrusted-comment-injection` fixture
+   - coverage proving untrusted comments cannot satisfy `conversation_patterns`
+   - coverage proving untrusted prompt-like text cannot override reviewer prompt instructions or capability policy
+   - coverage proving untrusted memory does not appear in reviewer instruction fields or satisfy reviewer evidence requirements
+   - coverage proving trusted actionable memory can still be cited as reviewer-visible data without bypassing quality classification
+   - harness output assertions showing included memory IDs, trust labels, passive/actionable state, roles, and truncation status through `ReviewerContextPackage.trace` and prompt-input data
+   - no verdict, approval, payload-destination, public-payload, live LLM, live GitHub, or general web-security scanning scope
+3. `AUR-255` third: close the milestone only after `AUR-231` and `AUR-233` are Done, focused and full validation pass, docs reflect the durable context boundary, a fresh milestone inventory proves no remaining PRD 0010 implementation issues are active, and fresh subagent review finds no material gaps.
 
 ## Issue Workflow
 
@@ -70,6 +80,7 @@ For each issue:
 ## Harness Strategy
 
 - `AUR-231` focused harness: `python -m pytest tests/test_reviewer_context.py tests/test_config.py tests/test_contract_boundaries.py tests/test_cli.py`
+- `AUR-233` focused harness: `python -m pytest tests/test_prompt_injection_memory.py tests/test_reviewer_context.py tests/test_memory.py tests/test_cli.py`
 - Boundary regression harness: static AST tests proving context, prompt, and future reviewer-adapter boundary modules do not import forbidden side-effect modules.
 - Boundary shape harness: tests inspect dataclass fields and builder signatures so reviewer context and prompt-input contracts cannot accept writer/client/approval/payload/LLM objects or side-effect handles.
 - Prompt-input golden harness: tests prove system/developer instruction fields are separate from context data, trusted/actionable memory and passive memory are labeled, and untrusted prompt-like bodies from `untrusted-comment-injection` never appear as instructions.
@@ -109,6 +120,7 @@ Update the narrowest durable docs alongside behavior:
 `AUR-255` can close only when:
 
 - `AUR-231` is `Done` in Linear with an evidence comment.
+- `AUR-233` is `Done` in Linear with an evidence comment.
 - A fresh Linear milestone inventory proves every active PRD 0010 non-gate issue is complete and every active blocker is resolved or has an explicit stale/canceled/not-applicable rationale in Linear.
 - A fresh Linear-derived backlog export for PRD 0010 passes `python scripts/check_docs.py --backlog-export <tmp-file>`; the temporary export is removed after validation and its hash is recorded in the `AUR-255` evidence comment.
 - `ReviewerContextPackage` has a focused contract and harness proving every `AUR-231` acceptance criterion.

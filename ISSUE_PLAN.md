@@ -1,118 +1,87 @@
-# ISSUE PLAN: AUR-255 Complete PRD 0010 Agent Context And Adapter Boundaries
+# ISSUE PLAN: AUR-233 Add Prompt Injection Memory Harness
 
-Active issue plan for `AUR-255` / `Complete PRD 0010: Agent Context And Adapter Boundaries`.
+Active issue plan for `AUR-233` / `RG-044: Add Prompt Injection Memory Harness`.
 
 ## Linear Snapshot
 
-- Issue: `AUR-255`
+- Issue: `AUR-233`
 - Status: `In Progress`
 - Milestone: `PRD 0010: Agent Context And Adapter Boundaries`
-- Gate requirement: close only after all implementation issues in this PRD milestone are complete.
-- Current milestone issue set from fresh Linear fetch must be recorded in final gate evidence:
-  - `AUR-231` / `RG-042: Define Reviewer Context Package`: `Done`; evidence comment present with comment ID, timestamp, current commit SHA, validation summary, and acceptance-criteria mapping.
-  - `AUR-255` / `Complete PRD 0010: Agent Context And Adapter Boundaries`: active gate issue.
-- Related search noise outside this milestone includes PRD 0003, PRD 0004, PRD 0005, PRD 0006, PRD 0007, PRD 0008, and PRD 0009 gate/issues. Gate validation must filter by `projectMilestone.id == 0dea2cdd-6433-41d8-b1a4-b91b07d3acc9`.
+- Milestone ID: `0dea2cdd-6433-41d8-b1a4-b91b07d3acc9`
+- Relationship: `AUR-233` depends on completed context package issue `AUR-231`; `AUR-255` gate depends on this issue.
+- Existing fixture: `src/reviewgraph/fixtures_data/prs/untrusted-comment-injection.json`
+- Existing related coverage:
+  - `tests/test_memory.py` covers trust/passive memory construction.
+  - `tests/test_cli.py` covers conversation-pattern routing for trusted/untrusted memory.
+  - `tests/test_reviewer_context.py` covers prompt instruction/data separation and passive memory public-payload suppression.
 
 ## Goal
 
-Close PRD 0010 only if Linear and the repository prove the full milestone is complete, reviewed, documented, and side-effect safe.
+Add a focused malicious-comment harness proving PR conversation memory is shared labeled data, not an instruction stream.
 
-This gate should not add product behavior unless the audit finds a durable documentation or harness gap. If docs change, update only the narrowest durable docs needed by future implementation agents.
+This issue should consolidate PRD 0010 injection-memory proof into a named harness without adding live LLM calls, live GitHub reads/writes, approval, finalization, writer behavior, or broad web-security scanning.
 
-## Prompt-To-Artifact Checklist
+## Acceptance Mapping
 
-- Linear implementation issue complete:
-  - `AUR-231` is `Done`.
-  - `AUR-231` has a fresh evidence comment mapping each acceptance criterion to current code, tests, docs, validation, and the current commit SHA.
-- Context package contract:
-  - `src/reviewgraph/reviewer_context.py`
-  - `tests/test_reviewer_context.py`
-- Reviewer config and inert tools:
-  - `src/reviewgraph/config.py`
-  - `src/reviewgraph/models.py`
-  - `tests/test_config.py`
-  - `docs/decisions/0005-inert-reviewer-tool-metadata.md`
-- Boundary proof:
-  - `tests/test_contract_boundaries.py`
-  - no reviewer-context import or field/signature access to writer, approval/finalization, GitHub transports, payload builders, provider clients, repository handles, or process handles.
-- Passive memory and public payload proof:
-  - `tests/test_reviewer_context.py`
-  - `tests/test_render.py`
-  - `tests/test_cli.py` conversation-pattern tests
-- Non-live provider-bound proof:
-  - provider preview builder in `src/reviewgraph/reviewer_context.py`
-  - redaction and raw-provider/raw-trace defaults in focused tests
-- Durable docs:
-  - `docs/prds/0010-agent-context-and-adapter-boundaries.md`
-  - `docs/architecture/reviewer-config.md`
-  - `docs/architecture/state-graph.md`
-  - `docs/harnesses/harness-engineering.md`
-  - `docs/decisions/0005-inert-reviewer-tool-metadata.md`
-- Linear ordering proof:
-  - raw PRD 0010 Linear snapshot JSON derived from freshly fetched milestone/issue/comment/blocker data
-  - temporary PRD 0010 backlog export derived as a lossless projection of the raw snapshot for all non-canceled milestone issues
-  - `python scripts/check_docs.py --backlog-export <tmp-file>`
-  - recorded raw snapshot hash, export hash, canonical raw/export rows, exact Linear query/API/tool used, and explicit drift/equality result
+- Untrusted comments cannot select reviewers through `conversation_patterns`.
+- Untrusted comments cannot override prompts or reviewer capabilities.
+- Untrusted comments cannot appear as reviewer instructions or satisfy reviewer evidence requirements.
+- Later verdict, approval, payload-destination, and public-payload assertions remain delegated to `AUR-209`, `AUR-217`, `AUR-218`, and `AUR-243`; this harness must not implement or assert those flows beyond existing regressions.
+- Trusted comments can remain available as cited memory without bypassing quality classification.
+- Harness output shows which memory IDs were included in reviewer-visible context, their trust labels, their passive/actionable state, and their prompt data role.
 
 ## Implementation Plan
 
-1. Re-fetch PRD 0010 milestone, all non-canceled milestone issues, blockers, and comments from Linear.
-   - Record fetch timestamp, exact Linear query/API/tool used, milestone ID/name, issue IDs/URLs/statuses/`completedAt`, blocker IDs, comment IDs/timestamps, and current repository commit SHA.
-   - Fail closed if any non-gate PRD 0010 issue is not `Done`.
-   - Fail closed if `AUR-231` lacks a current evidence comment that maps every acceptance criterion to current files/tests/docs/validation.
-2. Write a temporary raw Linear snapshot JSON and derive a temporary canonical PRD 0010 backlog export from that raw snapshot only.
-   - Raw snapshot schema must include milestone ID/name, fetch timestamp, issue ID/key/title/URL/status/`completedAt`, blocker issue keys/IDs/statuses/milestone IDs, and evidence comment ID/timestamp/body hash for implementation issues.
-   - The export must include every non-canceled PRD 0010 issue from the raw snapshot; no hand-written issue omission or fabricated blocker relationship is allowed.
-   - The export must preserve exact current Linear blocker relationships.
-   - `AUR-255.blocked_by` must include `AUR-231` in Linear, not only in the derived export.
-   - Fail closed on any outside-milestone unresolved blocker unless it is canceled, duplicate, explicitly marked stale/not-applicable with a comment ID, or resolved before gate close.
-   - Record raw snapshot hash, export hash, canonical raw issue/blocker/comment rows, canonical export rows, and an explicit equality/drift check proving the export is a complete projection of the snapshot.
-3. Run the backlog export checker and keep the temporary raw snapshot/export until final refetch, subagent review, and `AUR-255` evidence posting are complete:
-   - `python scripts/check_docs.py --backlog-export <tmp-file>`
-   - Remove the temporary raw snapshot/export only after the final Linear evidence comment is posted.
-4. Run focused PRD 0010 harness:
-   - `python -m pytest tests/test_reviewer_context.py tests/test_config.py tests/test_contract_boundaries.py`
-5. Run routing/render/redaction regressions:
-   - `python -m pytest tests/test_cli.py tests/test_context_budget.py tests/test_memory.py tests/test_tracer_fixture_run.py tests/test_render.py tests/test_redaction.py`
-6. Run full validation:
-   - `python -m pytest`
-   - `python -m py_compile src/reviewgraph/*.py`
-   - `python scripts/check_docs.py`
-   - `git diff --check`
-7. Run a static no-live-side-effect audit:
-   - Update or verify AST/import boundary tests so `reviewgraph.reviewer_context` is included in transitive forbidden-module coverage.
-   - Enumerate final boundary modules from the codebase before auditing: context/package, prompt/provider-preview, config/model metadata, and any reviewer-adapter boundary module added by this milestone.
-   - Primary proof is deterministic AST/import/signature coverage for all enumerated boundary modules.
-   - Supplemental audit command: `rg -n "github|openai|anthropic|requests|httpx|urllib|socket|subprocess|writer|approval|finalization|payload|client|repository|repo_handle|process" <enumerated-boundary-modules> tests/test_contract_boundaries.py`
-   - acceptable grep matches are test assertions, inert metadata, and docstrings/comments that reinforce the boundary.
-   - source modules must not import live GitHub, live LLM, network, writer, approval, or finalization clients through the reviewer context/prompt/provider boundary.
-   - reviewer context/provider preview must remain non-live and client-free.
-   - dry-run writer-unreachable tests must still pass.
-8. Audit durable docs against PRD 0010 and AUR-231 evidence. Patch only durable gaps; if any file changes after validation, rerun relevant focused checks and full validation.
-   - Required doc coverage: context package fields, prompt instruction/data separation, passive memory rules, inert tools, provider-preview redaction defaults, and forbidden adapter dependencies.
-9. Use fresh subagent review of the raw Linear snapshot proof, backlog export equality proof, final validation results, side-effect audit, and docs. Iterate until material findings are gone.
-10. Commit any gate/doc/test proof changes.
-11. Re-run required validation after the final commit if commit contents changed the validated tree; then require `git status --short` to show a clean tree, except for retained ignored temporary proof artifacts.
-12. Re-fetch the full PRD 0010 milestone inventory, statuses, blockers, comments/evidence, and `AUR-255` status immediately before closing. Compare that snapshot with the validated export and fail closed on drift.
-13. Comment on `AUR-255` with final evidence including issue IDs, blocker IDs, evidence comment IDs, canonical raw/export rows, raw snapshot hash, export hash, exact Linear query/API/tool used, clean-tree status, current commit SHA, validation commands, docs audit, static audit, and subagent review result. Move `AUR-255` to `Done`.
+1. Re-read `untrusted-comment-injection` fixture, `tests/test_memory.py`, `tests/test_cli.py`, `tests/test_reviewer_context.py`, `src/reviewgraph/runner.py`, `src/reviewgraph/reviewer_context.py`, and the classifier evidence guards.
+2. Add `tests/test_prompt_injection_memory.py` as the focused AUR-233 harness.
+3. Prefer composing existing helpers over creating new product code. Add implementation only if the harness exposes a real contract gap.
+4. Add tests proving untrusted top-level comments and review bodies remain passive and cannot satisfy `conversation_patterns` reviewer selection.
+5. Add tests building `ReviewerPromptInput` from `ReviewerContextPackage` and asserting prompt-like untrusted memory bodies appear only in labeled `passive_data`, never in system/developer/task instruction fields.
+6. Add tests asserting reviewer capability policy is not changed by untrusted memory and remains no GitHub writes, no repository access, no live provider calls, and only explicit config capabilities.
+7. Add tests proving untrusted/passive memory cannot satisfy reviewer evidence requirements at the quality/classification boundary. Keep this as suppressed or localized fake-reviewer evidence, not candidate payload eligibility, approval, finalization, or posting behavior.
+8. Add tests proving a trusted actionable comment can be included as cited memory data and can select a reviewer through `conversation_patterns`, while still going through the normal fake-reviewer quality/rendering path.
+9. Add harness-output assertions against `ReviewerContextPackage.trace` and `ReviewerPromptInput.data` for included memory IDs, trust labels, passive/actionable state, prompt data roles, and truncation status. Do not require omitted-memory assertions unless the focused fixture actually omits memory.
+10. Update durable docs only if the new harness clarifies a durable rule not already represented in PRD 0010, reviewer config, state graph, or harness engineering docs.
+11. Validate focused and regression coverage, then use fresh subagents to review tests/docs/code until no material findings remain.
+12. Commit implementation and evidence, comment on `AUR-233`, move it to `Done`, then return to `AUR-255` gate planning.
 
 ## Out Of Scope
 
 - No live GitHub reads or writes.
 - No live LLM calls.
 - No reviewer tool execution.
-- No approval UI, finalization, or writer implementation.
+- No approval UI, finalization, writer, payload-destination, or public-posting implementation.
+- No general web-security scanner.
 - No `.ws/` recreation.
 
-## Validation Evidence To Collect
+## Validation Plan
 
-- Fresh Linear milestone inventory and issue status snapshot.
-- Raw snapshot hash, canonical raw snapshot rows, backlog export equality proof, backlog export check output, canonical export rows, and export hash.
-- `AUR-231` evidence comment ID/timestamp and acceptance-criteria mapping from current commit.
-- Focused PRD 0010 harness output.
-- Routing/render/redaction regression output.
+Focused issue harness:
+
+```bash
+python -m pytest tests/test_prompt_injection_memory.py tests/test_reviewer_context.py tests/test_memory.py tests/test_cli.py -q
+```
+
+Boundary and regression checks:
+
+```bash
+python -m pytest tests/test_contract_boundaries.py tests/test_render.py tests/test_redaction.py -q
+```
+
+Full validation before Linear completion:
+
+```bash
+python -m pytest -q
+python -m py_compile src/reviewgraph/*.py
+python scripts/check_docs.py
+git diff --check
+```
+
+## Completion Evidence To Collect
+
+- Focused harness output.
+- Boundary/regression output.
 - Full validation output.
-- Static no-live-side-effect audit output.
-- Clean `git status --short` bound to the validated commit SHA.
-- Subagent final no-findings result.
-- Confirmation that `.ws/` is absent and no temporary export remains.
+- Subagent review result with no material findings.
+- Mapping from each `AUR-233` acceptance criterion to tests/code/docs.
+- Confirmation `.ws/` is absent.
