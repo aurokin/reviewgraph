@@ -33,7 +33,7 @@ This is a milestone gate, not a new feature slice. The work should focus on comp
 - Each completed issue has a Linear evidence comment with commits, focused harnesses, regression validation, and review status.
 - No `.ws/` tree is present.
 - Current local branch is ahead of `origin/main`; do not push until this gate and documentation work are complete.
-- Durable docs have PRD 0005 content spread across README, findings contract, review quality, state graph, harness engineering, implementation plan, and ADR 0007. README still under-describes PRD 0005 as part of the current runnable slice.
+- Durable docs now surface PRD 0005 from README, findings contract, review quality, state graph, harness engineering, implementation plan, and ADR 0007.
 
 ## Decisions
 
