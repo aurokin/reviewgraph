@@ -164,8 +164,8 @@ Remaining graph work is intentionally staged in later PRDs: live GitHub reads, l
 **Objective:** Rank quality-classified findings and recommend local comment/request-changes/dry-run verdict.
 
 **Files:**
-- Create: `src/reviewgraph/policy.py`
-- Test: `tests/test_policy.py`
+- Create: `src/reviewgraph/verdict.py`
+- Test: `tests/test_verdict.py`
 
 **Verification:** low-confidence and ambiguous findings cannot request changes; local request-changes does not imply GitHub `REQUEST_CHANGES`.
 
