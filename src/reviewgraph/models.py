@@ -1069,8 +1069,8 @@ class ReviewConfig:
     context_budget: ContextBudget | None = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.agents, Mapping) or not self.agents:
-            raise ValueError("review config agents must be a non-empty mapping")
+        if not isinstance(self.agents, Mapping):
+            raise ValueError("review config agents must be a mapping")
         for name, agent in self.agents.items():
             if not isinstance(name, str) or not name:
                 raise ValueError("review config agent names must be non-empty strings")

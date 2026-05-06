@@ -8,7 +8,7 @@ version = "0.0.0"
 description = "LangGraph-powered PR review orchestration"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["PyYAML>=6"]
+dependencies = ["langgraph>=0.6,<1", "PyYAML>=6"]
 
 [project.scripts]
 reviewgraph = "reviewgraph.cli:main"

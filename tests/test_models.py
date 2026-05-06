@@ -972,7 +972,6 @@ def test_reviewer_agent_config_rejects_invalid_contract_values(field_name: str, 
 @pytest.mark.parametrize(
     "agents",
     [
-        {},
         {"": ReviewerAgentConfig("correctness", None, (ReviewStage.INITIAL_TRIAGE,), ReviewerTriggers(always=True))},
         {"correctness": object()},
         {"logic": ReviewerAgentConfig("correctness", None, (ReviewStage.INITIAL_TRIAGE,), ReviewerTriggers(always=True))},
@@ -983,6 +982,10 @@ def test_review_config_rejects_invalid_agent_mapping(
 ) -> None:
     with pytest.raises(ValueError):
         ReviewConfig(agents=agents)  # type: ignore[arg-type]
+
+
+def test_review_config_model_allows_empty_agents_for_empty_graph_initialization() -> None:
+    assert ReviewConfig(agents={}).agents == {}
 
 
 def _raw_finding() -> dict[str, object]:

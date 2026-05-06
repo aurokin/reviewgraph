@@ -13,16 +13,16 @@ Active issue plan for `AUR-194` / `RG-005: Run Empty Dry-Run Graph On Fixture`.
 
 ## Goal
 
-Add the smallest graph-facing fixture dry-run initialization slice. This issue should prove that a fixture PR can become explicit graph state with `run_mode=dry_run`, `post_enabled=false`, review target metadata, empty review output, and no writer reachability before reviewer selection or reviewer execution exists in the graph path.
+Add the smallest LangGraph-backed fixture dry-run initialization slice. This issue should prove that a fixture PR can become explicit `ReviewState` with `run_mode=dry_run`, `post_enabled=false`, review target metadata, empty review output, and no writer reachability before reviewer selection or reviewer execution exists in the graph path.
 
 This is a graph initialization slice, not the current full fixture reviewer dry run. The existing `run_fixture_dry_run` tracer must keep working unchanged.
 
 ## Acceptance Mapping
 
 - Fixture PR can run through graph initialization:
-  - Add a graph initializer that loads a fixture PR, builds conversation memory, resolves the review target, applies default context budget, and emits graph state/output without selecting or running reviewers.
+  - Add a minimal compiled LangGraph path that loads a fixture PR, builds conversation memory, resolves the review target, applies default context budget, and emits graph state/output without selecting or running reviewers.
 - `run_mode=dry_run` and `post_enabled=false` are explicit in state:
-  - Graph state/result exposes both fields directly.
+  - `ReviewState` and graph output expose both fields directly.
 - Graph emits review target metadata and empty review output:
   - Test target fields and empty findings/local notes/suggested replies/suppressed/clarifications/selected reviewers.
 - Writer branch is unreachable in dry-run mode:
@@ -30,9 +30,9 @@ This is a graph initialization slice, not the current full fixture reviewer dry 
 
 ## Implementation Plan
 
-1. Add `src/reviewgraph/graph.py` with a narrow empty dry-run initialization function.
+1. Add `src/reviewgraph/graph.py` with a narrow compiled LangGraph graph for empty dry-run initialization.
 2. Keep this slice independent from reviewer selection and raw fixture reviewer output. It may use existing fixture, memory, target, budget, render/posting models where they are already stable.
-3. Avoid changing `ReviewConfig` validation. Existing user configs should still require at least one reviewer; this issue proves an empty graph path, not a production empty reviewer config format.
+3. Use `ReviewState` as the durable graph state artifact. Allow the `ReviewConfig` model to represent an empty in-memory graph config while keeping the external config parser strict for user-supplied configs.
 4. Add `tests/test_graph_empty.py` focused on the acceptance criteria.
 5. Run the focused harness and the existing tracer/CLI regressions to prove the new graph slice does not disturb the current runnable behavior.
 6. Use subagent review before implementation and again after code changes.
