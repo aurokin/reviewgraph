@@ -21,7 +21,9 @@ The slice should make malformed reviewer output a controlled reviewer lifecycle,
 ## Acceptance Mapping
 
 - Invalid reviewer JSON triggers one repair attempt:
-  - Raw string outputs with invalid JSON and fatal repairable normalization failures should call a deterministic fake repair hook at most once.
+  - Raw string outputs with invalid JSON and selected-output fatal repairable normalization failures should call a deterministic fake repair hook at most once.
+  - Repair-triggering selected-output errors are limited to `invalid_json`, `invalid_output_type`, `invalid_items`, `invalid_item`, `invalid_type`, `unsupported_item_type`, `invalid_finding`, `invalid_local_note`, `invalid_clarification_request`, `invalid_suggested_reply`, `invalid_non_finding`, and `normalizer_exception`.
+  - `missing_output`, explicit reviewer failures, nonfatal graph-owned field rejections, duplicate/unselected raw-output envelopes, and fixture envelope errors do not trigger repair.
   - Explicit reviewer failures (`failure: true`) are already intentional failures and should not be repaired.
   - Missing fixture/reviewer/stage keys and malformed fixture `raw_reviewer_outputs` entries remain fixture input errors, not repairable reviewer output.
 - Successful repair proceeds to normalization:
@@ -31,10 +33,12 @@ The slice should make malformed reviewer output a controlled reviewer lifecycle,
 - Failed repair records an error:
   - Preserve the original raw output.
   - Record structured `NormalizationError` entries for the original failure and the failed repair result.
-  - Include enough machine-readable repair metadata in `ReviewerResult` or `normalization_errors` to prove a single repair attempt happened without parsing prose.
+  - Include enough machine-readable repair metadata in `ReviewerResult` JSON to prove a single repair attempt happened without parsing prose.
+  - Successful and failed repair paths should both expose the same audit shape: attempt count, status, original output, repaired output when present, and structured errors.
 - Required reviewer unrepaired failure blocks posting:
   - Required unrepaired failures should become graph-owned fail-closed dry-run state: failed reviewer result/status, durable graph error, `post_enabled=false`, no candidate payload, and local-only posting plan.
   - This changes only selected reviewer output repair exhaustion, not fixture structure errors.
+  - Required repair exhaustion should continue collecting other selected reviewer outputs and later stages the same way explicit required reviewer failure currently does, while still forcing the final run non-postable.
 - Optional reviewer unrepaired failure continues as partial review:
   - Optional unrepaired failures should record a failed reviewer result and local note.
   - Other reviewers and later stages should continue.
@@ -53,22 +57,29 @@ The slice should make malformed reviewer output a controlled reviewer lifecycle,
 1. Create `tests/test_reviewer_json_repair.py` first with focused failing cases:
    - invalid raw string triggers one deterministic repair attempt;
    - successful repair normalizes and classifies a postable finding through the existing runner path;
+   - successful repair preserves original malformed output and records repair audit metadata;
    - failed repair records structured original and repair errors;
    - required unrepaired failure blocks posting without invoking writer;
    - optional unrepaired failure continues and records partial-review local note;
    - explicit `failure: true` is not repaired.
 2. Add a small deterministic fake repair contract in `reviewers.py`.
-   - Prefer an adapter method such as `repair(...)` or a script object over hidden global state.
+   - Use a concrete script/envelope rather than hidden global state.
+   - Keep `raw_reviewer_outputs[]` entries as strict mappings with top-level `reviewer` and `stage` so existing duplicate, unselected, missing-key, and budget-deferred validation still runs.
+   - Preserve the legacy shape `{reviewer, stage, items}` as the direct reviewer output.
+   - Add a repair-script shape such as `{reviewer, stage, raw_output, repair_output}` where `raw_output` is the selected reviewer output to execute and `repair_output` is the deterministic one-shot repair candidate.
    - Keep the adapter boundary scoped to `ReviewerContextPackage`; do not introduce GitHub, LLM, provider, approval, or writer handles.
-   - Support fixture/fake definitions that can provide malformed raw output plus an optional repaired output.
+   - `raw_output` and `repair_output` may be strings, mappings, non-mappings, or absent in focused tests, but their enclosing fixture envelope remains a mapping with valid `reviewer` and `stage`.
 3. Add a single repair-attempt helper around `execute_fake_reviewer`.
    - Initial raw/normalization failures that are fatal and repairable should call the repair hook once.
    - Repaired mapping outputs should call `normalize_reviewer_output(...)`.
+   - Repaired valid JSON strings should be parsed to mappings before normalization; invalid repair strings should produce a repair-scoped `invalid_json` error.
    - Repaired strings/non-mappings/malformed mappings should fail with structured errors.
    - Nonfatal graph-owned field rejections should not trigger repair.
 4. Extend the existing error carrier only as much as needed.
    - Reuse `NormalizationError` when possible.
-   - If needed, add narrowly scoped fields so JSON output proves original-vs-repair error source and repair attempt count.
+   - Prefer a small `ReviewerRepairRecord`/equivalent on `ReviewerResult` over overloading error prose.
+   - If model shape changes, update `tests/test_models.py`.
+   - JSON output must prove original-vs-repair error source, repair attempt count, and success/failure status.
    - Avoid string-only repair state.
 5. Update runner failure handling for repair-exhausted selected reviewer output.
    - Required reviewer repair exhaustion should follow the same fail-closed dry-run shape as explicit required reviewer failure.
@@ -76,11 +87,13 @@ The slice should make malformed reviewer output a controlled reviewer lifecycle,
    - Fixture structure errors should still raise `RunnerError`.
 6. Update `fake_registry_from_fixture_outputs(...)` only if needed to express repaired fake outputs in packaged fixtures/tests.
    - Preserve existing simple mapping outputs.
+   - Do not allow top-level raw strings in `raw_reviewer_outputs[]`; use the strict envelope repair-script shape instead.
    - Do not change broad fixture behavior unless a focused repair fixture requires it.
 7. Update durable docs narrowly:
    - `docs/architecture/state-graph.md` for selected-output repair/failure semantics vs fixture input errors.
    - `docs/architecture/findings-contract.md` if `ReviewerResult` repair metadata or normalization-error shape changes.
    - `docs/harnesses/harness-engineering.md` only if the fake repair proof shape needs durable guidance.
+   - `docs/decisions/0007-required-reviewer-fail-closed-state.md` because this issue extends required-reviewer fail-closed behavior beyond explicit `failure: true` while preserving fixture-structure hard errors.
 8. Keep `AUR-204`, `AUR-202`, `AUR-203`, `AUR-205`, `AUR-206`, `AUR-226`, and `AUR-207` out of scope.
 
 ## Out Of Scope
@@ -98,6 +111,7 @@ The slice should make malformed reviewer output a controlled reviewer lifecycle,
 
 ```bash
 python -m pytest tests/test_reviewer_json_repair.py
+python -m pytest tests/test_models.py
 python -m pytest tests/test_findings.py tests/test_reviewers_fake.py
 python -m pytest tests/test_required_reviewer_failure.py tests/test_reviewer_runs.py
 python -m pytest tests/test_tracer_fixture_run.py tests/test_cli.py tests/test_render.py
