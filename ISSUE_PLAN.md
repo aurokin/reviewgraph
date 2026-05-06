@@ -33,24 +33,31 @@ This issue should produce boring dataclass/enum contracts, config validation cov
 1. Expand `src/reviewgraph/models.py` with schema-only enums/dataclasses:
    - `RunMode`, `ReviewStage`, `ReviewerRunStatusValue`, gate/finalization status enums, and narrow validation helpers.
    - `ReviewTarget` hash helper using canonical JSON, stable key order, and explicit `merge_base_sha=None` handling.
-   - `PostingTarget`, `ReadGap`, `RiskAssessment`, `ContextBudget`, `ReviewerRunKey`, `ReviewerResult`, raw reviewer output items, `ApprovalDecision`, `ActorPermissionGateResult`, `PayloadValidationResult`, `MarkerReconciliationResult`, `FinalizationStatus`, `GitHubReviewPayload`, `GitHubWriterResult`, `GraphError`, and `ReviewState`.
-   - Keep existing public classes compatible with PRD 0002 tests where possible.
+   - `PostingTarget`, `ReadGap`, `RiskAssessment`, `ContextBudget`, `ReviewConfig`, `ReviewerRunKey`, `ReviewerRunStatus`, `ReviewerResult`, raw reviewer output items, `ClarificationAnswer`, `ClarificationStatus`, `ApprovalDecision`, `ActorPermissionGateResult`, `PayloadValidationResult`, `MarkerReconciliationResult`, `FinalizationStatus`, `GitHubReviewPayload`, `GitHubWriterResult`, `GraphError`, and `ReviewState`.
+   - Keep `models.py` a pure leaf contract module. If `PostingPlan`/payload dataclasses are needed in state, move or alias pure contract types into `models.py`; keep builders and hashing in `posting.py`.
+   - Keep existing public classes compatible with PRD 0002 tests, but make them field-compatible with PRD 0003. `ClassifiedFinding` must have explicit graph-owned `blocking`, `priority`, `diff_anchor`, and `fingerprint` fields.
 2. Add graph-state parity tests in `tests/test_models.py`:
-   - Assert `ReviewState` exposes every field from `docs/architecture/state-graph.md` or a deliberate explicit defer list.
+   - Assert `ReviewState` exposes every field from `docs/architecture/state-graph.md`; no core PRD 0003 state fields may be deferred in this issue.
+   - Assert state fields use named contract types or typed collections where available, not plain `dict`, `Any`, or prose placeholders for core PRD 0003 contracts.
    - Assert default/fixture-safe construction keeps side-effect fields absent or disabled.
    - Assert invalid enum values and invalid priority values fail.
+   - Add field-level side-effect contract tests for approval binding, actor/permission gate, payload validation, marker reconciliation, finalization, and writer result metadata.
 3. Add reviewer-output negative tests:
-   - Raw reviewer findings must reject or quarantine graph-owned fields: `classification`, `blocking`, final `priority`, `fingerprint`, `github_destination`, or equivalent destination fields.
-   - Classified findings retain graph-owned priority, diff anchor, fingerprint, and optional blocking field.
+   - Raw reviewer findings must reject graph-owned fields: `classification`, `blocking`, final `priority`, `fingerprint`, `diff_anchor`, `target_commit_sha`, `github_destination`, `posting_plan`, `public_payload_eligible`, `review_event`, `approved`, `verdict`, and destination aliases.
+   - Tests must assert rejected graph-owned fields are absent from the raw model and serialization.
+   - Classified findings retain graph-owned priority, blocking, diff anchor, and fingerprint fields.
 4. Add target hashing tests:
    - Hashes are stable across repeated calls.
    - Hashes change when owner/repo, PR number, base SHA, head SHA, merge-base SHA, or diff basis changes.
-   - `merge_base_sha=None` is represented canonically.
+   - Include a golden expected hash from canonical UTF-8 JSON bytes with stable key order, `sha256:` prefix, integer PR number, explicit `merge_base_sha: null`, and separation from payload/body hash domains.
 5. Add config validation tests in `tests/test_config.py`:
    - Valid packaged JSON config and `examples/review_agents.example.yaml` validate.
-   - Unknown trigger fields, `triggers.stages`, unsupported capabilities, unsupported tools, invalid stages, duplicate stages, and `verdict_power: approve` fail clearly.
+   - `clarification_review` is a valid configured stage but remains transient and outside the normal default queue.
+   - Unknown top-level fields, unknown trigger fields, `triggers.stages`, unsupported capabilities, duplicate capabilities, unsupported tools, invalid stages, duplicate stages, invalid `risk_min`, non-bool `required`, non-bool `always`, non-positive integer gates, and `verdict_power: approve` fail clearly.
+   - Missing capabilities default to `["diff_context"]`.
    - If YAML support is needed for the example, add a lightweight config loader without pulling in live adapters.
 6. Add import-boundary tests in `tests/test_contract_boundaries.py`:
+   - `models.py` must stay on a strict import allowlist suitable for a leaf contract module.
    - Contract/config modules must not import GitHub writers, approval/finalization implementations, live LLM clients, `requests`, `openai`, `langgraph`, or GitHub transport modules.
    - Check transitive local imports where feasible by walking imported `reviewgraph.*` modules.
 7. Keep PRD 0002 regression behavior intact:
