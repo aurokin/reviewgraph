@@ -1,93 +1,139 @@
-# ISSUE PLAN: AUR-254 Complete PRD 0003 Contracts
+# ISSUE PLAN: AUR-231 Define Reviewer Context Package
 
-Active issue plan for `AUR-254` / `Complete PRD 0003: Contracts`.
+Active issue plan for `AUR-231` / `RG-042: Define Reviewer Context Package`.
 
 ## Linear Snapshot
 
-- Issue: `AUR-254`
+- Issue: `AUR-231`
 - Status: `In Progress`
-- Milestone: `PRD 0003: Contracts`
-- Gate requirement: close only after all implementation issues in this PRD milestone are complete.
-- Gate comment requires issue evidence, focused harnesses, full validation, backlog export validation, docs audit, fresh subagent review, and no live side effects.
-
-## Full Milestone Issue Set
-
-Fresh Linear audit expanded the gate scope beyond the reduced issue list:
-
-- `AUR-190` / `RG-001: Project Skeleton And Empty Test Harness`: `Done`; evidence comment present.
-- `AUR-191` / `RG-002: Validate Example Reviewer Config`: `Done`; verified as stale blocker; evidence comment present.
-- `AUR-230` / `RG-041: Seed Fixture Corpus Manifest`: `Done`; evidence comment present.
-- `AUR-312` / `RG-059: Define Core Contract Models And Schema Harness`: `Done`; evidence comment present.
-- `AUR-192` / `RG-003: Parse Fixture PR With Review Target`: `Done`; evidence comment present.
-- `AUR-193` / `RG-004: Build Trusted Conversation Memory`: `Done`; evidence comment present.
-- `AUR-237` / `RG-048: Add Core Redaction Service`: `Done`; evidence comment present.
-- `AUR-234` / `RG-045: Add Minimal Context Budget Before Fanout`: `Done`; verified as stale blocker; evidence comment present.
-- `AUR-211` / `RG-022: Enforce Context Budget And Truncation Notes`: `Done`; evidence comment present.
-- `AUR-254` / `Complete PRD 0003: Contracts`: active gate issue.
+- Milestone: `PRD 0010: Agent Context And Adapter Boundaries`
+- Linear acceptance:
+  - Context package includes review target, active stage, selected reviewer metadata, bounded diff context, trusted memory references, optional passive memory references, and truncation notes.
+  - Context package records reviewer config fields: model, tools, context policy, capabilities, and verdict power.
+  - Untrusted memory is labeled as passive data and cannot appear as instruction text.
+  - Context package traces include included memory IDs, trust labels, resolved status, and truncation status.
+  - MVP capabilities default to `diff_context`, with GitHub writes unavailable.
+- Linear comment context: PRD 0003 only delivered the minimal `AUR-211` context-budget stub. This issue owns the fuller context package contract, passive-memory instruction boundary, traces, capability policy, and adapter-boundary details.
 
 ## Goal
 
-Close PRD 0003 only if the repository and Linear state prove the full contract milestone is complete, ordered, reviewed, and side-effect safe.
+Define a reviewer context package contract that future fake/live reviewer adapters can consume without ambient GitHub, approval, writer, payload-builder, repository, process, or provider access.
 
-This issue should not add product behavior unless the gate audit finds a durable documentation or harness gap. If docs change, update only the narrowest durable docs needed by future implementation agents.
+This issue should not implement reviewer adapter execution, live LLM calls, GitHub reads/writes, repository checkout access, approval/finalization flows, or tool execution. It should produce typed contracts and deterministic harnesses that make those future boundaries hard to violate.
+
+## Design Decisions For This Slice
+
+- `tools` become inert validated metadata. A reviewer config may name future tool identifiers as conservative non-empty slugs, but this does not grant any capability, call budget, callable handle, provider tool schema, process access, repository access, GitHub access, provider access, or write behavior.
+- Capability policy is explicit and read-only. MVP supports `none` and `diff_context`; `github_write` is unavailable and must not be representable as a reviewer capability.
+- Prompt inputs must separate instruction fields from context data fields. Memory bodies may appear only as labeled data. Passive/untrusted memory bodies must never appear in system/developer instructions.
+- Passive memory may be included as explicitly labeled data or represented as excluded/passive metadata; either way, it cannot route reviewers, satisfy evidence, change verdicts, approve posting, or enter public payloads.
+- Provider-bound request preview is non-live. It should build the minimized/redacted context data a later LLM adapter would send, prove default raw-provider/raw-trace-off policy, and have no network/client dependency. It must not invent provider identity from reviewer config; provider is absent/unconfigured unless a future live caller explicitly supplies one.
 
 ## Prompt-To-Artifact Checklist
 
-- Package skeleton and default harness: `pyproject.toml`, `src/reviewgraph/__init__.py`, `python -m pytest`.
-- Reviewer config validation: `src/reviewgraph/config.py`, `examples/review_agents.example.yaml`, `tests/test_config.py`.
-- Fixture corpus manifest and schema-valid fixture PRs: `src/reviewgraph/fixtures_data/manifest.json`, packaged fixtures, `tests/test_fixture_manifest.py`, `tests/test_fixtures.py`.
-- Typed graph/state contracts: `src/reviewgraph/models.py`, `tests/test_models.py`, `tests/test_contract_boundaries.py`.
-- Review target and fixture PR contracts: `src/reviewgraph/fixtures.py`, `ReviewTarget` hashing tests, `tests/test_fixtures.py`.
-- Trusted/passive conversation memory: `src/reviewgraph/memory.py`, `tests/test_memory.py`.
-- Raw vs classified reviewer output and quality downgrade proof: `src/reviewgraph/models.py`, `src/reviewgraph/runner.py`, `tests/test_models.py`, `tests/test_cli.py`, `tests/test_tracer_fixture_run.py`.
-- Redaction service and status gates: `src/reviewgraph/redaction.py`, `src/reviewgraph/render.py`, `tests/test_redaction.py`, `tests/test_render.py`.
-- Context budget and reviewer context package contracts: `src/reviewgraph/context_budget.py`, `src/reviewgraph/reviewer_context.py`, `tests/test_context_budget.py`.
-- Durable docs: `docs/prds/0003-contracts.md`, `docs/architecture/state-graph.md`, `docs/architecture/findings-contract.md`, `docs/architecture/side-effects.md`, `docs/architecture/llm-data-handling.md`, `docs/architecture/review-quality.md`, `docs/architecture/reviewer-config.md`, `docs/harnesses/harness-engineering.md`, and `docs/implementation/README.md`.
-- Linear ordering proof: temporary PRD 0003 backlog export derived from freshly fetched Linear milestone, issue, relationship, and comment data, checked with `python scripts/check_docs.py --backlog-export <tmp-file>`.
+- Context package fields:
+  - `src/reviewgraph/reviewer_context.py`
+  - `tests/test_reviewer_context.py`
+- Reviewer config metadata:
+  - `ReviewerAgentConfig.tools` or equivalent inert metadata in `src/reviewgraph/models.py`
+  - `parse_reviewer_config` tool validation in `src/reviewgraph/config.py`
+  - `tests/test_config.py`
+- Prompt input contract:
+  - `ReviewerPromptInput` or equivalent in `src/reviewgraph/reviewer_context.py`
+  - golden tests proving instruction/data separation
+- Provider-bound preview contract:
+  - non-live provider request model/builder in `src/reviewgraph/reviewer_context.py` or a narrowly named prompt/context module
+  - tests proving minimized/redacted provider-bound payloads, redaction status, `raw_provider_submission_enabled=False`, `raw_trace_persistence_enabled=False`, and no invented provider identity by default
+- Trace contract:
+  - included memory IDs, trust labels, resolved status, passive/actionable state, truncation status, omitted-context IDs, config metadata, and capability policy
+- Boundary proof:
+  - `tests/test_contract_boundaries.py`
+  - AST import tests for context/prompt modules
+  - field/signature tests preventing writer/client/approval/payload/LLM handles from entering package or prompt builders
+- Routing regression:
+  - existing conversation-pattern tests in `tests/test_cli.py` or a focused extraction
+  - prove only trusted actionable memory selects reviewers
+- Passive-memory negative regressions:
+  - prove passive/untrusted memory copied into fake reviewer evidence cannot become postable/public text
+  - prove passive/untrusted memory cannot change the local verdict or create approval/posting inputs in this slice
+- Docs:
+  - update the narrowest durable docs for reviewer context package fields, inert tools metadata, prompt input separation, provider-bound preview, and boundary proof
 
 ## Implementation Plan
 
-1. Re-fetch all PRD 0003 issues, comments, and the milestone from Linear immediately before final validation.
-2. Generate a temporary canonical backlog export from fetched Linear data. Include all active PRD 0003 issues in dependency order. Filter `blocked_by` to blockers inside the exported PRD 0003 issue set and separately document any external blockers/status in the gate evidence.
-   - Fail closed if any external blocker is active or unresolved unless there is a recorded Linear rationale that the blocker is stale, canceled, or not applicable to this milestone gate.
-3. Run the backlog export checker and remove the temporary export afterward:
-   - `python scripts/check_docs.py --backlog-export <tmp-file>`
-4. Run focused gate harnesses:
-   - `python -m pytest tests/test_models.py tests/test_config.py tests/test_contract_boundaries.py tests/test_fixture_manifest.py tests/test_fixtures.py tests/test_memory.py tests/test_redaction.py tests/test_context_budget.py`
-5. Run side-effect guard harnesses:
-   - `python -m pytest tests/test_posting.py tests/test_render.py tests/test_cli.py tests/test_tracer_fixture_run.py`
-6. Run full validation:
-   - `python -m pytest`
-   - `python -m py_compile src/reviewgraph/*.py`
-   - `python scripts/check_docs.py`
-   - `git diff --check`
-7. Run a static no-live-side-effect audit over the repo:
-   - Search for live GitHub, LLM, approval, finalization, writer, network, and subprocess transport introductions.
-   - Confirm contract/config/context modules still avoid importing writer, approval/finalization implementations, live LLM clients, or transport modules.
-   - Confirm dry-run/no-writer behavior remains covered by tests.
-8. Audit durable docs against PRD 0003 and the full issue set. Patch only durable gaps.
-9. If any file changes after step 6, rerun the relevant focused checks plus the full final validation from step 6 after the last edit.
-10. Use fresh subagent review of the fetched Linear proof, backlog export, final validation results, side-effect audit, and any doc changes. Iterate until material findings are gone.
-11. If subagent review causes any file change, repeat steps 6, 9, and 10 until the final file state has green validation and no material review findings.
-12. Commit any gate/doc proof changes.
-13. Re-fetch the full PRD 0003 milestone membership, issue statuses, direct blocker relationships, comments/evidence, milestone metadata, and `AUR-254` blockers immediately before closing. Compare that snapshot with the validated export and fail closed on membership, status, evidence, blocker, or external-blocker-rationale drift.
-14. Comment on `AUR-254` with evidence including the final full-milestone snapshot timestamp/export hash, mark it `Done`, and update the milestone if Linear supports a completion status for milestones.
+1. Add focused failing tests in `tests/test_reviewer_context.py` for:
+   - package includes review target, active stage, selected reviewer, reviewer config metadata, bounded changed files, trusted actionable memory, passive memory/exclusion metadata, truncation notices, omitted context, and local budget notes.
+   - context trace serializes memory IDs, trust labels, resolved status, actionable/passive state, truncation notices, omitted context, capabilities, model, tools, context policy, required flag, and verdict power.
+   - prompt inputs keep instructions separate from data, and `untrusted-comment-injection` prompt-like bodies never appear in instruction fields.
+   - provider-bound preview redacts secret-like fixture text, records model/reviewer/target/context policy/truncation/redaction status, records provider as absent/unconfigured by default, minimizes to package data, and records both `raw_provider_submission_enabled=False` and `raw_trace_persistence_enabled=False`.
+2. Extend config/model tests:
+   - accept omitted `tools` as `()`.
+   - accept `tools: ["future-search"]` as inert metadata.
+   - reject empty, non-string, duplicate, URL-like, dotted module-like, shell-like, or otherwise non-slug tool identifiers.
+   - preserve existing rejection of unsupported capabilities such as `read_repo` and `github_write`.
+3. Implement minimal contract models/builders:
+   - add tool metadata to `ReviewerAgentConfig`.
+   - add capability policy/context metadata types if needed.
+   - expand `ReviewerContextPackage`.
+   - add prompt-input and provider-preview builders with redaction/minimization.
+4. Update `build_reviewer_context_package` so callers pass only the selected `ReviewerAgentConfig` or a narrowed immutable selected-reviewer metadata object. Do not allow the full config map into package, prompt, or provider-preview builders.
+5. Add boundary tests:
+   - context/prompt modules do not import forbidden side-effect roots/modules.
+   - package/prompt/provider-preview dataclass fields and builder signatures do not accept side-effect handles such as writer, client, transport, approval, payload, finalization, github, llm, openai, request/session, process, or subprocess objects.
+6. Add passive-memory negative tests without implementing approval/writer flows:
+   - a fake reviewer output that copies an untrusted/passive memory body into finding evidence is suppressed or downgraded before any candidate payload.
+   - local verdict remains driven by graph-classified findings, not passive memory.
+   - no approval/final payload input is created from passive memory.
+7. Add inert-tools negative tests:
+   - tool names appear only as metadata in package/trace/prompt data.
+   - tool names do not become provider tool schemas, callable handles, added capabilities, live-call budget, or adapter dependencies.
+8. Keep routing behavior unchanged, but run and preserve evidence for trusted/untrusted conversation-pattern coverage.
+9. Update docs only where the contract becomes durable:
+   - `docs/architecture/reviewer-config.md`
+   - `docs/architecture/state-graph.md`
+   - `docs/harnesses/harness-engineering.md`
+   - add an ADR only if the inert tools or prompt-input shape needs a durable tradeoff record beyond existing docs.
+10. Validate with focused and regression commands.
 
 ## Out Of Scope
 
-- No live GitHub reads or writes.
-- No live LLM calls.
-- No approval UI.
-- No finalization/writer implementation.
-- No `.ws/` or temporary planning tree recreation.
+- Live LLM adapter implementation.
+- Network/provider calls.
+- GitHub read or write adapters.
+- Reviewer tool execution.
+- Repository checkout or test execution by reviewers.
+- Approval, finalization, or writer behavior.
+- Automatic replies to PR comments.
 
-## Validation Evidence To Collect
+## Validation Plan
 
-- Full Linear issue status/comment snapshot.
-- Backlog export check output and note about any external blockers filtered out.
+Focused issue harness:
+
+```bash
+python -m pytest tests/test_reviewer_context.py tests/test_config.py tests/test_contract_boundaries.py
+```
+
+Routing and tracer regressions:
+
+```bash
+python -m pytest tests/test_cli.py tests/test_context_budget.py tests/test_memory.py tests/test_tracer_fixture_run.py tests/test_render.py tests/test_redaction.py
+```
+
+Full validation before completion:
+
+```bash
+python -m pytest
+python -m py_compile src/reviewgraph/*.py
+python scripts/check_docs.py
+git diff --check
+```
+
+## Completion Evidence To Collect
+
+- Acceptance-criteria mapping from Linear to tests/code/docs.
 - Focused harness output.
-- Side-effect guard harness output.
+- Routing/tracer regression output.
 - Full validation output.
-- Static no-live-side-effect audit output.
-- Subagent final no-findings result.
-- Confirmation that `.ws/` is absent and no temporary export remains in the repo.
+- Static boundary audit output.
+- Subagent code/docs review with no material findings.
+- Linear evidence comment before moving `AUR-231` to Done.
