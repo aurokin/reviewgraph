@@ -31,11 +31,14 @@ Extract reviewer-output normalization into a focused module and harness so the g
   - Normalize `suppressed` and `non_finding` items into `SuppressedReviewerOutput` with stable IDs and reasons.
 - Malformed reviewer JSON is passed to repair/error policy instead of silently coerced:
   - Define a focused `NormalizationError` or equivalent parse-error artifact with stable code/message, source run key, and `repairable` metadata for `AUR-227`.
+  - Carry structured normalization errors on `NormalizationResult` and into `ReviewerResult` or another graph-owned state field; do not leave the durable contract as string-only `ReviewerResult.errors`.
   - Mapping/list/schema errors become failed normalization results or reviewer-result errors. They do not become postable findings, local notes, or general quality suppressions.
+  - Normalization is atomic per reviewer output: if one item is malformed, valid sibling items from that same output must not leak into postable findings, local notes, suggested replies, clarification requests, or suppressed outputs.
   - Preserve existing raw-string and missing-output failure behavior until `AUR-227`; this issue establishes the error contract that repair will consume, not the repair attempt itself.
   - Do not implement the one-repair attempt; that belongs to `AUR-227`.
 - Reviewer graph-owned fields are not stripped silently:
   - If a finding attempts `priority`, `fingerprint`, `blocking`, `classification`, `destination`, `verdict`, or other graph-owned fields, preserve the attempted field names as an explicit rejected artifact or parse error. Prefer a rejected normalization artifact over immediate quality suppression so `AUR-202` still owns postability/classification policy.
+  - For current dry-run compatibility, rejected graph-owned attempts may be rendered through the existing suppressed-output shape and reason. The key requirement is that normalization records the rejection explicitly instead of silently stripping reviewer-owned control fields.
 
 ## Current Baseline
 
@@ -48,19 +51,21 @@ Extract reviewer-output normalization into a focused module and harness so the g
 
 1. Create `src/reviewgraph/findings.py` with a small, pure normalization API, shaped like `normalize_reviewer_output(raw_output, run_key) -> NormalizationResult`. Keep it independent of GitHub transports, posting, rendering, approval, live LLM, and side-effect modules.
 2. Define a result shape for successful normalized artifacts plus parse/rejection artifacts. Prefer existing models where possible; add the minimum additional typed metadata needed for source stage/run-key/status/resume-target without broad model churn.
-3. Move item parsing logic from `reviewers.py` into `findings.py`, but change graph-owned field handling so it is explicit and testable instead of silently stripped.
-4. Update `reviewers.py` to call the new normalizer for valid mapping outputs and to preserve existing behavior for raw strings/missing output until `AUR-227`.
-5. Update `runner.py` so valid normalized artifacts are the source of truth, but feed them through the existing safety and quality policy checks instead of appending them directly to classified output. Preserve omitted-context checks, changed-line assertions, evidence-provenance checks, current postability policy, graph-owned priority/fingerprint generation, and existing broad CLI behavior.
-6. Add `tests/test_findings.py` covering valid findings, local notes, clarification requests with graph-derived source metadata, spoofed reviewer-owned clarification control fields, suggested replies, non-findings, malformed items, and graph-owned field attempts.
-7. Add a regression proving runner output is driven by normalized valid artifacts rather than a second raw-output parse, without bypassing the legacy safety/quality checks.
-8. Run the focused harness and broad regressions that exercise fake reviewer and dry-run output paths.
+3. Add a durable structured normalization-error carrier to `NormalizationResult` and carry it into `ReviewerResult` or graph-owned state so `AUR-227` can inspect code/message/run-key/repairability without parsing string errors.
+4. Move item parsing logic from `reviewers.py` into `findings.py`, but change graph-owned field handling so it is explicit and testable instead of silently stripped.
+5. Update `reviewers.py` to call the new normalizer for valid mapping outputs and to preserve existing behavior for raw strings/missing output until `AUR-227`.
+6. Update `runner.py` so valid normalized artifacts are the source of truth, but feed them through the existing safety and quality policy checks instead of appending them directly to classified output. Preserve omitted-context checks, current changed-line assertions, evidence-provenance checks, current postability policy, graph-owned priority/fingerprint generation, and existing broad CLI behavior.
+7. Add `tests/test_findings.py` covering valid findings, local notes, clarification requests with graph-derived source metadata, spoofed reviewer-owned clarification control fields, suggested replies, non-findings, malformed items, graph-owned field attempts, structured normalization errors, and mixed valid/malformed outputs.
+8. Add a regression proving runner output is driven by normalized valid artifacts rather than a second raw-output parse, without bypassing the legacy safety/quality checks.
+9. Add a regression proving failed normalization is atomic: valid sibling items from the same malformed reviewer output do not leak into postable/local/classified output.
+10. Run the focused harness and broad regressions that exercise fake reviewer and dry-run output paths.
 
 ## Out Of Scope
 
 - No quality/postability classification extraction.
 - No malformed JSON repair attempt; `AUR-227` owns repair.
 - No conversion of parse errors into postable/suppressed quality decisions beyond what is needed to preserve current failed-reviewer behavior.
-- No diff-anchor validation; `AUR-204` owns anchors and changed-line location validation.
+- No diff-anchor validation or future inline-location mapping; `AUR-204` owns anchors and improved location validation. `AUR-201` still preserves the current changed-line assertion used by the existing policy path.
 - No clarification answer ingestion or resume; `AUR-206` owns resume.
 - No verdict policy extraction; `AUR-207` owns verdict.
 - No live GitHub, live LLM, approval, finalization, or writer behavior.
