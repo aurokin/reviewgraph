@@ -12,6 +12,16 @@ Historical execution artifact for this milestone. Linear remains the durable sou
   - `AUR-238` / `RG-049: Add Fixture Tracer Bullet Golden Run`
 - Gate issue: `AUR-258` / `Complete PRD 0002: MVP Tracer Bullet`
 
+## Current gate snapshot
+
+As of the AUR-258 gate plan:
+
+- `AUR-208`, `AUR-209`, `AUR-210`, and `AUR-238` are `Done` in Linear.
+- `AUR-258` is `In Progress` and owns the final PRD 0002 completion audit.
+- The local repository is clean on `main` at `208b0d5`.
+- The public GitHub repository exists at `https://github.com/aurokin/reviewgraph`; no further push should happen for gate work until the active goal's push condition is satisfied.
+- Known documentation drift to audit: `README.md` still describes the repo as scaffold-only even though PRD 0002 has added a runnable fixture dry-run CLI and tracer harness.
+
 ## Milestone intent
 
 PRD 0002 should produce the first runnable ReviewGraph demo without live GitHub reads, live LLM calls, approval, or writers. The tracer path is:
@@ -85,3 +95,16 @@ The milestone is complete when:
 - Tests prove the run includes selected reviewer reasons, memory IDs, target metadata, classified findings, local notes, clarification requests, suppressed counts, local verdict, posting plan, redacted markdown/JSON/payload previews, and writer-sentinel-unreachable dry-run behavior.
 - Default local validation passes, including `python scripts/check_docs.py`, a Linear-derived backlog export check with `python scripts/check_docs.py --backlog-export ...`, the pytest suite added by this milestone, and `git diff --check`.
 - The milestone-end documentation audit finds no missing durable PRD 0002 guidance for future implementation agents.
+
+## Gate audit plan
+
+`AUR-258` closes this milestone by proving the plan above against current artifacts:
+
+1. Re-fetch PRD 0002 milestone state and linked issue comments from Linear.
+2. Build a prompt-to-artifact checklist from PRD 0002, `AUR-208`, `AUR-209`, `AUR-210`, and `AUR-238`.
+3. Map each checklist item to concrete evidence in tests, code, docs, or Linear comments.
+4. Run focused tracer/CLI/render/posting harnesses plus full default validation.
+5. Validate a temporary Linear-derived PRD 0002 backlog export with `scripts/check_docs.py --backlog-export`.
+6. Update the narrowest durable docs for PRD 0002 drift, especially any agent-facing startup docs that still say there is no implementation.
+7. Use fresh subagents for plan review and final code/docs review.
+8. Move `AUR-258` to `Done` only after the audit has no missing, incomplete, weakly verified, or uncovered requirement.
