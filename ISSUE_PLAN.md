@@ -1,58 +1,58 @@
-# ISSUE PLAN: AUR-197 Select Path Diff And Label Reviewers
+# ISSUE PLAN: AUR-235 Classify Change Risk And Size
 
-Active issue plan for `AUR-197` / `RG-008: Select Path Diff And Label Reviewers`.
+Active issue plan for `AUR-235` / `RG-046: Classify Change Risk And Size`.
 
 ## Linear Snapshot
 
-- Issue: `AUR-197`
+- Issue: `AUR-235`
 - Status at plan time: `In Progress`
 - Milestone: `PRD 0004: Graph Orchestration`
 - Comments at plan time: none
-- Linear description: select reviewers based on changed paths, diff patterns, and labels against fixture PRs.
+- Linear description: add deterministic change risk and size classification so risk/size reviewer gates do not hide their own policy.
 
 ## Goal
 
-Harden the active-stage routing boundary so path, diff pattern, and label selectors are covered by focused tests and persist the same selected-reviewer state shape introduced by `AUR-196`.
-
-The code extracted during `AUR-196` already contains the selector mechanics. This issue should prove that behavior at the routing boundary without adding risk/size gates, conversation-pattern routing, fake reviewer execution, retries, or posting behavior.
+Introduce a deterministic graph-owned risk/size classifier that produces `RiskAssessment` from fixture PR context. The classifier should record facts and threshold decisions separately from reviewer selection so `AUR-198` can later route on those facts without hiding policy inside prompts or trigger strings.
 
 ## Acceptance Mapping
 
-- Path triggers match changed files:
-  - Add a routing test where a path selector matches a changed fixture file path.
-- Diff pattern triggers match patch snippets case-insensitively:
-  - Add a routing test where a mixed-case regex or literal pattern matches the casefolded patch text.
-- Label triggers match PR labels:
-  - Add a routing test where label matching is case-insensitive against fixture labels.
-- Every matched selector appears in trigger reasons:
-  - Assert all matching path, diff, and label selector reasons are present on the selected reviewer.
-- Non-matching reviewers are not selected:
-  - Add tests for non-matching path, diff, and label selectors returning no reviewers and leaving state unchanged.
+- Risk assessment records changed file count, changed line count, touched surfaces, labels, and diff pattern hints:
+  - Add `src/reviewgraph/risk.py` with `classify_change_risk(pr, thresholds=...) -> RiskAssessment`.
+  - Add tests asserting exact fields for mixed-risk and oversized fixtures.
+- Risk levels are deterministic for fixture PRs:
+  - Assert stable low/medium/high outcomes for representative fixture PRs.
+- Size thresholds are configurable and traceable:
+  - Add default thresholds and a configurable `RiskThresholds` input; assert changed threshold values alter traceable reasons.
+- Risk and size decisions are recorded separately from reviewer selection reasons:
+  - Store the assessment in `ReviewState.risk` during dry-run setup without changing `SelectedReviewer.reasons`.
+  - Assert JSON output has a `risk` envelope separate from `selected_reviewers`.
+- Mixed-risk and oversized fixtures have golden expected risk output:
+  - Add golden assertions in `tests/test_risk.py` for `mixed-risk-change` and `oversized-change`.
 
 ## Implementation Plan
 
-1. Add focused `tests/test_routing.py` coverage for path, diff pattern, and label selector behavior.
-2. Adjust `src/reviewgraph/routing.py` only if the new tests expose a mismatch with the existing contract.
-3. Keep selector reasons explicit and stable: `{stage} triggers.paths=...`, `{stage} triggers.diff_patterns=...`, `{stage} triggers.labels=...`.
-4. Preserve existing state persistence behavior: selected reviewers, reviewer run keys, and selected run status are recorded only for runnable selected reviewers.
-5. Run the routing harness plus tracer/CLI regressions and full validation.
-6. Use subagent review before implementation and after code changes.
-7. Commit the plan before implementation, then commit implementation separately.
+1. Add `src/reviewgraph/risk.py` with deterministic surface detection, diff hint extraction, threshold defaults, and risk-level selection.
+2. Keep the classifier pure: input PR context plus thresholds, output `RiskAssessment`; no reviewer config, no routing decisions, no side effects.
+3. Wire `run_fixture_dry_run` and the empty graph state initializer to populate `ReviewState.risk` using default thresholds.
+4. Add a stable JSON representation of risk assessment to the dry-run envelope for harness evidence.
+5. Add `tests/test_risk.py` for golden mixed-risk and oversized fixture outputs, configurable thresholds, and separation from reviewer selection reasons.
+6. Run risk, routing, tracer/CLI, and full validation.
+7. Use subagent review before implementation and after code changes.
+8. Commit the plan before implementation, then commit implementation separately.
 
 ## Out Of Scope
 
-- No new risk or size classification.
-- No risk/size gate selector acceptance.
-- No conversation-pattern routing acceptance.
-- No retry/exhaustion policy.
+- No risk or size reviewer selection gates.
+- No changes to `ReviewerTriggers.risk_min`, `max_files`, `changed_lines_min`, or `changed_files_min` semantics.
 - No fake reviewer adapter.
+- No retry/exhaustion policy.
 - No live GitHub, live LLM, approval, finalization, or writer behavior.
 
 ## Validation Plan
 
 ```bash
-python -m pytest tests/test_routing.py -q
-python -m pytest tests/test_tracer_fixture_run.py tests/test_cli.py -q
+python -m pytest tests/test_risk.py -q
+python -m pytest tests/test_routing.py tests/test_tracer_fixture_run.py tests/test_cli.py -q
 python -m pytest -q
 python -m py_compile src/reviewgraph/*.py
 python scripts/check_docs.py
@@ -61,7 +61,7 @@ git diff --check
 
 ## Completion Evidence To Collect
 
-- Focused routing harness output.
+- Focused risk harness output.
 - Regression/full validation output.
 - Subagent review result with no material findings.
 - Commit SHA for the implementation.
