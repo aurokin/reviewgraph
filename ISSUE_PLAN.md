@@ -1,62 +1,67 @@
-# ISSUE PLAN: AUR-225 Block Posting On Required Reviewer Failure
+# ISSUE PLAN: AUR-256 Complete PRD 0004 Graph Orchestration
 
-Active issue plan for `AUR-225` / `RG-036: Block Posting On Required Reviewer Failure`.
+Active issue plan for `AUR-256` / `Complete PRD 0004: Graph Orchestration`.
 
 ## Linear Snapshot
 
-- Issue: `AUR-225`
-- Status at plan time: `In Progress`
+- Issue: `AUR-256`
+- Status at plan time: `Backlog`
 - Milestone: `PRD 0004: Graph Orchestration`
 - Comments at plan time: none
-- Linear description: make required reviewer failure record a fail-closed review state while preserving local dry-run output.
+- Linear description: milestone gate; close only after all implementation issues in this PRD milestone are complete.
 
 ## Goal
 
-Convert required reviewer failures from process-aborting exceptions into graph-owned failure state. The default dry-run should still render useful local output, expose the failed reviewer and error, force `post_enabled=false`, and make the generated posting plan local-only. Optional reviewer failures should keep the current non-terminal local-note behavior.
+Close the PRD 0004 milestone only after proving the implementation issues are complete in Linear, validating the code and harnesses, and refactoring durable documentation so a future agent can understand the graph orchestration contracts without reading temporary planning artifacts.
 
-This issue should not implement the later live writer, approval gate, or posting-plan finalization policy. It should create the state/output contract those later slices must respect.
+This is a gate and documentation slice, not a new behavior implementation slice.
 
 ## Acceptance Mapping
 
-- Required reviewer failure records an error:
-  - Record a durable `GraphError` in graph-owned state/output for explicit required fake reviewer failure output, and preserve the failed `ReviewerResult` plus failed `ReviewerRunStatus`.
-- Required reviewer failure sets `post_enabled=false`:
-  - Thread a required-failure flag/error collection from reviewer execution into final dry-run synthesis and force posting eligibility off even if other postable findings exist.
-- Dry-run output includes the failure:
-  - Add JSON output assertions for `errors`, failed `reviewer_results`, failed `reviewer_run_status`, and local-only posting destinations. Add markdown coverage only if the current renderer has an appropriate section; otherwise keep the failure visible in machine output without inventing renderer copy.
-- Later posting-plan construction must treat required reviewer failure as non-writable state:
-  - Build the posting plan normally for classified output, then convert it to local-only when required failures exist. Candidate GitHub payload must be absent/disabled through the existing `post_enabled=false` path.
-- Optional reviewers remain unaffected:
-  - Keep optional reviewer failures as failed `ReviewerResult` errors plus local notes, not top-level `GraphError`s, and preserve post eligibility when an optional failure is the only failure and postable findings remain.
+- All PRD 0004 implementation issues are done:
+  - Re-fetch the milestone issue inventory and confirm `AUR-194`, `AUR-195`, `AUR-196`, `AUR-197`, `AUR-235`, `AUR-198`, `AUR-199`, `AUR-200`, and `AUR-225` are `Done` with evidence comments.
+- Focused and full validation passes:
+  - Run the PRD 0004 focused harness families plus full suite, docs check, py-compile, and diff check.
+- Documentation is refactored for progressive disclosure and harness engineering:
+  - Update the narrow durable docs that an implementation agent needs: README current slice, architecture/state graph, harness strategy, implementation plan, and any decision docs needed for PRD 0004.
+- Temporary planning artifacts are handled:
+  - Keep `MILESTONE_PLAN.md` and `ISSUE_PLAN.md` as active committed history for the gate. Do not recreate `.ws/` or add Linear export artifacts.
+- Fresh subagent review reports no material issues:
+  - Use fresh subagents for gate/docs review until findings are none or non-issues.
+- Linear is updated:
+  - Move `AUR-256` through an appropriate in-progress/review/done flow with an evidence comment.
 
 ## Implementation Plan
 
-1. Add `tests/test_required_reviewer_failure.py` with a fixture mutation helper that can force required/optional fake reviewer failures and mixed success/failure runs.
-2. Extend the stage-run result with durable `GraphError` values so `run_fixture_dry_run` can decide posting eligibility after all local output is collected and expose the fail-closed state in top-level JSON.
-3. Replace required reviewer failure raises in `_run_review_stages` with fail-closed state recording where the fixture and selection are otherwise valid. Keep malformed fixture/config errors as exceptions.
-4. Ensure required failures mark reviewer status `failed`, append the failed `ReviewerResult`, record a `GraphError`, and continue enough to produce dry-run JSON/markdown. Stop consuming later stages only if continuing would hide or duplicate raw output accounting.
-5. Force `post_enabled=false` when required reviewer errors exist, and pass the posting plan through the existing local-only conversion.
-6. Include top-level dry-run JSON `errors` with stable codes so the fail-closed reason is machine-visible. Keep redaction on the existing envelope path.
-7. Preserve optional failure behavior and add regression coverage proving optional failure alone does not disable posting when a postable finding exists.
-8. Run the focused harness, tracer/CLI regressions, fake reviewer tests, full suite, docs check, py-compile, and diff check.
-9. Use a fresh subagent for plan review before code changes and fresh code-review subagents until no material issues remain.
-10. Commit the plan before implementation, then commit implementation and any review-fix batches separately.
+1. Move `AUR-256` to `In Progress`.
+2. Re-fetch PRD 0004 milestone state, linked issues, and issue comments for evidence.
+3. Commit this gate plan before making documentation changes.
+4. Use a fresh subagent to review the gate plan.
+5. Inspect current docs and code to identify durable PRD 0004 details that should be in progressive disclosure docs rather than only in plans or Linear comments.
+6. Refactor documentation in small commits:
+   - README current runnable slice/status.
+   - `docs/architecture/state-graph.md` for implemented PRD 0004 graph contracts and remaining future graph work.
+   - `docs/harnesses/harness-engineering.md` for implemented PRD 0004 harness families and fail-closed proof.
+   - `docs/plans/implementation-plan.md` for sequencing narrative updates, without copying Linear as the backlog.
+   - Add or update ADRs only for durable orchestration decisions that future implementers need.
+7. Run docs and code validation.
+8. Use fresh subagents to review code/tests/docs/Linear evidence until no material findings remain.
+9. Add a Linear evidence comment and move `AUR-256` to `Done`.
+10. Push only after the milestone gate and documentation refactor are complete.
 
 ## Out Of Scope
 
-- No live GitHub writer or approval flow.
-- No retry/repair changes beyond preserving existing retry status semantics.
-- No new quality classifier rules.
-- No conversion of malformed fixture or raw-output schema errors into successful dry-runs; existing CLI parse/error contracts remain nonzero.
-- No renderer redesign unless required for machine-visible failure evidence.
-- No broad graph refactor.
+- No new runtime behavior unless validation exposes a blocker.
+- No live GitHub, live LLM, approval, finalization, or writer features.
+- No copy of the full Linear backlog into durable docs.
+- No `.ws/` or temporary export artifacts.
 
 ## Validation Plan
 
 ```bash
-python -m pytest tests/test_required_reviewer_failure.py -q
-python -m pytest tests/test_reviewers_fake.py tests/test_reviewer_runs.py -q
-python -m pytest tests/test_tracer_fixture_run.py tests/test_cli.py -q
+python -m pytest tests/test_graph_empty.py tests/test_stage_cursor.py tests/test_routing.py tests/test_routing_risk.py tests/test_risk.py tests/test_reviewer_runs.py tests/test_reviewers_fake.py tests/test_required_reviewer_failure.py -q
+python -m pytest tests/test_tracer_fixture_run.py tests/test_cli.py tests/test_render.py -q
+python -m pytest tests/test_reviewer_context.py tests/test_contract_boundaries.py tests/test_context_budget.py tests/test_prompt_injection_memory.py -q
 python -m pytest -q
 python -m py_compile src/reviewgraph/*.py
 python scripts/check_docs.py
@@ -65,8 +70,8 @@ git diff --check
 
 ## Completion Evidence To Collect
 
-- Focused required-failure harness output.
-- Regression/full validation output.
-- Subagent review result with no material findings.
-- Commit SHA for the implementation.
-- Linear evidence comment mapping each acceptance criterion to code/tests.
+- Linear milestone inventory proving implementation issues are `Done`.
+- Focused, regression, full, docs, py-compile, and diff-check outputs.
+- Documentation refactor commit SHAs.
+- Fresh subagent review results with no material findings.
+- Final Linear evidence comment for `AUR-256`.

@@ -6,7 +6,7 @@ Active execution artifact for this milestone. Linear remains the durable source 
 
 - Milestone: `PRD 0004: Graph Orchestration`
 - Milestone ID: `c8f7e842-fed0-477c-8877-e9dfbcaf27f4`
-- Current status: `AUR-194` complete; `AUR-195` complete; `AUR-196` complete; `AUR-197` complete; `AUR-235` complete; `AUR-198` complete; `AUR-199` complete; `AUR-200` complete; `AUR-225` active.
+- Current status: `AUR-194` complete; `AUR-195` complete; `AUR-196` complete; `AUR-197` complete; `AUR-235` complete; `AUR-198` complete; `AUR-199` complete; `AUR-200` complete; `AUR-225` complete; `AUR-256` active.
 - Implementation issues:
   - `AUR-194` / `RG-005: Run Empty Dry-Run Graph On Fixture` / `Done`
   - `AUR-195` / `RG-006: Implement Stage Cursor Invariants` / `Done`
@@ -16,9 +16,9 @@ Active execution artifact for this milestone. Linear remains the durable source 
   - `AUR-198` / `RG-009: Select Gate-Based Risk And Size Reviewers` / `Done`
   - `AUR-199` / `RG-010: Track Reviewer Run Status And Retries` / `Done`
   - `AUR-200` / `RG-011: Run Deterministic Fake Reviewers` / `Done`
-  - `AUR-225` / `RG-036: Block Posting On Required Reviewer Failure` / `In Progress`
+  - `AUR-225` / `RG-036: Block Posting On Required Reviewer Failure` / `Done`
 - Gate issue:
-  - `AUR-256` / `Complete PRD 0004: Graph Orchestration`
+  - `AUR-256` / `Complete PRD 0004: Graph Orchestration` / `In Progress`
 
 ## Milestone Intent
 
