@@ -70,8 +70,8 @@ This issue should not add product behavior unless the gate audit finds a durable
 10. Use fresh subagent review of the fetched Linear proof, backlog export, final validation results, side-effect audit, and any doc changes. Iterate until material findings are gone.
 11. If subagent review causes any file change, repeat steps 6, 9, and 10 until the final file state has green validation and no material review findings.
 12. Commit any gate/doc proof changes.
-13. Re-fetch the PRD 0003 milestone and all `AUR-254` blockers immediately before closing; fail closed if any blocker status or external-blocker rationale drifted.
-14. Comment on `AUR-254` with evidence, mark it `Done`, and update the milestone if Linear supports a completion status for milestones.
+13. Re-fetch the full PRD 0003 milestone membership, issue statuses, direct blocker relationships, comments/evidence, milestone metadata, and `AUR-254` blockers immediately before closing. Compare that snapshot with the validated export and fail closed on membership, status, evidence, blocker, or external-blocker-rationale drift.
+14. Comment on `AUR-254` with evidence including the final full-milestone snapshot timestamp/export hash, mark it `Done`, and update the milestone if Linear supports a completion status for milestones.
 
 ## Out Of Scope
 
