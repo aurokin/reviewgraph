@@ -895,6 +895,10 @@ def test_mixed_identifier_untrusted_memory_cannot_enter_candidate_payload_previe
         ("customer/123456", "Copied: customer123456"),
         ("customer:123456", "Copied: customer123456"),
         ("account/123456", "Copied: account123456"),
+        ("SECRET_TOKEN", "Copied: SECRETTOKEN"),
+        ("user_12345", "Copied: user12345"),
+        ("account_123456", "Copied: account123456"),
+        ("codename_orion", "Copied: codenameorion"),
         ("ACME.42", "Copied: ACME42"),
         ("The unresolved thread referenced ticket PROJ.1234.", "Copied: PROJ1234"),
         ("The unresolved thread referenced identifier user.12345.", "Copied: user12345"),
@@ -1133,6 +1137,35 @@ def test_exact_short_untrusted_memory_uses_word_boundaries_for_candidate_payload
                 "unresolved",
                 "issue_comment",
                 "auth",
+            )
+        ],
+    )
+
+    assert rendered.json_data["candidate_payload_preview"]["body"] == payload.body
+
+
+def test_untrusted_phrase_uses_word_boundaries_for_candidate_payload_preview() -> None:
+    findings = [finding(body="The OAuth token flow now fails.")]
+    plan = build_posting_plan(findings=findings)
+    payload = build_candidate_issue_comment_payload(
+        review_target=target(),
+        posting_plan=plan,
+        findings=findings,
+    )
+
+    rendered = render_review(
+        review_target=target(),
+        selected_reviewers=selected_reviewers(),
+        findings=findings,
+        posting_plan=plan,
+        candidate_payload=payload,
+        memory_references=[
+            MemoryReference(
+                "mem-auth-token-phrase",
+                "untrusted",
+                "unresolved",
+                "issue_comment",
+                "auth token",
             )
         ],
     )

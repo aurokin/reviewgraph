@@ -423,45 +423,15 @@ def _has_testing_finding_shape(text: str) -> bool:
         ("coverage" in text or "test" in text)
         and any(term in text for term in ("missing", "no ", "without", "lacks", "not covered", "does not cover"))
     )
-    changed_behavior = any(
-        term in text
-        for term in (
-            "changed behavior",
-            "changed line",
-            "new branch",
-            "introduced",
-            "now ",
-            "regress",
-            "returns",
-            "raises",
-            "fails",
-            "skips",
-            "drops",
-            "leaks",
-            "breaks",
-        )
-    )
-    scenario = bool(re.search(r"\b(when|if|after|before|with|without|on)\b", text))
     return (
         missing_coverage
-        and changed_behavior
-        and scenario
+        and _has_concrete_finding_shape(text)
         and not _has_vague_testing_scenario(text)
-        and _has_specific_testing_target(text)
     )
 
 
 def _has_vague_testing_scenario(text: str) -> bool:
     return any(phrase in text for phrase in ("for this change", "when this changes", "this changes", "changed behavior"))
-
-
-def _has_specific_testing_target(text: str) -> bool:
-    return bool(
-        re.search(
-            r"\b(cache|auth|login|redirect|filename|visibility|session|token|header|api|request|response|caller|input|path)\b",
-            text,
-        )
-    )
 
 
 def _is_generic_speculative_advice(text: str) -> bool:
@@ -477,39 +447,24 @@ def _is_generic_speculative_advice(text: str) -> bool:
 
 
 def _has_non_testing_finding_shape(text: str) -> bool:
-    changed_behavior = any(
-        term in text
-        for term in (
-            "accepts",
-            "allows",
-            "breaks",
-            "bypasses",
-            "cannot",
-            "corrupts",
-            "drops",
-            "exposes",
-            "fails",
-            "hangs",
-            "ignores",
-            "includes",
-            "leaks",
-            "misroutes",
-            "omits",
-            "permits",
-            "raises",
-            "regress",
-            "rejects",
-            "returns",
-            "skips",
-            "stale",
-            "unauthorized",
-            "open redirect",
-            "path traversal",
-            "unauthenticated access",
+    return _has_concrete_finding_shape(text)
+
+
+def _has_concrete_finding_shape(text: str) -> bool:
+    scenario = bool(re.search(r"\b(when|if|after|before|with|without|for|on|in|to|via|from|while|where)\b", text))
+    concrete_subject = bool(
+        re.search(
+            r"\b(invoice|rounding|retry|charge|customer|timezone|due date|cache|auth|login|redirect|filename|visibility|session|token|header|api|request|response|caller|input|path|parser|helper|format|endpoint|email|user|client|admin|migration)\b",
+            text,
         )
     )
-    scenario = bool(re.search(r"\b(when|if|after|before|with|without|for|on|in|to|via|from|while|where)\b", text))
-    return changed_behavior and scenario
+    changed_or_harm = bool(
+        re.search(
+            r"\b(changed line|new branch|introduced|now|regress|overcharg|double charg|shifts?|breaks?|corrupts?|drops?|exposes?|fails?|hangs?|ignores?|includes?|leaks?|misroutes?|omits?|raises?|rejects?|returns?|skips?|allows?|accepts?|bypasses?|permits?|cannot|stale|unauthorized|open redirect|path traversal|unauthenticated access)\b",
+            text,
+        )
+    )
+    return scenario and concrete_subject and changed_or_harm
 
 
 def _require_fields(data: dict[str, Any], fields: tuple[str, ...], label: str) -> None:

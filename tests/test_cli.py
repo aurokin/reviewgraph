@@ -624,6 +624,55 @@ def test_concrete_missing_regression_coverage_raw_finding_is_postable(tmp_path: 
     assert review["candidate_payload_preview"]["item_fingerprints"] == ["fixture-cache-coverage"]
 
 
+@pytest.mark.parametrize(
+    ("title", "body", "evidence"),
+    (
+        (
+            "Missing invoice rounding regression coverage",
+            "The new branch overcharges users when invoice rounding crosses a cent, but there is no regression test for invoice rounding.",
+            "Changed line 12 overcharges users when invoice rounding crosses a cent.",
+        ),
+        (
+            "Missing retry double-charge coverage",
+            "The new branch double-charges customers when retry runs after a timeout, but retry coverage does not cover that customer path.",
+            "Changed line 12 double-charges customers when retry runs after a timeout.",
+        ),
+    ),
+)
+def test_concrete_missing_regression_coverage_general_domain_is_postable(
+    tmp_path: Path,
+    title: str,
+    body: str,
+    evidence: str,
+) -> None:
+    fixture_path = tmp_path / "concrete-general-coverage.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["items"] = [
+        {
+            "type": "postable_finding",
+            "id": "finding-general-coverage",
+            "title": title,
+            "body": body,
+            "evidence": evidence,
+            "path": "src/cache.py",
+            "line": 12,
+            "priority": 2,
+            "severity": "warning",
+            "confidence": "high",
+            "fingerprint": "fixture-general-coverage",
+        }
+    ]
+    fixture_path.write_text(json.dumps(fixture))
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path))
+    review = result.json_data["review"]
+
+    assert result.json_data["local_verdict"] == "comment"
+    assert result.json_data["post_enabled"] is True
+    assert review["classified_output"]["postable_findings"][0]["id"] == "finding-general-coverage"
+    assert review["classified_output"]["suppressed"] == []
+
+
 def test_correctness_finding_that_mentions_test_mode_is_postable(tmp_path: Path) -> None:
     fixture_path = tmp_path / "test-mode-bypass.json"
     fixture = _basic_fixture()
@@ -784,6 +833,11 @@ def test_concrete_security_finding_with_normal_review_language_is_postable(tmp_p
             "Cache responses omit cache control",
             "The new branch omits the Cache-Control header when the cache misses, so clients cannot cache responses.",
             "Changed line 12 omits the Cache-Control header when the cache misses.",
+        ),
+        (
+            "Timezone shifts due date",
+            "The new branch shifts the due date when the timezone changes.",
+            "Changed line 12 shifts the due date when the timezone changes.",
         ),
     ),
 )
