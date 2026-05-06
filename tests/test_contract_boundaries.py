@@ -74,6 +74,52 @@ def test_reviewer_context_module_does_not_import_side_effect_boundaries() -> Non
     assert not (imports & forbidden_reviewgraph_modules)
 
 
+def test_github_fake_read_adapter_does_not_import_live_or_write_boundaries() -> None:
+    forbidden_roots = {
+        "github",
+        "httpx",
+        "openai",
+        "requests",
+        "socket",
+        "subprocess",
+    }
+    forbidden_reviewgraph_modules = {
+        "reviewgraph.approval",
+        "reviewgraph.finalization",
+        "reviewgraph.llm",
+        "reviewgraph.posting",
+        "reviewgraph.writer",
+    }
+
+    imports = _imports(Path("src/reviewgraph/github.py"))
+
+    assert not ({name.split(".", 1)[0] for name in imports} & forbidden_roots)
+    assert not (imports & forbidden_reviewgraph_modules)
+
+
+def test_github_fake_read_adapter_does_not_transitively_load_live_or_write_boundaries() -> None:
+    script = """
+import json
+import sys
+import reviewgraph.github
+forbidden = sorted(
+    name for name in sys.modules
+    if name.startswith(('reviewgraph.approval', 'reviewgraph.finalization', 'reviewgraph.llm', 'reviewgraph.posting', 'reviewgraph.writer'))
+    or name.split('.', 1)[0] in {'github', 'httpx', 'openai', 'requests', 'socket', 'subprocess'}
+)
+print(json.dumps(forbidden))
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        capture_output=True,
+        text=True,
+        env={"PYTHONPATH": "src"},
+    )
+
+    assert json.loads(completed.stdout) == []
+
+
 def test_reviewer_context_shapes_do_not_accept_side_effect_handles() -> None:
     import reviewgraph.reviewer_context as reviewer_context
 

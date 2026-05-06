@@ -23,6 +23,30 @@ Required context:
 - patch/diff snippets
 - PR comments, review summaries, review comments, and thread resolution state when available
 
+## Fake read adapter contract
+
+The first GitHub read implementation is fake and read-only. It accepts `owner/repo#number` and `https://github.com/{owner}/{repo}/pull/{number}` references, then returns a `GitHubReadResult` envelope from deterministic transport data. GitHub Enterprise hosts are deferred until a host policy exists.
+
+`GitHubReadResult` is not a writer payload and is not approval input. It carries:
+
+- parsed PR ref
+- `ReviewTarget`
+- `PullRequestContext`
+- PR metadata extras that the current `PullRequestContext` does not store: PR author, base ref, and head ref
+- changed-line metadata for anchoring, represented by objects with `path`, `changed_ranges`, `status`, `previous_path`, `patch_status`, and `contains_line()`
+- anchor-unavailable metadata for unsupported or unavailable patches
+- resource coverage, initially `metadata_files_only`
+- required read gaps for comments, reviews, review comments, and thread state while scope is `metadata_files_only`
+- thread-state availability with an explicit reason
+- optional actor/permission snapshot for later approval work
+- redaction status for serializable/display surfaces
+
+The metadata/files-only result is adapter-contract-ready, not graph-complete PRD 0006 context. Comments, reviews, review comments, and thread state remain `not_fetched_in_scope` until later slices fetch and paginate them. A later graph integration must not treat metadata/files-only coverage as a complete review context.
+
+Patch-derived changed ranges are deliberately conservative target hunk ranges for the diff-anchor protocol. Parseable modified, added, and renamed files with target-side additions can produce anchor metadata; renamed files preserve `previous_path`. Deleted files, binary or unavailable patches, oversized patches, unsupported hunk headers, malformed hunk body lines, target-empty hunks, or hunks without target-side additions produce anchor-unavailable metadata instead of false changed ranges.
+
+Raw typed PR context may exist in memory for graph use. Anything serialized for logs, traces, markdown, JSON, errors, or local notes must use the adapter's redacted serialization/status path.
+
 Conversation data is review memory, not an instruction stream. The graph should preserve it as structured context and let reviewer agents cite it when relevant.
 
 The review target should be explicit and stable in state. A run should know whether it reviewed a PR head SHA against a base SHA, a merge-base diff, or a custom fixture target; rendered output should include that target so findings can be interpreted against the right version of the diff.

@@ -111,6 +111,13 @@ Golden tests should protect product behavior without freezing incidental wording
 - Prompt-injection memory harnesses must prove passive memory is labeled metadata, not instructions or prompt body text, and that reviewer findings citing PR memory use explicit trusted-memory IDs rather than copied passive comment text.
 - Unknown required thread state fails closed for actionability until a later policy proves otherwise.
 
+### GitHub Read
+
+- Fake GitHub read is the first adapter proof. `tests/test_github_fake_read.py` covers `owner/repo#number` and GitHub PR URL parsing, metadata/files reads, `ReviewTarget` parity, metadata extras, resource coverage, required read gaps for out-of-scope resources, changed-line metadata, anchor-unavailable metadata, redacted result serialization, and read-only transport calls.
+- The metadata/files-only result is not graph-complete context. Comments, reviews, review comments, and thread state must be fetched and paginated by later PRD 0006 harnesses before GitHub PR dry-run can be treated as complete.
+- Changed-line metadata from GitHub reads must satisfy the same structural protocol used by quality and diff-anchor code. Parseable modified, added, and renamed patches expose target hunk ranges when the hunk has target-side additions; unsupported or unavailable patches degrade explicitly instead of producing false ranges.
+- GitHub-read boundary tests must prove the fake read adapter does not directly or transitively import live network clients, approval/finalization code, posting payload builders, or writer modules.
+
 ### Reviewer Boundaries
 
 - Reviewer adapters receive only `ReviewerContextPackage` and return structured `ReviewerResult`.
