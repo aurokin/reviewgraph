@@ -40,6 +40,7 @@ from reviewgraph.posting import (
     build_candidate_issue_comment_payload,
     build_posting_plan,
 )
+from reviewgraph.redaction import redact_data
 from reviewgraph.render import RenderedReview, render_review
 
 
@@ -870,10 +871,4 @@ def _optional_int(data: dict[str, Any], field: str, label: str) -> int | None:
 
 
 def _redact_json_value(value: Any) -> Any:
-    if isinstance(value, str):
-        return redact_for_error(value)
-    if isinstance(value, list):
-        return [_redact_json_value(item) for item in value]
-    if isinstance(value, dict):
-        return {key: _redact_json_value(item) for key, item in value.items()}
-    return value
+    return redact_data(value).data

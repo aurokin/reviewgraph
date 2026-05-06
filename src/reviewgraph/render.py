@@ -26,7 +26,7 @@ from reviewgraph.posting import (
     full_body_hash,
     visible_body_hash,
 )
-from reviewgraph.redaction import redact_text
+from reviewgraph.redaction import redact_text, require_passing_redaction_status
 
 
 class RenderError(ValueError):
@@ -246,6 +246,7 @@ def _candidate_payload_preview(
 ) -> dict[str, Any] | None:
     if candidate_payload is None:
         return None
+    require_passing_redaction_status(candidate_payload.redaction_status, surface="candidate_payload")
     _validate_candidate_payload_binding(
         candidate_payload=candidate_payload,
         review_target=review_target,

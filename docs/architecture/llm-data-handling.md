@@ -30,6 +30,8 @@ Logs, traces, errors, rendered markdown, candidate GitHub payloads, final GitHub
 
 Live LLM request payloads must also pass through the context minimization and redaction policy before provider submission. If a future mode permits raw provider submission, it must require an explicit human opt-in and the run must record that raw submission was enabled. The default behavior is redacted provider-bound context.
 
+Raw provider submission and raw trace persistence are separate decisions. A run may not infer one from the other. Redaction proof for future adapters should record the surface, redaction status, and distinct `raw_provider_submission_enabled` and `raw_trace_persistence_enabled` flags.
+
 Required redaction targets include:
 
 - API keys and bearer tokens

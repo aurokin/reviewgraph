@@ -130,6 +130,7 @@ Golden tests should protect product behavior without freezing incidental wording
 - Output distinguishes postable findings, local notes, clarification requests, suggested replies, and non-findings.
 - Secret-like content is redacted before rendering, tracing, payload validation, live LLM requests, or posting.
 - Candidate and final public payloads cannot contain untrusted comment bodies in MVP.
+- Harnesses that model provider-bound payloads or trace/log persistence must record redaction status plus separate raw-provider and raw-trace opt-in flags.
 
 ### Side Effects
 
