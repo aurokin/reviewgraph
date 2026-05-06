@@ -64,6 +64,43 @@ This issue should produce boring dataclass/enum contracts, config validation cov
    - Existing CLI/tracer/render/posting tests should keep passing.
    - Do not rename or remove current packaged fixture IDs.
 
+## State Type Mapping
+
+`ReviewState` parity must use these concrete `models.py` contracts, not `dict` or `Any` placeholders:
+
+- `review_target`: `ReviewTarget`
+- `posting_target`: `PostingTarget | None`
+- `pr`: `PullRequestContext | None`
+- `conversation_memory`: `PRConversationMemory | None`
+- `read_gaps`: `list[ReadGap]`
+- `config`: `ReviewConfig`
+- `risk`: `RiskAssessment | None`
+- `selected_reviewers`: `list[SelectedReviewer]`
+- `reviewer_run_keys`: `list[ReviewerRunKey]`
+- `reviewer_run_status`: `dict[str, ReviewerRunStatus]`
+- `reviewer_results`: `list[ReviewerResult]`
+- `context_budget`: `ContextBudget`
+- `redaction_status`: `RedactionStatus | None`
+- `findings` and `ranked_findings`: `list[Finding]`, with `Finding` as a deliberate `ClassifiedFinding` contract alias or equivalent canonical model.
+- `local_notes`: `list[LocalNote]`
+- `suggested_replies`: `list[SuggestedReply]`
+- `suppressed_outputs`: `list[SuppressedReviewerOutput]`, with compatibility for the existing `SuppressedOutput` name if retained.
+- `clarification_requests`: `list[ClarificationRequest]`
+- `clarifications`: `list[ClarificationAnswer]`
+- `clarification_status`: `dict[str, ClarificationStatus]`
+- `local_verdict`: `ReviewVerdict | None`
+- `posting_plan`: pure `PostingPlan | None`
+- `actor_permission_gate`: `ActorPermissionGateResult | None`
+- `payload_validation`: `PayloadValidationResult | None`
+- `marker_reconciliation`: `MarkerReconciliationResult | None`
+- `finalization_status`: `FinalizationStatus | None`
+- `candidate_github_payload` and `final_github_payload`: `GitHubReviewPayload | None`
+- `approval`: `ApprovalDecision | None`
+- `writer_result`: `GitHubWriterResult | None`
+- `errors`: `list[GraphError]`
+
+Minimal schema-only `PullRequestContext` and `PRConversationMemory` models are in scope for this issue. Live reads and memory-building behavior remain out of scope.
+
 ## Out Of Scope
 
 - No fixture corpus expansion; `AUR-192` owns that.
