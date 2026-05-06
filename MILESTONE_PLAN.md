@@ -21,6 +21,7 @@ As of the AUR-258 gate plan:
 - The local repository is clean on `main` at `208b0d5`.
 - The public GitHub repository exists at `https://github.com/aurokin/reviewgraph`; no further push should happen for gate work until the active goal's push condition is satisfied.
 - Known documentation drift to audit: `README.md` still describes the repo as scaffold-only even though PRD 0002 has added a runnable fixture dry-run CLI and tracer harness.
+- Known coverage gap to audit: PRD 0002 asks for normal, specialized-review, and ambiguous logic fixture graph tests. The current committed tracer baseline proves the normal `basic-pr` path; AUR-258 must add the missing fixture graph proofs or record an explicit durable deferment with follow-up Linear scope before closing.
 
 ## Milestone intent
 
@@ -103,8 +104,9 @@ The milestone is complete when:
 1. Re-fetch PRD 0002 milestone state and linked issue comments from Linear.
 2. Build a prompt-to-artifact checklist from PRD 0002, `AUR-208`, `AUR-209`, `AUR-210`, and `AUR-238`.
 3. Map each checklist item to concrete evidence in tests, code, docs, or Linear comments.
-4. Run focused tracer/CLI/render/posting harnesses plus full default validation.
-5. Validate a temporary Linear-derived PRD 0002 backlog export with `scripts/check_docs.py --backlog-export`.
-6. Update the narrowest durable docs for PRD 0002 drift, especially any agent-facing startup docs that still say there is no implementation.
-7. Use fresh subagents for plan review and final code/docs review.
-8. Move `AUR-258` to `Done` only after the audit has no missing, incomplete, weakly verified, or uncovered requirement.
+4. Prove or explicitly defer each PRD 0002 testing decision, including specialized-review and ambiguous logic fixture graph tests.
+5. Run focused tracer/CLI/render/posting harnesses plus full default validation.
+6. Validate a temporary Linear-derived PRD 0002 backlog export with `scripts/check_docs.py --backlog-export` and preserve summary evidence in a Linear comment.
+7. Update the narrowest durable docs for PRD 0002 drift, especially any agent-facing startup docs that still say there is no implementation or blur current fixture-only runtime with future LangGraph/live behavior.
+8. Use fresh subagents for plan review and final code/docs review.
+9. Move `AUR-258` to `Done` only after the audit has no missing, incomplete, weakly verified, or uncovered requirement.

@@ -49,16 +49,18 @@ Historical execution artifact for this issue. Linear remains the durable source 
 2. The gate does not hide missing milestone requirements behind issue status alone.
    - Evidence target: run a prompt-to-artifact audit mapping PRD 0002 and issue acceptance criteria to concrete tests, code, comments, and docs.
 3. The tracer demo remains runnable and credential-free.
-   - Evidence target: `python -m pytest tests/test_tracer_fixture_run.py`, `python -m pytest tests/test_cli.py`, and a direct CLI smoke command.
+   - Evidence target: `python -m pytest tests/test_tracer_fixture_run.py`, `python -m pytest tests/test_cli.py`, and a direct checkout CLI smoke command using `PYTHONPATH=src`.
 4. The dry-run side-effect boundary remains proven.
-   - Evidence target: tracer and CLI tests assert zero writer calls; code read confirms fixture dry-run does not call the writer sentinel.
-5. The Linear-derived milestone queue is validated.
+   - Evidence target: tracer and CLI tests assert zero writer calls; import/boundary checks prove CLI/runner/render/posting do not reach writer, transport, approval, finalization, or live API paths.
+5. PRD 0002's own fixture-graph testing decisions are either fully covered or explicitly deferred with durable rationale and follow-up Linear scope.
+   - Evidence target: normal fixture graph test, specialized-review fixture graph test, and ambiguous logic fixture graph test exist before Done, unless a documented deferment is added to the narrowest durable doc and explicit follow-up issue(s) are linked. Default path is to add the missing specialized and ambiguous fixture proofs in this gate because they are part of the PRD 0002 contract.
+6. The Linear-derived milestone queue is validated.
    - Evidence target: create a temporary canonical backlog export for PRD 0002 and run `python scripts/check_docs.py --backlog-export <export>`.
-6. Default repo validation passes.
+7. Default repo validation passes.
    - Evidence target: `python -m pytest`, `python -m py_compile src/reviewgraph/*.py`, `python scripts/check_docs.py`, and `git diff --check`.
-7. Milestone-end documentation audit is performed.
-   - Evidence target: compare PRD 0002 implementation against docs and update the narrowest durable docs where agents would otherwise be misled. Known candidate: `README.md` still says "Scaffold-only. No runtime implementation exists yet."
-8. Fresh subagents review the plan before gate work and review the final gate/doc changes before Done.
+8. Milestone-end documentation audit is performed.
+   - Evidence target: compare PRD 0002 implementation against docs and update the narrowest durable docs where agents would otherwise be misled. Known candidates: `README.md` still says "Scaffold-only"; `README.md`/operations wording should make fixture-only CLI status clear while keeping full LangGraph/live behavior future-scoped.
+9. Fresh subagents review the plan before gate work and review the final gate/doc changes before Done.
    - Evidence target: plan-review and code/docs-review subagent summaries show no material blockers.
 
 ## Scope
@@ -76,6 +78,7 @@ Likely files:
 - Modify: `MILESTONE_PLAN.md`
 - Likely modify: `README.md`
 - Possibly modify: `docs/README.md`, `docs/harnesses/harness-engineering.md`, or `docs/plans/implementation-plan.md` only if the audit finds durable agent-facing drift.
+- Possibly modify: fixture data, `src/reviewgraph/runner.py`, and tracer/CLI tests if specialized-review and ambiguous-logic fixture graph proofs are missing.
 
 ## Completion audit checklist
 
@@ -94,6 +97,8 @@ Likely files:
   - `tests/test_render.py` proves markdown/JSON rendering, redaction, candidate payload binding, and untrusted-memory exclusion.
   - `tests/test_cli.py` proves fixture dry-run CLI behavior, deterministic JSON, redacted errors/output, invalid inputs, and writer non-reachability.
   - `tests/test_tracer_fixture_run.py` proves the full PRD 0002 fixture tracer path and selected golden fields.
+  - PRD 0002 testing-decision matrix proves normal, specialized-review, and ambiguous logic fixture graph tests, or records a durable deferment plus follow-up Linear issue links.
+  - Dry-run boundary evidence includes import-purity or equivalent checks for writer/transport/approval/finalization/live-API isolation, not only a zero-call sentinel.
 - Commands:
   - `python -m pytest tests/test_tracer_fixture_run.py`
   - `python -m pytest tests/test_cli.py tests/test_render.py tests/test_posting.py`
@@ -102,7 +107,7 @@ Likely files:
   - `python scripts/check_docs.py`
   - `python scripts/check_docs.py --backlog-export <temporary-prd0002-export.json>`
   - `git diff --check`
-  - CLI smoke: `python -m reviewgraph.cli --fixture-pr basic-pr --print-markdown`
+  - CLI smoke: `PYTHONPATH=src python -m reviewgraph.cli --fixture-pr basic-pr --print-markdown`
 - Documentation:
   - user-facing README does not falsely claim there is no runtime implementation.
   - docs keep Linear as executable backlog and avoid copying the full issue tree.
@@ -113,21 +118,26 @@ Likely files:
 1. Commit this AUR-258 plan plus current milestone-plan update.
 2. Run fresh plan-review subagents against `ISSUE_PLAN.md`, `MILESTONE_PLAN.md`, Linear PRD 0002 data, and the current code/docs.
 3. Resolve any material plan-review findings and commit those changes.
-4. Build a temporary canonical PRD 0002 backlog export from Linear issue data and validate it with `scripts/check_docs.py`.
-5. Run focused and full harness validation.
-6. Perform the milestone documentation audit:
+4. Add or verify PRD 0002 fixture graph coverage:
+   - normal PR fixture path;
+   - specialized-review fixture path with staged reviewer-selection evidence;
+   - ambiguous logic fixture path with clarification-request and no-post/no-writer evidence.
+5. Strengthen dry-run boundary evidence if the audit finds only zero-call sentinel checks.
+6. Build a temporary canonical PRD 0002 backlog export from Linear issue data and validate it with `scripts/check_docs.py`; record the export timestamp, ordered issue IDs, dependency edge count, skipped canceled count, and checker digest in the Linear gate comment.
+7. Run focused and full harness validation.
+8. Perform the milestone documentation audit:
    - update `README.md` repository status and quick demo instructions;
-   - update only additional durable docs if the audit finds agent-facing drift.
-7. Commit documentation/audit changes.
-8. Move `AUR-258` to `In Review` and add a Linear comment with the audit and validation evidence.
-9. Run fresh code/docs-review subagents until no material findings remain.
-10. Commit after each review-fix cycle.
-11. Move `AUR-258` to `Done` only after validation and fresh review are clean.
-12. Continue to the next Linear milestone; do not push again until the active goal's push gate is satisfied.
+   - update operations or PRD wording only if it is misleading about current fixture-only runtime versus future LangGraph/live behavior.
+9. Commit documentation/audit changes.
+10. Move `AUR-258` to `In Review` and add a Linear comment with the audit and validation evidence.
+11. Run fresh code/docs-review subagents until no material findings remain.
+12. Commit after each review-fix cycle.
+13. Move `AUR-258` to `Done` only after validation and fresh review are clean.
+14. Continue to the next Linear milestone; do not push again until the active goal's push gate is satisfied.
 
 ## Out of scope
 
-- No new runtime behavior unless the audit exposes a direct gate blocker.
+- No new runtime behavior unless the audit exposes a direct gate blocker. Missing specialized/ambiguous PRD 0002 fixture graph proof is a direct gate blocker unless explicitly deferred in durable docs and Linear.
 - No live GitHub read, live LLM, approval, or writer implementation.
 - No broad docs rewrite for later PRDs; the full progressive-disclosure docs refactor happens after each milestone is complete, and this gate should update only PRD 0002 drift.
 - No mirroring the full Linear backlog into repository docs.
