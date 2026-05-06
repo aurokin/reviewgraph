@@ -6,7 +6,7 @@ Active execution artifact for this milestone. Linear remains the durable source 
 
 - Milestone: `PRD 0010: Agent Context And Adapter Boundaries`
 - Milestone ID: `0dea2cdd-6433-41d8-b1a4-b91b07d3acc9`
-- Current status: `AUR-231` complete; `AUR-233` active; `AUR-255` gate blocked until all PRD 0010 implementation issues are complete.
+- Current status: `AUR-231` complete; `AUR-233` complete; `AUR-255` gate active.
 - Implementation issues:
   - `AUR-231` / `RG-042: Define Reviewer Context Package`
   - `AUR-233` / `RG-044: Add Prompt Injection Memory Harness`
@@ -14,8 +14,8 @@ Active execution artifact for this milestone. Linear remains the durable source 
   - `AUR-255` / `Complete PRD 0010: Agent Context And Adapter Boundaries`
 - Current issue statuses:
   - `AUR-231`: `Done`
-  - `AUR-233`: `In Progress`
-  - `AUR-255`: `Backlog`
+  - `AUR-233`: `Done`
+  - `AUR-255`: `In Progress`
 - Known Linear note: `AUR-231` has a PRD 0003 gate comment explaining that the existing `src/reviewgraph/reviewer_context.py` is only the minimal context-budget stub from `AUR-211`. The fuller reviewer context package contract remains valid PRD 0010 work.
 
 ## Milestone Intent
@@ -47,8 +47,8 @@ The milestone also hardens the design point that PR conversation memory is share
    - truncation notices and omitted-context markers
    - capability policy that defaults to `diff_context` and disallows GitHub writes
    - trace data showing included memory IDs, trust labels, resolved status, passive/actionable state, and truncation status
-   - prompt-input structure with separate instruction fields and data fields; memory bodies may appear only in labeled data fields, and passive/untrusted memory bodies must never appear in instruction fields
-   - golden prompt-input tests using `untrusted-comment-injection` to prove prompt-like untrusted PR text remains passive data or explicit exclusion metadata
+   - prompt-input structure with separate instruction fields and data fields; trusted/actionable memory bodies may appear only in labeled data fields, and passive/untrusted memory bodies remain metadata-only in MVP
+   - golden prompt-input tests using `untrusted-comment-injection` to prove prompt-like untrusted PR text remains out of instructions and prompt data
    - non-live provider request preview built from the context package, with minimized fields, redaction status, provider/model metadata, raw-provider submission disabled by default, and no network/client dependency
    - provider-bound golden tests proving secret-like fixture text is redacted and omitted/passive context remains governed before any later live LLM adapter can submit it
    - adapter-boundary tests proving reviewer context/prompt modules do not import or receive GitHub writer, approval, finalization, payload builder, live LLM, or transport clients
@@ -103,7 +103,7 @@ For each issue:
 - Capabilities default to `diff_context`; MVP reviewer capabilities remain `none` and `diff_context`. GitHub writes are never a reviewer capability.
 - `tools` are inert metadata in this milestone. They may be validated and recorded for future policy, but they must not grant live tool execution, repository reads, GitHub reads, GitHub writes, process access, or provider calls.
 - `conversation_patterns` may match only trusted actionable memory. Untrusted memory cannot route reviewers or appear as instruction text.
-- Passive memory may be included only as explicitly labeled data or represented by exclusion metadata; prompt instruction fields and public payload text must not include untrusted comment bodies in MVP.
+- Passive memory is represented as explicitly labeled metadata in reviewer prompt input; passive/untrusted bodies must not enter reviewer instruction fields, reviewer prompt data, verdict/evidence paths, approval input, or public payload text in MVP.
 - Context budget decisions remain graph-owned. Reviewers receive retained context plus explicit truncation/omitted-context markers, not silent omissions.
 - Redaction status and context minimization must be proven in a non-live provider request preview before any context package can be used for provider-bound requests in later milestones.
 
