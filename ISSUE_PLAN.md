@@ -62,7 +62,7 @@ This issue should also establish the early bridge shape required by the mileston
    - Secret-like PR title/body/patch text and adapter error data are redacted in serializable envelope/status/error helpers, while raw typed context remains available only as in-memory data.
    - Changed ranges are derived from unified patch hunks and directly satisfy existing anchor protocols.
    - Multi-hunk patches and multiline finding ranges are supported.
-   - Deleted, binary/no-patch, oversized/unavailable patch, unsupported hunk, and rename cases degrade to anchor-unavailable metadata instead of partial or false anchors.
+   - Deleted, binary/no-patch, oversized/unavailable patch, and unsupported hunk cases degrade to anchor-unavailable metadata instead of partial or false anchors. Renamed files with available parseable patches must preserve previous_path and remain anchorable.
 
 2. Implement `src/reviewgraph/github.py`.
    - Define `GitHubPRRef`, `GitHubPRMetadata`, `GitHubChangedFileLines`, `GitHubReadResult`, resource coverage/status values, structured adapter errors, and a small fake transport contract.
