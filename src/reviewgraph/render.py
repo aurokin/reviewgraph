@@ -722,7 +722,7 @@ def _local_note_json(note: LocalNote, context: "_RenderContext") -> dict[str, An
 
 
 def _clarification_json(request: ClarificationRequest, context: "_RenderContext") -> dict[str, Any]:
-    return {
+    data: dict[str, Any] = {
         "id": context.redact(request.id),
         "classification": request.classification.value,
         "reviewer": context.redact(request.reviewer),
@@ -730,6 +730,18 @@ def _clarification_json(request: ClarificationRequest, context: "_RenderContext"
         "why_it_matters": context.redact(request.why_it_matters),
         "blocks_verdict": request.blocks_verdict,
     }
+    if request.source_stage is not None:
+        data["source_stage"] = context.redact(request.source_stage)
+    if request.source_run_key is not None:
+        data["source_run_key"] = context.redact(request.source_run_key.stable_key())
+    if request.status is not None:
+        data["status"] = request.status.value
+    if request.resume_target_stage is not None or request.resume_target_reviewers:
+        data["resume_target"] = {
+            "stage": request.resume_target_stage.value if request.resume_target_stage is not None else None,
+            "reviewers": [context.redact(reviewer) for reviewer in request.resume_target_reviewers],
+        }
+    return data
 
 
 def _suggested_reply_json(reply: SuggestedReply, context: "_RenderContext") -> dict[str, Any]:

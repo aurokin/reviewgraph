@@ -37,7 +37,11 @@ def test_contract_and_config_modules_do_not_import_side_effect_boundaries() -> N
         "reviewgraph.writer",
     }
 
-    for path in (Path("src/reviewgraph/models.py"), Path("src/reviewgraph/config.py")):
+    for path in (
+        Path("src/reviewgraph/models.py"),
+        Path("src/reviewgraph/config.py"),
+        Path("src/reviewgraph/findings.py"),
+    ):
         imports = _imports(path)
         assert not ({name.split(".", 1)[0] for name in imports} & forbidden_roots)
         assert not (imports & forbidden_reviewgraph_modules)
@@ -125,6 +129,7 @@ import json
 import sys
 import reviewgraph.models
 import reviewgraph.config
+import reviewgraph.findings
 import reviewgraph.reviewer_context
 forbidden = sorted(
     name for name in sys.modules

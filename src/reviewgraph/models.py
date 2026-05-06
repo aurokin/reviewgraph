@@ -554,6 +554,13 @@ class ClarificationRequest:
     why_it_matters: str
     blocks_verdict: bool = True
     classification: OutputClassification = OutputClassification.CLARIFICATION_REQUEST
+    source_stage: str | None = None
+    source_run_key: ReviewerRunKey | None = None
+    status: ClarificationState | None = None
+    resume_target_stage: ReviewStage | None = None
+    resume_target_reviewers: tuple[str, ...] = field(default_factory=tuple)
+    evidence_sources: tuple[str, ...] = field(default_factory=tuple)
+    evidence_memory_ids: tuple[str, ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
         for name in ("id", "reviewer", "question", "why_it_matters"):
@@ -562,6 +569,58 @@ class ClarificationRequest:
             raise ValueError("clarification request blocks_verdict must be a boolean")
         if self.classification != OutputClassification.CLARIFICATION_REQUEST:
             raise ValueError("ClarificationRequest must use clarification_request classification")
+        _require_optional_non_empty(self.source_stage, "clarification request source_stage")
+        if self.source_run_key is not None and not isinstance(self.source_run_key, ReviewerRunKey):
+            raise ValueError("clarification request source_run_key must be a ReviewerRunKey")
+        if self.status is not None and not isinstance(self.status, ClarificationState):
+            raise ValueError("clarification request status must be a ClarificationState")
+        if self.resume_target_stage is not None and not isinstance(self.resume_target_stage, ReviewStage):
+            raise ValueError("clarification request resume_target_stage must be a ReviewStage")
+        _require_string_tuple(self.resume_target_reviewers, "clarification request resume_target_reviewers")
+        _require_allowed_str_tuple(
+            self.evidence_sources,
+            "clarification request evidence_sources",
+            ALLOWED_RAW_FINDING_EVIDENCE_SOURCES,
+        )
+        _require_string_tuple(self.evidence_memory_ids, "clarification request evidence_memory_ids")
+
+
+@dataclass(frozen=True)
+class NormalizationError:
+    code: str
+    message: str
+    run_key: ReviewerRunKey
+    repairable: bool
+    fatal: bool = True
+    item_id: str | None = None
+    item_index: int | None = None
+    rejected_fields: tuple[str, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        _require_non_empty(self.code, "normalization error code")
+        _require_non_empty(self.message, "normalization error message")
+        if not isinstance(self.run_key, ReviewerRunKey):
+            raise ValueError("normalization error run_key must be a ReviewerRunKey")
+        if type(self.repairable) is not bool:
+            raise ValueError("normalization error repairable must be a boolean")
+        if type(self.fatal) is not bool:
+            raise ValueError("normalization error fatal must be a boolean")
+        _require_optional_non_empty(self.item_id, "normalization error item_id")
+        if self.item_index is not None and (type(self.item_index) is not int or self.item_index < 0):
+            raise ValueError("normalization error item_index must be a non-negative integer")
+        _require_string_tuple(self.rejected_fields, "normalization error rejected_fields")
+
+    def to_ordered_dict(self) -> dict[str, Any]:
+        return {
+            "code": self.code,
+            "message": self.message,
+            "run_key": self.run_key.stable_key(),
+            "repairable": self.repairable,
+            "fatal": self.fatal,
+            "item_id": self.item_id,
+            "item_index": self.item_index,
+            "rejected_fields": list(self.rejected_fields),
+        }
 
 
 @dataclass(frozen=True)
@@ -601,6 +660,7 @@ class ReviewerResult:
     local_notes: tuple[LocalNote, ...] = field(default_factory=tuple)
     suggested_replies: tuple[SuggestedReply, ...] = field(default_factory=tuple)
     suppressed_outputs: tuple[SuppressedReviewerOutput, ...] = field(default_factory=tuple)
+    normalization_errors: tuple[NormalizationError, ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
         if not isinstance(self.run_key, ReviewerRunKey):
@@ -622,6 +682,11 @@ class ReviewerResult:
             self.suppressed_outputs,
             "reviewer result suppressed_outputs",
             SuppressedReviewerOutput,
+        )
+        _require_instance_tuple(
+            self.normalization_errors,
+            "reviewer result normalization_errors",
+            NormalizationError,
         )
 
 

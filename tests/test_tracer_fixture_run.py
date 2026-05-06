@@ -345,19 +345,40 @@ def test_ambiguous_logic_fixture_stops_for_clarification_without_candidate_paylo
     assert data["graph_trace"] == EXPECTED_AMBIGUOUS_TRACE
     assert classified["postable_findings"] == []
     assert classified["local_notes"][0]["id"] == "note-discount-shape"
-    assert classified["clarification_requests"] == [
-        {
-            "id": "clarify-expired-coupon-intent",
-            "classification": "clarification_request",
-            "reviewer": "logic",
-            "question": "Should expired coupons preserve legacy discounts for existing carts?",
-            "why_it_matters": (
-                "Without product intent, the reviewer cannot decide whether the changed billing behavior is a bug "
-                "or an intended migration."
-            ),
-            "blocks_verdict": True,
-        }
-    ]
+    assert len(classified["clarification_requests"]) == 1
+    clarification = classified["clarification_requests"][0]
+    source_run_key = json.loads(clarification["source_run_key"])
+    assert clarification["source_run_key"] == json.dumps(
+        source_run_key,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    assert source_run_key == {
+        "attempt": 1,
+        "clarification_id": None,
+        "config_hash": source_run_key["config_hash"],
+        "retry_of": None,
+        "reviewer": "logic",
+        "stage": "logic_review",
+        "target_hash": source_run_key["target_hash"],
+    }
+    assert source_run_key["config_hash"].startswith("sha256:")
+    assert source_run_key["target_hash"].startswith("sha256:")
+    assert clarification == {
+        "id": "clarify-expired-coupon-intent",
+        "classification": "clarification_request",
+        "reviewer": "logic",
+        "question": "Should expired coupons preserve legacy discounts for existing carts?",
+        "why_it_matters": (
+            "Without product intent, the reviewer cannot decide whether the changed billing behavior is a bug "
+            "or an intended migration."
+        ),
+        "blocks_verdict": True,
+        "source_stage": "logic_review",
+        "source_run_key": clarification["source_run_key"],
+        "status": "pending",
+        "resume_target": {"stage": "clarification_review", "reviewers": ["logic"]},
+    }
     assert review["candidate_payload_preview"] is None
     assert all(not item["public_payload_eligible"] for item in review["posting_plan"]["items"])
     assert "## Clarification Requests" in result.markdown

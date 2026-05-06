@@ -296,38 +296,6 @@ def _run_review_stages(
                     if extra_raw_keys:
                         extra = ", ".join(f"{reviewer}/{stage}" for reviewer, stage in extra_raw_keys)
                         raise RunnerError(f"raw reviewer output was not selected: {extra}")
-                fallback_classified = False
-                if _reviewer_result_has_classifiable_raw_output(reviewer_result):
-                    reviewer_output = dict(reviewer_result.raw_output)
-                    try:
-                        _classify_reviewer_output(
-                            fixture,
-                            reviewer_output=reviewer_output,
-                            classified=classified,
-                            memory_references=memory_references,
-                            omitted_file_paths=omitted_file_paths,
-                        )
-                    except RunnerError as exc:
-                        reason = str(exc)
-                        _update_reviewer_status(
-                            routing_state,
-                            reviewer,
-                            status=ReviewerRunStatusValue.FAILED,
-                            reason=reason,
-                        )
-                        if not _reviewer_is_required(config, reviewer):
-                            classified["local_notes"].append(_optional_reviewer_failure_note(reviewer))
-                            continue
-                        raise
-                    fallback_classified = True
-                if fallback_classified:
-                    _update_reviewer_status(
-                        routing_state,
-                        reviewer,
-                        status=ReviewerRunStatusValue.COMPLETED,
-                        reason="deterministic fixture output handled by legacy classifier",
-                    )
-                    continue
                 reason = _reviewer_result_error(reviewer_result, default="fake reviewer execution failed")
                 _update_reviewer_status(
                     routing_state,
@@ -343,29 +311,10 @@ def _run_review_stages(
                     classified["local_notes"].append(_required_reviewer_failure_note(reviewer, reason=reason))
                     continue
                 raise RunnerError(reason)
-            if not isinstance(reviewer_result.raw_output, Mapping):
-                if key not in raw_outputs_by_key:
-                    extra_raw_keys = sorted(set(raw_outputs_by_key) - seen_raw_keys - deferred_raw_keys)
-                    if extra_raw_keys:
-                        extra = ", ".join(f"{reviewer}/{stage}" for reviewer, stage in extra_raw_keys)
-                        raise RunnerError(f"raw reviewer output was not selected: {extra}")
-                reason = _reviewer_result_error(reviewer_result, default="fake reviewer execution failed")
-                if not _reviewer_result_has_classifiable_raw_output(reviewer_result):
-                    _update_reviewer_status(
-                        routing_state,
-                        reviewer,
-                        status=ReviewerRunStatusValue.FAILED,
-                        reason=reason,
-                    )
-                    if not _reviewer_is_required(config, reviewer):
-                        classified["local_notes"].append(_optional_reviewer_failure_note(reviewer))
-                        continue
-                    raise RunnerError(reason)
-            reviewer_output = dict(reviewer_result.raw_output)
             try:
-                _classify_reviewer_output(
+                _classify_normalized_reviewer_output(
                     fixture,
-                    reviewer_output=reviewer_output,
+                    reviewer_result=reviewer_result,
                     classified=classified,
                     memory_references=memory_references,
                     omitted_file_paths=omitted_file_paths,
@@ -799,6 +748,73 @@ def _classify_reviewer_output(
             raise RunnerError(f"unsupported raw reviewer output type: {item_type}")
 
 
+def _classify_normalized_reviewer_output(
+    fixture: FixturePR,
+    *,
+    reviewer_result: ReviewerResult,
+    classified: dict[str, list[Any]],
+    memory_references: tuple[MemoryReference, ...],
+    omitted_file_paths: tuple[str, ...] = (),
+) -> None:
+    reviewer = reviewer_result.run_key.reviewer
+    stage = reviewer_result.run_key.stage.value
+    for raw_finding in reviewer_result.findings:
+        if _finding_depends_on_omitted_context(
+            fixture,
+            raw_finding,
+            omitted_file_paths=omitted_file_paths,
+        ):
+            classified["suppressed_outputs"].append(
+                SuppressedOutput(
+                    id=raw_finding.id,
+                    reason="Finding candidate referenced context omitted by context budget.",
+                )
+            )
+            continue
+        finding = _classified_finding(
+            fixture,
+            reviewer=reviewer,
+            stage=stage,
+            raw_finding=raw_finding,
+        )
+        if _is_postable_finding(finding):
+            if _finding_has_unsafe_evidence_provenance(
+                raw_finding,
+                memory_references=memory_references,
+            ):
+                classified["suppressed_outputs"].append(
+                    SuppressedOutput(
+                        id=raw_finding.id,
+                        reason="Finding candidate used passive or untrusted memory as evidence.",
+                    )
+                )
+            else:
+                classified["findings"].append(finding)
+        else:
+            classified["suppressed_outputs"].append(
+                SuppressedOutput(
+                    id=finding.id,
+                    reason="Finding candidate did not meet postable quality policy.",
+                )
+            )
+    classified["local_notes"].extend(reviewer_result.local_notes)
+    for request in reviewer_result.clarification_requests:
+        if _clarification_has_unsafe_evidence_provenance(
+            request,
+            memory_references=memory_references,
+        ):
+            classified["suppressed_outputs"].append(
+                SuppressedOutput(
+                    id=request.id,
+                    reason="Clarification request used passive or untrusted memory as evidence.",
+                )
+            )
+        else:
+            classified["clarification_requests"].append(request)
+    classified["suggested_replies"].extend(reviewer_result.suggested_replies)
+    classified["suppressed_outputs"].extend(reviewer_result.suppressed_outputs)
+
+
 def _finding_depends_on_omitted_context(
     fixture: FixturePR,
     raw_finding: RawReviewerFinding,
@@ -824,6 +840,20 @@ def _finding_has_unsafe_evidence_provenance(
         memory_references=memory_references,
         text_values=(raw_finding.evidence,),
         require_provenance_with_passive_memory=False,
+    )
+
+
+def _clarification_has_unsafe_evidence_provenance(
+    request: ClarificationRequest,
+    *,
+    memory_references: tuple[MemoryReference, ...],
+) -> bool:
+    return _unsafe_evidence_provenance(
+        evidence_sources=request.evidence_sources,
+        evidence_memory_ids=request.evidence_memory_ids,
+        memory_references=memory_references,
+        text_values=(request.question, request.why_it_matters),
+        require_provenance_with_passive_memory=True,
     )
 
 
@@ -1276,6 +1306,9 @@ def _json_envelope(
                 "stage": result.run_key.stage.value,
                 "status": result.status.value,
                 "errors": list(result.errors),
+                "normalization_errors": [
+                    error.to_ordered_dict() for error in result.normalization_errors
+                ],
                 "raw_output": result.raw_output,
             }
             for result in reviewer_results

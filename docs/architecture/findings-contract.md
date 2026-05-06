@@ -4,6 +4,18 @@ Reviewers return structured findings or structured clarification requests. Markd
 
 Reviewer output is not automatically postable. The graph first classifies each item according to `review-quality.md`.
 
+## Raw reviewer output envelope
+
+Fixture and adapter outputs identify the selected reviewer run at the envelope level. Individual items must not set graph-owned routing, posting, verdict, priority, fingerprint, reviewer, stage, or resume metadata. If they do, normalization suppresses that item and records a structured normalization error instead of stripping the field silently.
+
+```json
+{
+  "reviewer": "security",
+  "stage": "specialized_review",
+  "items": []
+}
+```
+
 ## Raw reviewer finding schema
 
 Reviewers may propose findings, but they do not decide postability, blocking status, or final priority. The graph owns those decisions in `classify_review_quality`.
@@ -11,8 +23,6 @@ Reviewers may propose findings, but they do not decide postability, blocking sta
 ```json
 {
   "id": "stable-or-generated-id",
-  "reviewer": "security",
-  "stage": "specialized_review",
   "severity": "critical | warning | suggestion | nit",
   "confidence": "high | medium | low",
   "confidence_score": 0.91,
@@ -74,19 +84,27 @@ memory is being used safely.
 
 If a reviewer cannot make a high-confidence mergeability recommendation without human context, it should return a clarification request instead of inflating confidence.
 
+Raw reviewer clarification items only provide the request content and evidence provenance. The graph derives reviewer, source stage, run key, status, and resume target from the current run.
+
+```json
+{
+  "id": "stable-or-generated-id",
+  "question": "Is this endpoint intentionally allowed to bypass the normal authorization path?",
+  "why_it_matters": "If not intentional, the change may expose data across tenants.",
+  "evidence_sources": ["diff"],
+  "evidence_memory_ids": [],
+  "blocks_verdict": true
+}
+```
+
+Rendered dry-run output includes graph-owned metadata:
+
 ```json
 {
   "id": "stable-or-generated-id",
   "reviewer": "logic",
   "source_stage": "logic_review",
-  "source_run_key": {
-    "target_hash": "sha256:...",
-    "config_hash": "sha256:...",
-    "stage": "logic_review",
-    "reviewer": "logic",
-    "attempt": 1,
-    "clarification_id": null
-  },
+  "source_run_key": "{\"attempt\":1,\"clarification_id\":null,\"config_hash\":\"sha256:...\",\"retry_of\":null,\"reviewer\":\"logic\",\"stage\":\"logic_review\",\"target_hash\":\"sha256:...\"}",
   "status": "pending",
   "resume_target": {
     "stage": "clarification_review",
@@ -115,9 +133,6 @@ Local notes are useful to the user but should not become GitHub comments.
 ```json
 {
   "id": "stable-or-generated-id",
-  "reviewer": "change_size",
-  "stage": "initial_triage",
-  "classification": "local_note",
   "title": "PR may be difficult to review as one change",
   "body": "The diff changes config loading, CLI behavior, and output rendering. Consider splitting the config loader first.",
   "evidence": "changed files summary"
@@ -137,6 +152,36 @@ Suggested replies are local-only output for human-authored PR comments or review
   "source_author": "octocat",
   "source_author_trusted": true,
   "proposed_body": "I think this is already covered by the new guard in `validatePath`, but I would wait for maintainer confirmation before replying."
+}
+```
+
+## Normalization error schema
+
+Reviewer results in the dry-run JSON include structured normalization errors for malformed or rejected raw output. Fatal errors fail the reviewer result atomically: valid sibling items from the same malformed output do not flow into classified output. Nonfatal errors record suppressed graph-owned item fields while allowing valid sibling items to continue.
+
+```json
+{
+  "reviewer": "security",
+  "stage": "specialized_review",
+  "status": "failed",
+  "errors": ["fake reviewer output requires an items list"],
+  "normalization_errors": [
+    {
+      "code": "invalid_items",
+      "message": "fake reviewer output requires an items list",
+      "run_key": "{\"attempt\":1,\"clarification_id\":null,\"config_hash\":\"sha256:...\",\"retry_of\":null,\"reviewer\":\"security\",\"stage\":\"specialized_review\",\"target_hash\":\"sha256:...\"}",
+      "repairable": true,
+      "fatal": true,
+      "item_id": null,
+      "item_index": null,
+      "rejected_fields": []
+    }
+  ],
+  "raw_output": {
+    "reviewer": "security",
+    "stage": "specialized_review",
+    "items": "not-a-list"
+  }
 }
 ```
 

@@ -45,7 +45,6 @@ def test_fake_reviewer_returns_all_structured_output_types() -> None:
                     {
                         "type": "clarification_request",
                         "id": "clarify-cache",
-                        "reviewer": "spoofed-reviewer",
                         "question": "Should stale cache values be allowed?",
                         "why_it_matters": "The verdict depends on intended fallback behavior.",
                     },
@@ -79,6 +78,9 @@ def test_fake_reviewer_returns_all_structured_output_types() -> None:
     assert result.local_notes[0].id == "note-context"
     assert result.clarification_requests[0].id == "clarify-cache"
     assert result.clarification_requests[0].reviewer == "quality"
+    assert result.clarification_requests[0].source_stage == "initial_triage"
+    assert result.clarification_requests[0].source_run_key == run_key
+    assert result.clarification_requests[0].resume_target_reviewers == ("quality",)
     assert result.suggested_replies[0].id == "reply-cache"
     assert result.suppressed_outputs[0].id == "nonfinding-style"
 
@@ -243,6 +245,8 @@ def test_fake_reviewer_malformed_json_shape_returns_failed_result_with_raw_outpu
         "items": "not-a-list",
     }
     assert result.errors == ("fake reviewer output requires an items list",)
+    assert result.normalization_errors[0].code == "invalid_items"
+    assert result.normalization_errors[0].repairable is True
 
 
 def test_fake_reviewer_has_no_live_llm_or_provider_behavior() -> None:
@@ -298,6 +302,92 @@ def test_fake_reviewer_preserves_malformed_raw_json_string() -> None:
     assert result.status == ReviewerRunStatusValue.FAILED
     assert result.raw_output == '{"items": ['
     assert result.errors == ("fake reviewer output is not valid JSON",)
+    assert result.normalization_errors[0].code == "invalid_json"
+    assert result.normalization_errors[0].repairable is True
+
+
+def test_fake_reviewer_records_structured_error_for_non_mapping_output() -> None:
+    package, run_key = _package_and_key(reviewer_name="quality")
+    registry = {("basic-pr", "quality", "initial_triage"): ["not", "a", "mapping"]}
+
+    result = execute_fake_reviewer(
+        adapter=FakeReviewerAdapter(fixture_id="basic-pr", registry=registry),
+        package=package,
+        run_key=run_key,
+    )
+
+    assert result.status == ReviewerRunStatusValue.FAILED
+    assert result.raw_output == {"value": "['not', 'a', 'mapping']"}
+    assert result.errors == ("fake reviewer output must be a mapping",)
+    assert result.normalization_errors[0].code == "invalid_output_type"
+    assert result.normalization_errors[0].repairable is True
+
+
+def test_dry_run_does_not_classify_valid_sibling_items_from_failed_normalization(tmp_path) -> None:
+    data = json.loads(resources.files("reviewgraph").joinpath("fixtures_data/prs/basic-pr.json").read_text())
+    data["raw_reviewer_outputs"].append(
+        {
+            "reviewer": "optional-quality",
+            "stage": "initial_triage",
+            "items": [
+                {
+                    "type": "finding",
+                    "id": "finding-optional-leak",
+                    "severity": "warning",
+                    "confidence": "high",
+                    "path": "src/cache.py",
+                    "line": 12,
+                    "title": "Optional reviewer finding must not leak",
+                    "rationale": "The new branch returns stale data when the cache misses.",
+                    "evidence": "Changed line 12 returns stale_value.",
+                },
+                {
+                    "type": "local_note",
+                    "id": "note-malformed",
+                    "title": "Malformed note",
+                    "body": ["not", "a", "string"],
+                    "evidence": "Fixture metadata.",
+                },
+            ],
+        }
+    )
+    fixture_path = tmp_path / "optional-malformed-sibling.json"
+    fixture_path.write_text(json.dumps(data))
+    config_path = tmp_path / "reviewers.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "agents": {
+                    "correctness": {
+                        "stages": ["initial_triage"],
+                        "triggers": {"always": True},
+                        "required": True,
+                    },
+                    "optional-quality": {
+                        "stages": ["initial_triage"],
+                        "triggers": {"always": True},
+                        "required": False,
+                    },
+                }
+            }
+        )
+    )
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path), reviewer_config_path=str(config_path))
+
+    postable_ids = {
+        finding["id"]
+        for finding in result.json_data["review"]["classified_output"]["postable_findings"]
+    }
+    assert "finding-optional-leak" not in postable_ids
+    optional_result = [
+        reviewer_result
+        for reviewer_result in result.json_data["reviewer_results"]
+        if reviewer_result["reviewer"] == "optional-quality"
+    ][0]
+    assert optional_result["status"] == "failed"
+    assert optional_result["normalization_errors"][0]["code"] == "invalid_local_note"
+    assert optional_result["normalization_errors"][0]["item_id"] == "note-malformed"
 
 
 def _package_and_key(*, reviewer_name: str, required: bool = False):
