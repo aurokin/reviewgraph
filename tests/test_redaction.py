@@ -72,6 +72,7 @@ token=ghp_abcdefghijklmnopqrstuvwxyz123456
 fine_grained=github_pat_abcdefghijklmnopqrstuvwxyz123456
 standalone sk-proj-zyxwvutsrqponmlkjihgfedcba
 GITHUB_TOKEN=ghs_abcdefghijklmnopqrstuvwxyz123456
++AWS_SECRET_ACCESS_KEY=abcdefghijklmnopqrstuvwx123456
 -----BEGIN PRIVATE KEY-----
 private-material
 -----END PRIVATE KEY-----
@@ -84,6 +85,7 @@ SECRET_FRAGMENTS = (
     "ghp_",
     "github_pat_",
     "ghs_",
+    "AWS_SECRET_ACCESS_KEY=abcdefghijklmnopqrstuvwx123456",
     "abcdefghijklmnopqrstuvwxyz",
     "PRIVATE KEY",
 )

@@ -66,7 +66,7 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
             r"(?i)([\"']?\b(?:api[_-]?key|token|secret)[\"']?\s*[:=]\s*)[\"']?[A-Za-z0-9._~+/=_-]{12,}[\"']?"
         ),
     ),
-    ("env_assignment", re.compile(r"(?im)^([A-Z][A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD)\s*=\s*).+$")),
+    ("env_assignment", re.compile(r"(?im)^(\s*[+\- ]?\s*[A-Z][A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD)\s*=\s*).+$")),
     (
         "standalone_api_key",
         re.compile(r"\b(?:(?:sk|rk|pk)_(?:live|test|prod)_[A-Za-z0-9_-]{12,}|(?:sk|rk|pk|xox[baprs])-[A-Za-z0-9_-]{12,})\b"),
