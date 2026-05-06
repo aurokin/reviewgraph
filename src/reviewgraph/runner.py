@@ -432,10 +432,10 @@ def _has_testing_finding_shape(text: str) -> bool:
 
 def _has_only_vague_testing_scenario(text: str) -> bool:
     has_vague = any(phrase in text for phrase in ("for this change", "when this changes", "this changes", "changed behavior"))
-    has_specific = bool(
-        re.search(r"\b(when|if|after|before|with|without|on|in|to|via|from|while|where)\b", text)
-        and not re.search(r"\b(when this changes|for this change)\b", text)
-    )
+    concrete_text = text
+    for phrase in ("for this change", "when this changes", "this changes", "changed behavior"):
+        concrete_text = concrete_text.replace(phrase, " ")
+    has_specific = bool(re.search(r"\b(whenever|when|if|after|before|with|without|on|in|to|via|from|while|where)\b", concrete_text))
     return has_vague and not has_specific
 
 
@@ -459,7 +459,9 @@ def _is_generic_speculative_advice(text: str) -> bool:
         "already fail",
         "already failing",
         "already broken",
-        "was already",
+        "was already failing",
+        "was already broken",
+        "was already present",
         "pre-existing",
         "preexisting",
     )
@@ -475,7 +477,7 @@ def _has_concrete_finding_shape(text: str) -> bool:
     introduced = bool(re.search(r"\b(changed line|new branch|introduced|now)\b", text))
     harmful_behavior = bool(
         re.search(
-            r"\b(regress|overcharg\w*|double[- ]charg\w*|duplicate emails?|loops? forever|shifts?|breaks?|corrupts?|drops?|exposes?|fails?|hangs?|ignores?|includes?|leaks?|misroutes?|omits?|raises?|rejects?|returns?|sends?|skips?|bypasses?|cannot|stale|unauthorized|open redirect|path traversal|unauthenticated access)\b",
+            r"\b(regress|overcharg\w*|double[- ]charg\w*|duplicate emails?|loops? forever|shifts?|breaks?|corrupts?|deletes?|drops?|exposes?|fails?|hangs?|ignores?|includes?|leaks?|logs?|misroutes?|omits?|persists?|raises?|rejects?|returns?|rounds?|sends?|skips?|bypasses?|cannot|stale|unauthorized|writes?|open redirect|path traversal|unauthenticated access)\b",
             text,
         )
     )

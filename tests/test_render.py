@@ -747,6 +747,36 @@ def test_common_tech_tokens_in_untrusted_memory_do_not_block_candidate_payload_p
     assert rendered.json_data["candidate_payload_preview"]["body"] == payload.body
 
 
+@pytest.mark.parametrize("token", ("json", "yaml", "grpc", "oauth"))
+def test_exact_common_tech_token_untrusted_memory_does_not_block_candidate_payload_preview(token: str) -> None:
+    findings = [finding(body=f"The {token} parser now fails on valid input.")]
+    plan = build_posting_plan(findings=findings)
+    payload = build_candidate_issue_comment_payload(
+        review_target=target(),
+        posting_plan=plan,
+        findings=findings,
+    )
+
+    rendered = render_review(
+        review_target=target(),
+        selected_reviewers=selected_reviewers(),
+        findings=findings,
+        posting_plan=plan,
+        candidate_payload=payload,
+        memory_references=[
+            MemoryReference(
+                "mem-common-tech-exact",
+                "untrusted",
+                "unresolved",
+                "issue_comment",
+                token,
+            )
+        ],
+    )
+
+    assert rendered.json_data["candidate_payload_preview"]["body"] == payload.body
+
+
 @pytest.mark.parametrize(
     ("untrusted_body", "finding_body"),
     (

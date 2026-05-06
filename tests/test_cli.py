@@ -688,6 +688,38 @@ def test_concrete_missing_regression_coverage_raw_finding_is_postable(tmp_path: 
     assert review["candidate_payload_preview"]["item_fingerprints"] == ["fixture-cache-coverage"]
 
 
+def test_concrete_testing_finding_with_generic_lead_in_is_postable(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "coverage-generic-leadin.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["items"] = [
+        {
+            "type": "postable_finding",
+            "id": "finding-coverage-generic-leadin",
+            "title": "Missing regression coverage for cache miss",
+            "body": (
+                "No regression coverage was added for this change, "
+                "so the new branch returns stale data when the cache misses."
+            ),
+            "evidence": "Changed line 12 returns stale value when the cache misses.",
+            "path": "src/cache.py",
+            "line": 12,
+            "priority": 2,
+            "severity": "warning",
+            "confidence": "high",
+            "fingerprint": "fixture-coverage-generic-leadin",
+        }
+    ]
+    fixture_path.write_text(json.dumps(fixture))
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path))
+    review = result.json_data["review"]
+
+    assert result.json_data["local_verdict"] == "comment"
+    assert result.json_data["post_enabled"] is True
+    assert review["classified_output"]["postable_findings"][0]["id"] == "finding-coverage-generic-leadin"
+    assert review["classified_output"]["suppressed"] == []
+
+
 @pytest.mark.parametrize(
     ("title", "body", "evidence"),
     (
@@ -765,6 +797,35 @@ def test_correctness_finding_that_mentions_test_mode_is_postable(tmp_path: Path)
     assert review["classified_output"]["postable_findings"][0]["id"] == "finding-test-mode-bypass"
     assert review["classified_output"]["suppressed"] == []
     assert review["candidate_payload_preview"]["item_fingerprints"] == ["fixture-test-mode-bypass"]
+
+
+def test_already_authenticated_scenario_is_postable(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "already-authenticated.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["items"] = [
+        {
+            "type": "postable_finding",
+            "id": "finding-already-authenticated",
+            "title": "Authenticated users skip MFA",
+            "body": "The new branch skips MFA when the user was already authenticated.",
+            "evidence": "Changed line 12 skips MFA when the user was already authenticated.",
+            "path": "src/cache.py",
+            "line": 12,
+            "priority": 1,
+            "severity": "critical",
+            "confidence": "high",
+            "fingerprint": "fixture-already-authenticated",
+        }
+    ]
+    fixture_path.write_text(json.dumps(fixture))
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path))
+    review = result.json_data["review"]
+
+    assert result.json_data["local_verdict"] == "comment"
+    assert result.json_data["post_enabled"] is True
+    assert review["classified_output"]["postable_findings"][0]["id"] == "finding-already-authenticated"
+    assert review["classified_output"]["suppressed"] == []
 
 
 def test_concrete_helper_finding_is_postable(tmp_path: Path) -> None:
@@ -891,6 +952,21 @@ def test_concrete_domain_finding_without_known_subject_word_is_postable(tmp_path
             "Retry sends duplicate emails",
             "The new branch sends duplicate emails when retry runs after timeout.",
             "Changed line 12 sends duplicate emails when retry runs after timeout.",
+        ),
+        (
+            "Cleanup deletes user records",
+            "The new branch deletes user records when cleanup runs.",
+            "Changed line 12 deletes user records when cleanup runs.",
+        ),
+        (
+            "Debug mode writes access tokens",
+            "The new branch writes access tokens to the debug log when debug mode is enabled.",
+            "Changed line 12 writes access tokens to the debug log when debug mode is enabled.",
+        ),
+        (
+            "Balance persists rounded amount",
+            "The new branch persists rounded balances when rounding runs.",
+            "Changed line 12 persists rounded balances when rounding runs.",
         ),
     ),
 )

@@ -456,6 +456,8 @@ def _exact_memory_body_is_meaningful(normalized: str) -> bool:
         return False
     if len(words) == 1:
         word = words[0]
+        if word in _COMMON_TECH_TOKENS:
+            return False
         return word not in _COMMON_MEMORY_WORDS and len(word) >= 4 and len(set(word)) >= 4
     return len(normalized) >= 4 and len(set(normalized.replace(" ", ""))) >= 4
 
@@ -492,7 +494,7 @@ def _full_memory_fragment_is_meaningful(normalized: str) -> bool:
 
 
 def _has_enough_word_signal(word: str, words: list[str], index: int) -> bool:
-    if word in _COMMON_MEMORY_WORDS:
+    if word in _COMMON_MEMORY_WORDS or word in _COMMON_TECH_TOKENS:
         return False
     if len(words) == 1:
         return len(word) >= 5 and len(set(word)) >= 4
@@ -645,11 +647,15 @@ _HIGH_SIGNAL_CONTEXT_WORDS = {
 
 _COMMON_TECH_TOKENS = {
     "go122",
+    "grpc",
     "http2",
+    "json",
     "node18",
+    "oauth",
     "python3",
     "react19",
     "sha256",
+    "yaml",
 }
 
 
