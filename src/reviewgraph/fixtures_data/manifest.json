@@ -2,6 +2,7 @@
   "corpus_scenarios": [
     {
       "id": "frontend-state-change",
+      "path": "prs/frontend-state-change.json",
       "behavior": "UI state change that should select frontend and logic reviewers without needing live services.",
       "consumed_by": ["AUR-192", "AUR-235"],
       "fixture_shape": {
@@ -19,10 +20,11 @@
       },
       "requires_live_github": false,
       "requires_live_llm": false,
-      "schema_valid_fixture_deferred_to": "AUR-192"
+      "schema_valid_fixture": true
     },
     {
       "id": "security-sensitive-change",
+      "path": "prs/security-sensitive-change.json",
       "behavior": "Auth or secret-adjacent change that should trigger specialized security review and redaction harnesses.",
       "consumed_by": ["AUR-192", "AUR-233", "AUR-237"],
       "fixture_shape": {
@@ -40,10 +42,11 @@
       },
       "requires_live_github": false,
       "requires_live_llm": false,
-      "schema_valid_fixture_deferred_to": "AUR-192"
+      "schema_valid_fixture": true
     },
     {
       "id": "docs-only-change",
+      "path": "prs/docs-only-change.json",
       "behavior": "Documentation-only change that should stay low risk and avoid unnecessary specialized reviewers.",
       "consumed_by": ["AUR-192", "AUR-235"],
       "fixture_shape": {
@@ -61,10 +64,11 @@
       },
       "requires_live_github": false,
       "requires_live_llm": false,
-      "schema_valid_fixture_deferred_to": "AUR-192"
+      "schema_valid_fixture": true
     },
     {
       "id": "mixed-risk-change",
+      "path": "prs/mixed-risk-change.json",
       "behavior": "Mixed docs, frontend, and backend change that should exercise explainable risk classification.",
       "consumed_by": ["AUR-192", "AUR-235"],
       "fixture_shape": {
@@ -82,10 +86,11 @@
       },
       "requires_live_github": false,
       "requires_live_llm": false,
-      "schema_valid_fixture_deferred_to": "AUR-192"
+      "schema_valid_fixture": true
     },
     {
       "id": "ambiguous-logic-change",
+      "path": "prs/ambiguous-logic-change.json",
       "behavior": "Ambiguous product-logic change that should produce a clarification request instead of an unsupported verdict.",
       "consumed_by": ["AUR-192", "AUR-211"],
       "fixture_shape": {
@@ -103,10 +108,11 @@
       },
       "requires_live_github": false,
       "requires_live_llm": false,
-      "schema_valid_fixture_deferred_to": "AUR-192"
+      "schema_valid_fixture": true
     },
     {
       "id": "breaking-api-change",
+      "path": "prs/breaking-api-change.json",
       "behavior": "Public API contract change that should trigger high-confidence evidence requirements before request-changes output.",
       "consumed_by": ["AUR-192", "AUR-235"],
       "fixture_shape": {
@@ -124,10 +130,11 @@
       },
       "requires_live_github": false,
       "requires_live_llm": false,
-      "schema_valid_fixture_deferred_to": "AUR-192"
+      "schema_valid_fixture": true
     },
     {
       "id": "oversized-change",
+      "path": "prs/oversized-change.json",
       "behavior": "Large PR that should exercise context budgeting and truncation notices before reviewer fanout.",
       "consumed_by": ["AUR-192", "AUR-211"],
       "fixture_shape": {
@@ -145,10 +152,11 @@
       },
       "requires_live_github": false,
       "requires_live_llm": false,
-      "schema_valid_fixture_deferred_to": "AUR-192"
+      "schema_valid_fixture": true
     },
     {
       "id": "stale-approval-change",
+      "path": "prs/stale-approval-change.json",
       "behavior": "Payload approval scenario where changed target metadata must invalidate stale approvals before writing.",
       "consumed_by": ["AUR-192", "AUR-254"],
       "fixture_shape": {
@@ -166,10 +174,11 @@
       },
       "requires_live_github": false,
       "requires_live_llm": false,
-      "schema_valid_fixture_deferred_to": "AUR-192"
+      "schema_valid_fixture": true
     },
     {
       "id": "untrusted-comment-injection",
+      "path": "prs/untrusted-comment-injection.json",
       "behavior": "Untrusted PR comment tries to steer reviewer behavior and must be preserved as memory without becoming instructions.",
       "consumed_by": ["AUR-192", "AUR-233"],
       "fixture_shape": {
@@ -187,10 +196,11 @@
       },
       "requires_live_github": false,
       "requires_live_llm": false,
-      "schema_valid_fixture_deferred_to": "AUR-192"
+      "schema_valid_fixture": true
     },
     {
       "id": "paginated-github-read",
+      "path": "prs/paginated-github-read.json",
       "behavior": "Fake transport scenario for paginated PR metadata reads without touching live GitHub.",
       "consumed_by": ["AUR-192", "AUR-213"],
       "fixture_shape": {
@@ -208,7 +218,7 @@
       },
       "requires_live_github": false,
       "requires_live_llm": false,
-      "schema_valid_fixture_deferred_to": "AUR-192"
+      "schema_valid_fixture": true
     }
   ],
   "fixtures": [
@@ -229,6 +239,66 @@
       "path": "prs/ambiguous-logic-pr.json",
       "behavior": "fixture dry run where a diff-pattern trigger introduces logic_review and returns a clarification request with no writer reachability",
       "consumed_by": ["tests/test_cli.py", "tests/test_tracer_fixture_run.py"]
+    },
+    {
+      "id": "frontend-state-change",
+      "path": "prs/frontend-state-change.json",
+      "behavior": "schema-valid corpus fixture for frontend state-change review shape",
+      "consumed_by": ["AUR-192", "AUR-235"]
+    },
+    {
+      "id": "security-sensitive-change",
+      "path": "prs/security-sensitive-change.json",
+      "behavior": "schema-valid corpus fixture for security-sensitive review shape",
+      "consumed_by": ["AUR-192", "AUR-233", "AUR-237"]
+    },
+    {
+      "id": "docs-only-change",
+      "path": "prs/docs-only-change.json",
+      "behavior": "schema-valid corpus fixture for documentation-only risk shape",
+      "consumed_by": ["AUR-192", "AUR-235"]
+    },
+    {
+      "id": "mixed-risk-change",
+      "path": "prs/mixed-risk-change.json",
+      "behavior": "schema-valid corpus fixture for mixed-surface risk shape",
+      "consumed_by": ["AUR-192", "AUR-235"]
+    },
+    {
+      "id": "ambiguous-logic-change",
+      "path": "prs/ambiguous-logic-change.json",
+      "behavior": "schema-valid corpus fixture for ambiguous logic clarification shape",
+      "consumed_by": ["AUR-192", "AUR-211"]
+    },
+    {
+      "id": "breaking-api-change",
+      "path": "prs/breaking-api-change.json",
+      "behavior": "schema-valid corpus fixture for breaking API review shape",
+      "consumed_by": ["AUR-192", "AUR-235"]
+    },
+    {
+      "id": "oversized-change",
+      "path": "prs/oversized-change.json",
+      "behavior": "schema-valid corpus fixture for oversized context-budget shape",
+      "consumed_by": ["AUR-192", "AUR-211"]
+    },
+    {
+      "id": "stale-approval-change",
+      "path": "prs/stale-approval-change.json",
+      "behavior": "schema-valid corpus fixture for stale approval target-binding shape",
+      "consumed_by": ["AUR-192", "AUR-254"]
+    },
+    {
+      "id": "untrusted-comment-injection",
+      "path": "prs/untrusted-comment-injection.json",
+      "behavior": "schema-valid corpus fixture for untrusted comment injection memory shape",
+      "consumed_by": ["AUR-192", "AUR-233"]
+    },
+    {
+      "id": "paginated-github-read",
+      "path": "prs/paginated-github-read.json",
+      "behavior": "schema-valid corpus fixture for fake paginated GitHub read shape",
+      "consumed_by": ["AUR-192", "AUR-213"]
     }
   ],
   "reviewer_configs": [

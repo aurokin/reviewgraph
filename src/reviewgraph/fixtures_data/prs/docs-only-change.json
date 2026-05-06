@@ -1,0 +1,68 @@
+{
+  "id": "docs-only-change",
+  "pr_ref": "fixture:docs-only-change",
+  "target": {
+    "owner_repo": "acme/widgets",
+    "pr_number": 103,
+    "base_sha": "base-docs",
+    "head_sha": "head-docs",
+    "merge_base_sha": null,
+    "diff_basis": "head"
+  },
+  "title": "Clarify setup documentation",
+  "body": "Synthetic docs-only fixture.",
+  "labels": ["docs"],
+  "changed_files": [
+    {
+      "path": "docs/setup.md",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 1,
+      "patch_status": "available",
+      "changed_ranges": [{"start": 12, "end": 14}],
+      "patch": "@@ -12,3 +12,4 @@\n+Run reviewgraph with fixture data before live integrations."
+    }
+  ],
+  "comments": [
+    {
+      "id": "comment-docs-intent",
+      "author": "maintainer",
+      "author_association": "MEMBER",
+      "trust_label": "trusted",
+      "source_type": "issue_comment",
+      "body": "This should stay documentation-only.",
+      "created_at": "2026-05-06T00:14:00Z"
+    }
+  ],
+  "reviews": [
+    {"id": "review-docs-1", "author": "docs-reviewer", "author_association": "MEMBER", "state": "APPROVED", "created_at": "2026-05-06T00:14:30Z", "trust_label": "trusted", "source_type": "review", "body": "Docs only."}
+  ],
+  "review_threads": [
+    {
+      "id": "thread-docs-1",
+      "path": "docs/setup.md",
+      "resolved_status": "resolved",
+      "comments": [
+        {
+          "id": "thread-comment-docs-1",
+          "author": "docs-reviewer",
+          "author_association": "MEMBER",
+          "trust_label": "trusted",
+          "source_type": "review_thread",
+          "body": "Wording is clear.",
+          "created_at": "2026-05-06T00:15:00Z",
+          "path": "docs/setup.md",
+          "line": 13,
+          "side": "RIGHT",
+          "commit_sha": "head-docs",
+          "position": 1
+        }
+      ]
+    }
+  ],
+  "memory": [],
+  "truncation": [{"resource": "patch", "truncated": false, "note": "Docs fixture patch is complete."}],
+  "raw_reviewer_outputs": [
+    {"reviewer": "correctness", "stage": "initial_triage", "items": [{"type": "local_note", "id": "note-docs-only", "title": "Docs only", "body": "Only documentation changed.", "evidence": "Changed file docs/setup.md."}]}
+  ]
+}

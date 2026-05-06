@@ -1,0 +1,47 @@
+{
+  "id": "breaking-api-change",
+  "pr_ref": "fixture:breaking-api-change",
+  "target": {
+    "owner_repo": "acme/widgets",
+    "pr_number": 106,
+    "base_sha": "base-api",
+    "head_sha": "head-api",
+    "merge_base_sha": "merge-api",
+    "diff_basis": "merge_base"
+  },
+  "title": "Remove legacy response field",
+  "body": "Synthetic breaking API fixture.",
+  "labels": ["api", "breaking-change"],
+  "changed_files": [
+    {
+      "path": "src/api/orders.py",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 4,
+      "patch_status": "available",
+      "changed_ranges": [{"start": 70, "end": 76}],
+      "patch": "@@ -70,7 +70,5 @@\n-    response['legacy_total'] = total\n+    response['total'] = total"
+    }
+  ],
+  "comments": [
+    {"id": "comment-api-migration", "author": "maintainer", "author_association": "MEMBER", "trust_label": "trusted", "source_type": "issue_comment", "body": "Clients may still read legacy_total.", "created_at": "2026-05-06T00:20:00Z"}
+  ],
+  "reviews": [
+    {"id": "review-api-1", "author": "api-reviewer", "author_association": "MEMBER", "state": "CHANGES_REQUESTED", "created_at": "2026-05-06T00:20:30Z", "trust_label": "trusted", "source_type": "review", "body": "Compatibility risk needs evidence."}
+  ],
+  "review_threads": [
+    {
+      "id": "thread-api-1",
+      "path": "src/api/orders.py",
+      "resolved_status": "unresolved",
+      "comments": [
+        {"id": "thread-comment-api-1", "author": "api-reviewer", "author_association": "MEMBER", "trust_label": "trusted", "source_type": "review_thread", "body": "Removing legacy_total can break clients.", "created_at": "2026-05-06T00:21:00Z", "path": "src/api/orders.py", "line": 73, "side": "RIGHT", "commit_sha": "head-api", "position": 1}
+      ]
+    }
+  ],
+  "memory": [],
+  "truncation": [{"resource": "patch", "truncated": false, "note": "Breaking API fixture patch is complete."}],
+  "raw_reviewer_outputs": [
+    {"reviewer": "correctness", "stage": "initial_triage", "items": [{"type": "local_note", "id": "note-breaking-api", "title": "API field changed", "body": "A public response field changed.", "evidence": "Changed file src/api/orders.py."}]}
+  ]
+}

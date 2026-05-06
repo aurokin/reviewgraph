@@ -9,13 +9,66 @@
     "merge_base_sha": "merge-specialized",
     "diff_basis": "merge_base"
   },
+  "title": "Require MFA for sessions",
+  "body": "Fixture PR for specialized auth review.",
+  "labels": ["security", "backend"],
   "changed_files": [
     {
       "path": "src/auth/session.py",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "patch_status": "available",
       "changed_ranges": [
         {"start": 20, "end": 26}
       ],
       "patch": "@@ -20,7 +20,7 @@\n+    return session if test_mode else require_mfa(session)"
+    }
+  ],
+  "comments": [
+    {
+      "id": "comment-auth-review",
+      "author": "maintainer",
+      "author_association": "MEMBER",
+      "trust_label": "trusted",
+      "source_type": "issue_comment",
+      "body": "Please make sure the auth path gets security review.",
+      "created_at": "2026-05-06T00:02:00Z"
+    }
+  ],
+  "reviews": [
+    {
+      "id": "review-auth-1",
+      "author": "security-reviewer",
+      "author_association": "MEMBER",
+      "state": "COMMENTED",
+      "created_at": "2026-05-06T00:00:00Z",
+      "trust_label": "trusted",
+      "source_type": "review",
+      "body": "Security review requested."
+    }
+  ],
+  "review_threads": [
+    {
+      "id": "thread-auth-1",
+      "path": "src/auth/session.py",
+      "resolved_status": "unresolved",
+      "comments": [
+        {
+          "id": "thread-comment-auth-1",
+          "author": "security-reviewer",
+          "author_association": "MEMBER",
+          "trust_label": "trusted",
+          "source_type": "review_thread",
+          "body": "MFA bypass needs review.",
+          "created_at": "2026-05-06T00:03:00Z",
+          "path": "src/auth/session.py",
+          "line": 22,
+          "side": "RIGHT",
+          "commit_sha": "head-specialized",
+          "position": 1
+        }
+      ]
     }
   ],
   "memory": [

@@ -623,17 +623,41 @@ class MemoryReference:
 class PullRequestComment:
     id: str
     author: str
+    author_association: str
     body: str
     created_at: str
-    author_association: str | None = None
+    trust_label: str
+    source_type: str
+    path: str | None = None
+    line: int | None = None
+    side: str | None = None
+    commit_sha: str | None = None
+    position: int | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("id", "author", "author_association", "body", "created_at", "trust_label", "source_type"):
+            _require_non_empty(getattr(self, name), f"pull request comment {name}")
+        for name in ("path", "side", "commit_sha"):
+            _require_optional_non_empty(getattr(self, name), f"pull request comment {name}")
+        _require_optional_positive_int(self.line, "pull request comment line")
+        _require_optional_positive_int(self.position, "pull request comment position")
 
 
 @dataclass(frozen=True)
 class PullRequestReview:
     id: str
     author: str
+    author_association: str
     state: str
+    created_at: str
+    trust_label: str
+    source_type: str
     body: str | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("id", "author", "author_association", "state", "created_at", "trust_label", "source_type"):
+            _require_non_empty(getattr(self, name), f"pull request review {name}")
+        _require_optional_non_empty(self.body, "pull request review body")
 
 
 @dataclass(frozen=True)
@@ -641,15 +665,39 @@ class PullRequestReviewThread:
     id: str
     path: str
     resolved_status: str
-    comments: tuple[PullRequestComment, ...] = field(default_factory=tuple)
+    comments: tuple[PullRequestComment, ...]
+
+    def __post_init__(self) -> None:
+        for name in ("id", "path", "resolved_status"):
+            _require_non_empty(getattr(self, name), f"pull request review thread {name}")
+        if self.resolved_status not in {"resolved", "unresolved", "unknown"}:
+            raise ValueError("pull request review thread resolved_status must be resolved, unresolved, or unknown")
+        _require_instance_tuple(self.comments, "pull request review thread comments", PullRequestComment)
+        if not self.comments:
+            raise ValueError("pull request review thread comments must not be empty")
 
 
 @dataclass(frozen=True)
 class PullRequestChangedFile:
     path: str
-    patch: str
+    patch: str | None
     additions: int = 0
     deletions: int = 0
+    status: str = "modified"
+    previous_path: str | None = None
+    patch_status: str = "available"
+
+    def __post_init__(self) -> None:
+        _require_non_empty(self.path, "pull request changed file path")
+        if self.patch is not None and not isinstance(self.patch, str):
+            raise ValueError("pull request changed file patch must be a string or None")
+        _require_non_negative_int(self.additions, "pull request changed file additions")
+        _require_non_negative_int(self.deletions, "pull request changed file deletions")
+        _require_non_empty(self.status, "pull request changed file status")
+        _require_optional_non_empty(self.previous_path, "pull request changed file previous_path")
+        _require_non_empty(self.patch_status, "pull request changed file patch_status")
+        if self.patch is None and self.patch_status == "available":
+            raise ValueError("pull request changed file patch_status must explain missing patch")
 
 
 @dataclass(frozen=True)
@@ -662,6 +710,24 @@ class PullRequestContext:
     comments: tuple[PullRequestComment, ...] = field(default_factory=tuple)
     reviews: tuple[PullRequestReview, ...] = field(default_factory=tuple)
     review_threads: tuple[PullRequestReviewThread, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.review_target, ReviewTarget):
+            raise ValueError("pull request context review_target must be a ReviewTarget")
+        _require_non_empty(self.title, "pull request context title")
+        if self.body is not None and not isinstance(self.body, str):
+            raise ValueError("pull request context body must be a string or None")
+        _require_string_tuple(self.labels, "pull request context labels")
+        _require_instance_tuple(self.changed_files, "pull request context changed_files", PullRequestChangedFile)
+        if not self.changed_files:
+            raise ValueError("pull request context changed_files must not be empty")
+        _require_instance_tuple(self.comments, "pull request context comments", PullRequestComment)
+        _require_instance_tuple(self.reviews, "pull request context reviews", PullRequestReview)
+        _require_instance_tuple(
+            self.review_threads,
+            "pull request context review_threads",
+            PullRequestReviewThread,
+        )
 
 
 @dataclass(frozen=True)

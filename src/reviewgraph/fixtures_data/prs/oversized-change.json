@@ -1,0 +1,47 @@
+{
+  "id": "oversized-change",
+  "pr_ref": "fixture:oversized-change",
+  "target": {
+    "owner_repo": "acme/widgets",
+    "pr_number": 107,
+    "base_sha": "base-oversized",
+    "head_sha": "head-oversized",
+    "merge_base_sha": "merge-oversized",
+    "diff_basis": "merge_base"
+  },
+  "title": "Large settings migration",
+  "body": "Synthetic oversized fixture with omitted patch metadata.",
+  "labels": ["large-pr"],
+  "changed_files": [
+    {
+      "path": "src/settings/migration.py",
+      "status": "modified",
+      "additions": 620,
+      "deletions": 45,
+      "patch": null,
+      "patch_status": "truncated",
+      "changed_ranges": [{"start": 1, "end": 620}]
+    }
+  ],
+  "comments": [
+    {"id": "comment-oversized-summary", "author": "maintainer", "author_association": "MEMBER", "trust_label": "trusted", "source_type": "issue_comment", "body": "Large migration; use summary context if patches are truncated.", "created_at": "2026-05-06T00:22:00Z"}
+  ],
+  "reviews": [
+    {"id": "review-oversized-1", "author": "reviewer", "author_association": "MEMBER", "state": "COMMENTED", "created_at": "2026-05-06T00:22:30Z", "trust_label": "trusted", "source_type": "review", "body": "Patch may need context budgeting."}
+  ],
+  "review_threads": [
+    {
+      "id": "thread-oversized-1",
+      "path": "src/settings/migration.py",
+      "resolved_status": "unknown",
+      "comments": [
+        {"id": "thread-comment-oversized-1", "author": "reviewer", "author_association": "MEMBER", "trust_label": "trusted", "source_type": "review_thread", "body": "Representative large-file discussion.", "created_at": "2026-05-06T00:23:00Z", "path": "src/settings/migration.py", "line": 200, "side": "RIGHT", "commit_sha": "head-oversized", "position": 1}
+      ]
+    }
+  ],
+  "memory": [],
+  "truncation": [{"resource": "patch", "truncated": true, "note": "Oversized fixture intentionally omits patch text.", "original_count": 620, "retained_count": 0}],
+  "raw_reviewer_outputs": [
+    {"reviewer": "correctness", "stage": "initial_triage", "items": [{"type": "local_note", "id": "note-oversized", "title": "Oversized change", "body": "Patch text is intentionally truncated.", "evidence": "Changed file src/settings/migration.py."}]}
+  ]
+}

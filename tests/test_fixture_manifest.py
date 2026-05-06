@@ -49,13 +49,14 @@ def test_fixture_corpus_manifest_maps_each_scenario_to_consumers_and_shape() -> 
         assert all(scenario["fixture_shape"][field] for field in REQUIRED_SHAPE_FIELDS)
 
 
-def test_fixture_corpus_manifest_is_manifest_only_until_schema_issue() -> None:
+def test_fixture_corpus_manifest_has_schema_valid_fixture_paths() -> None:
     manifest = load_manifest()
 
     for scenario in manifest["corpus_scenarios"]:
         assert scenario["requires_live_github"] is False
         assert scenario["requires_live_llm"] is False
-        assert scenario["schema_valid_fixture_deferred_to"] == "AUR-192"
+        assert scenario["schema_valid_fixture"] is True
+        assert scenario["path"].startswith("prs/")
 
 
 def test_fixture_corpus_manifest_preserves_runnable_packaged_fixtures() -> None:

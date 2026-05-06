@@ -1,0 +1,47 @@
+{
+  "id": "ambiguous-logic-change",
+  "pr_ref": "fixture:ambiguous-logic-change",
+  "target": {
+    "owner_repo": "acme/widgets",
+    "pr_number": 105,
+    "base_sha": "base-ambiguous",
+    "head_sha": "head-ambiguous",
+    "merge_base_sha": "merge-ambiguous",
+    "diff_basis": "merge_base"
+  },
+  "title": "Change renewal grace period",
+  "body": "Synthetic ambiguous logic fixture.",
+  "labels": ["logic", "billing"],
+  "changed_files": [
+    {
+      "path": "src/billing/renewals.py",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 1,
+      "patch_status": "available",
+      "changed_ranges": [{"start": 31, "end": 34}],
+      "patch": "@@ -31,4 +31,5 @@\n+grace_days = 0  # requires product intent"
+    }
+  ],
+  "comments": [
+    {"id": "comment-ambiguous-intent", "author": "product-manager", "author_association": "MEMBER", "trust_label": "trusted", "source_type": "issue_comment", "body": "We have not decided whether renewals keep the grace period.", "created_at": "2026-05-06T00:18:00Z"}
+  ],
+  "reviews": [
+    {"id": "review-ambiguous-1", "author": "logic-reviewer", "author_association": "MEMBER", "state": "COMMENTED", "created_at": "2026-05-06T00:18:30Z", "trust_label": "trusted", "source_type": "review", "body": "Needs clarification."}
+  ],
+  "review_threads": [
+    {
+      "id": "thread-ambiguous-1",
+      "path": "src/billing/renewals.py",
+      "resolved_status": "unknown",
+      "comments": [
+        {"id": "thread-comment-ambiguous-1", "author": "logic-reviewer", "author_association": "MEMBER", "trust_label": "trusted", "source_type": "review_thread", "body": "The desired grace-period behavior is unclear.", "created_at": "2026-05-06T00:19:00Z", "path": "src/billing/renewals.py", "line": 33, "side": "RIGHT", "commit_sha": "head-ambiguous", "position": 1}
+      ]
+    }
+  ],
+  "memory": [],
+  "truncation": [{"resource": "patch", "truncated": false, "note": "Ambiguous logic fixture patch is complete."}],
+  "raw_reviewer_outputs": [
+    {"reviewer": "correctness", "stage": "initial_triage", "items": [{"type": "local_note", "id": "note-ambiguous-logic", "title": "Ambiguous logic changed", "body": "Renewal behavior changed without final intent.", "evidence": "Changed file src/billing/renewals.py."}]}
+  ]
+}

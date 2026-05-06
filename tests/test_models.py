@@ -48,6 +48,9 @@ from reviewgraph.models import (
     RunMode,
     Severity,
     LocalNote,
+    PullRequestComment,
+    PullRequestReview,
+    PullRequestReviewThread,
     SuggestedReply,
     SuppressedReviewerOutput,
     WriterStatus,
@@ -565,6 +568,58 @@ def test_side_effect_contracts_bind_approval_finalization_and_writer_metadata() 
     assert reconciliation.trusted_actor == "reviewgraph-bot"
     assert finalization.state == FinalizationState.FINALIZED
     assert writer.status == WriterStatus.NOT_CALLED
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: PullRequestComment(
+            id="comment-1",
+            author="reviewer",
+            author_association="MEMBER",
+            body="body",
+            created_at="2026-05-06T00:00:00Z",
+            trust_label="",
+            source_type="issue_comment",
+        ),
+        lambda: PullRequestComment(
+            id="comment-1",
+            author="reviewer",
+            author_association="MEMBER",
+            body="body",
+            created_at="2026-05-06T00:00:00Z",
+            trust_label="trusted",
+            source_type="",
+        ),
+        lambda: PullRequestReview(
+            id="review-1",
+            author="reviewer",
+            author_association="MEMBER",
+            state="COMMENTED",
+            created_at="",
+            trust_label="trusted",
+            source_type="review",
+        ),
+        lambda: PullRequestReview(
+            id="review-1",
+            author="reviewer",
+            author_association="MEMBER",
+            state="COMMENTED",
+            created_at="2026-05-06T00:00:00Z",
+            trust_label="trusted",
+            source_type="",
+        ),
+        lambda: PullRequestReviewThread(
+            id="thread-1",
+            path="src/app.py",
+            resolved_status="unresolved",
+            comments=(),
+        ),
+    ],
+)
+def test_pull_request_context_contracts_require_trust_source_and_thread_comments(build: object) -> None:
+    with pytest.raises(ValueError):
+        build()
 
 
 @pytest.mark.parametrize(

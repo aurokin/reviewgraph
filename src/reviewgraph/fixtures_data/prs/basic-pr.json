@@ -9,13 +9,66 @@
     "merge_base_sha": "merge789",
     "diff_basis": "merge_base"
   },
+  "title": "Fix cache fallback",
+  "body": "Fixture PR for deterministic dry-run review.",
+  "labels": ["backend"],
   "changed_files": [
     {
       "path": "src/cache.py",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "patch_status": "available",
       "changed_ranges": [
         {"start": 10, "end": 14}
       ],
       "patch": "@@ -10,5 +10,5 @@\n+    return stale_value  # token=ghp_abcdefghijklmnopqrstuvwxyz123456"
+    }
+  ],
+  "comments": [
+    {
+      "id": "comment-cache-intent",
+      "author": "maintainer",
+      "author_association": "MEMBER",
+      "trust_label": "trusted",
+      "source_type": "issue_comment",
+      "body": "Please check the cache miss fallback.",
+      "created_at": "2026-05-06T00:00:00Z"
+    }
+  ],
+  "reviews": [
+    {
+      "id": "review-cache-1",
+      "author": "reviewer",
+      "author_association": "MEMBER",
+      "state": "COMMENTED",
+      "created_at": "2026-05-06T00:00:00Z",
+      "trust_label": "trusted",
+      "source_type": "review",
+      "body": "Initial cache review."
+    }
+  ],
+  "review_threads": [
+    {
+      "id": "thread-cache-1",
+      "path": "src/cache.py",
+      "resolved_status": "resolved",
+      "comments": [
+        {
+          "id": "thread-comment-cache-1",
+          "author": "reviewer",
+          "author_association": "MEMBER",
+          "trust_label": "trusted",
+          "source_type": "review_thread",
+          "body": "The cache token in the patch should be redacted.",
+          "created_at": "2026-05-06T00:01:00Z",
+          "path": "src/cache.py",
+          "line": 12,
+          "side": "RIGHT",
+          "commit_sha": "head456",
+          "position": 1
+        }
+      ]
     }
   ],
   "memory": [

@@ -1,0 +1,48 @@
+{
+  "id": "paginated-github-read",
+  "pr_ref": "fixture:paginated-github-read",
+  "target": {
+    "owner_repo": "acme/widgets",
+    "pr_number": 110,
+    "base_sha": "base-paginated",
+    "head_sha": "head-paginated",
+    "merge_base_sha": "merge-paginated",
+    "diff_basis": "merge_base"
+  },
+  "title": "Paginated metadata fixture",
+  "body": "Synthetic fixture for later fake paginated GitHub reads.",
+  "labels": ["backend"],
+  "changed_files": [
+    {
+      "path": "src/pagination/page_one.py",
+      "status": "modified",
+      "additions": 10,
+      "deletions": 2,
+      "patch": null,
+      "patch_status": "omitted_by_fake_page",
+      "changed_ranges": [{"start": 5, "end": 14}]
+    }
+  ],
+  "comments": [
+    {"id": "comment-page-1", "author": "maintainer", "author_association": "MEMBER", "trust_label": "trusted", "source_type": "issue_comment", "body": "This comment belongs to fake page one.", "created_at": "2026-05-06T00:28:00Z"},
+    {"id": "comment-page-2", "author": "maintainer", "author_association": "MEMBER", "trust_label": "trusted", "source_type": "issue_comment", "body": "This comment belongs to fake page two.", "created_at": "2026-05-06T00:29:00Z"}
+  ],
+  "reviews": [
+    {"id": "review-paginated-1", "author": "reviewer", "author_association": "MEMBER", "state": "COMMENTED", "created_at": "2026-05-06T00:29:30Z", "trust_label": "trusted", "source_type": "review", "body": "Review loaded from fake page two."}
+  ],
+  "review_threads": [
+    {
+      "id": "thread-paginated-1",
+      "path": "src/pagination/page_one.py",
+      "resolved_status": "unknown",
+      "comments": [
+        {"id": "thread-comment-paginated-1", "author": "reviewer", "author_association": "MEMBER", "trust_label": "trusted", "source_type": "review_thread", "body": "Thread loaded from fake page three.", "created_at": "2026-05-06T00:30:00Z", "path": "src/pagination/page_one.py", "line": 9, "side": "RIGHT", "commit_sha": "head-paginated", "position": 1}
+      ]
+    }
+  ],
+  "memory": [],
+  "truncation": [{"resource": "patch", "truncated": true, "note": "Patch is omitted to model fake pagination gaps.", "original_count": 10, "retained_count": 0}],
+  "raw_reviewer_outputs": [
+    {"reviewer": "correctness", "stage": "initial_triage", "items": [{"type": "local_note", "id": "note-paginated-read", "title": "Paginated metadata", "body": "Fixture preserves multiple metadata pages without live GitHub.", "evidence": "Comments and review thread IDs are deterministic."}]}
+  ]
+}

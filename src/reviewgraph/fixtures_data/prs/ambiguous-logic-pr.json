@@ -9,13 +9,66 @@
     "merge_base_sha": "merge-logic",
     "diff_basis": "merge_base"
   },
+  "title": "Change expired coupon handling",
+  "body": "Fixture PR for ambiguous billing logic.",
+  "labels": ["billing", "logic"],
   "changed_files": [
     {
       "path": "src/billing/discounts.py",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "patch_status": "available",
       "changed_ranges": [
         {"start": 30, "end": 36}
       ],
       "patch": "@@ -30,7 +30,7 @@\n+    # requires product intent before reviewers can decide whether expired coupons should drop discounts"
+    }
+  ],
+  "comments": [
+    {
+      "id": "comment-product-intent",
+      "author": "product-manager",
+      "author_association": "MEMBER",
+      "trust_label": "trusted",
+      "source_type": "issue_comment",
+      "body": "Product intent for expired coupons is not final.",
+      "created_at": "2026-05-06T00:04:00Z"
+    }
+  ],
+  "reviews": [
+    {
+      "id": "review-logic-1",
+      "author": "logic-reviewer",
+      "author_association": "MEMBER",
+      "state": "COMMENTED",
+      "created_at": "2026-05-06T00:00:00Z",
+      "trust_label": "trusted",
+      "source_type": "review",
+      "body": "Needs clarification before a verdict."
+    }
+  ],
+  "review_threads": [
+    {
+      "id": "thread-logic-1",
+      "path": "src/billing/discounts.py",
+      "resolved_status": "unknown",
+      "comments": [
+        {
+          "id": "thread-comment-logic-1",
+          "author": "logic-reviewer",
+          "author_association": "MEMBER",
+          "trust_label": "trusted",
+          "source_type": "review_thread",
+          "body": "This behavior depends on product intent.",
+          "created_at": "2026-05-06T00:05:00Z",
+          "path": "src/billing/discounts.py",
+          "line": 32,
+          "side": "RIGHT",
+          "commit_sha": "head-logic",
+          "position": 1
+        }
+      ]
     }
   ],
   "memory": [

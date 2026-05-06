@@ -1,0 +1,47 @@
+{
+  "id": "stale-approval-change",
+  "pr_ref": "fixture:stale-approval-change",
+  "target": {
+    "owner_repo": "acme/widgets",
+    "pr_number": 108,
+    "base_sha": "base-stale",
+    "head_sha": "head-stale-new",
+    "merge_base_sha": "merge-stale",
+    "diff_basis": "merge_base"
+  },
+  "title": "Update release toggle after approval",
+  "body": "Synthetic stale approval fixture.",
+  "labels": ["release"],
+  "changed_files": [
+    {
+      "path": "src/release/toggles.py",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "patch_status": "available",
+      "changed_ranges": [{"start": 15, "end": 17}],
+      "patch": "@@ -15,3 +15,3 @@\n+enabled = is_ready_for_release(user)"
+    }
+  ],
+  "comments": [
+    {"id": "comment-stale-approval", "author": "approver", "author_association": "MEMBER", "trust_label": "trusted", "source_type": "issue_comment", "body": "Earlier approval was for head-stale-old.", "created_at": "2026-05-06T00:24:00Z"}
+  ],
+  "reviews": [
+    {"id": "review-stale-1", "author": "approver", "author_association": "MEMBER", "state": "APPROVED", "created_at": "2026-05-06T00:24:30Z", "trust_label": "trusted", "source_type": "review", "body": "Approved previous target only."}
+  ],
+  "review_threads": [
+    {
+      "id": "thread-stale-1",
+      "path": "src/release/toggles.py",
+      "resolved_status": "resolved",
+      "comments": [
+        {"id": "thread-comment-stale-1", "author": "approver", "author_association": "MEMBER", "trust_label": "trusted", "source_type": "review_thread", "body": "This approval must be target-bound.", "created_at": "2026-05-06T00:25:00Z", "path": "src/release/toggles.py", "line": 16, "side": "RIGHT", "commit_sha": "head-stale-new", "position": 1}
+      ]
+    }
+  ],
+  "memory": [],
+  "truncation": [{"resource": "patch", "truncated": false, "note": "Stale approval fixture patch is complete."}],
+  "raw_reviewer_outputs": [
+    {"reviewer": "correctness", "stage": "initial_triage", "items": [{"type": "local_note", "id": "note-stale-approval", "title": "Approval target changed", "body": "Head SHA differs from the earlier approval note.", "evidence": "Fixture target head is head-stale-new."}]}
+  ]
+}

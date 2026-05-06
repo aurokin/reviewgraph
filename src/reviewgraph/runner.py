@@ -269,7 +269,7 @@ def _trigger_reasons(*, stage: str, triggers: ReviewerTriggers, fixture: Fixture
     for pattern in triggers.paths:
         if any(_path_matches(changed_file.path, pattern) for changed_file in fixture.changed_files):
             selector_reasons.append(f"{stage} triggers.paths={pattern}")
-    patches = "\n".join(changed_file.patch for changed_file in fixture.changed_files).casefold()
+    patches = "\n".join(changed_file.patch or "" for changed_file in fixture.changed_files).casefold()
     for pattern in triggers.diff_patterns:
         if _diff_pattern_matches(patches, pattern):
             selector_reasons.append(f"{stage} triggers.diff_patterns={pattern}")
@@ -322,7 +322,7 @@ def _changed_line_count(fixture: FixturePR) -> int:
 def _fixture_risk_level(fixture: FixturePR) -> str:
     changed_files = len(fixture.changed_files)
     changed_lines = _changed_line_count(fixture)
-    patches = "\n".join(changed_file.patch for changed_file in fixture.changed_files).casefold()
+    patches = "\n".join(changed_file.patch or "" for changed_file in fixture.changed_files).casefold()
     if changed_files >= 10 or changed_lines >= 500 or any(term in patches for term in ("auth", "token", "password")):
         return "high"
     if changed_files >= 3 or changed_lines >= 50 or any(term in patches for term in ("billing", "product intent")):
