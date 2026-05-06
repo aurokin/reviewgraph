@@ -1,83 +1,80 @@
-# ISSUE PLAN: AUR-256 Complete PRD 0004 Graph Orchestration
+# ISSUE PLAN: AUR-201 Normalize Reviewer Output
 
-Active issue plan for `AUR-256` / `Complete PRD 0004: Graph Orchestration`.
+Active issue plan for `AUR-201` / `RG-012: Normalize Reviewer Output`.
 
 ## Linear Snapshot
 
-- Issue: `AUR-256`
-- Status at plan time: `Backlog`
-- Milestone: `PRD 0004: Graph Orchestration`
+- Issue: `AUR-201`
+- Status at plan time: `In Progress`
+- Milestone: `PRD 0005: Review Quality`
 - Comments at plan time: none
-- Linear description: milestone gate; close only after all implementation issues in this PRD milestone are complete.
+- Linear description: normalize valid fake reviewer outputs into typed raw reviewer findings, local notes, clarification requests, suggested replies, non-findings, or recorded errors. Malformed JSON repair is handled by `AUR-227`.
 
 ## Goal
 
-Close the PRD 0004 milestone only after proving the implementation issues are complete in Linear, validating the code and harnesses, and refactoring durable documentation so a future agent can understand the graph orchestration contracts without reading temporary planning artifacts.
-
-This is a gate and documentation slice, not a new behavior implementation slice.
+Extract reviewer-output normalization into a focused module and harness so the graph can consume typed reviewer artifacts before quality classification. This issue should preserve current broad dry-run behavior while making the policy input explicit and safe for later `AUR-227`, `AUR-204`, and `AUR-202` work.
 
 ## Acceptance Mapping
 
-- All PRD 0004 implementation issues are done:
-  - Re-fetch the milestone issue inventory and confirm `AUR-194`, `AUR-195`, `AUR-196`, `AUR-197`, `AUR-235`, `AUR-198`, `AUR-199`, `AUR-200`, and `AUR-225` are `Done` with evidence comments.
-- PRD 0004 acceptance surface is accounted for:
-  - Map user stories and implementation decisions to completed issue evidence or an explicit durable deferral note. Clarification resume and final payload construction are not silently closed by this milestone; they are deferred to later clarification/side-effect PRDs.
-- Focused and full validation passes:
-  - Run the PRD 0004 focused harness families plus full suite, docs check, Linear backlog export check, py-compile, and diff check.
-- Documentation is refactored for progressive disclosure and harness engineering:
-  - Update the narrow durable docs that an implementation agent needs: README current slice, architecture/state graph, harness strategy, implementation plan, and any decision docs needed for PRD 0004.
-- Temporary planning artifacts are handled:
-  - Keep `MILESTONE_PLAN.md` and `ISSUE_PLAN.md` as active committed history for the gate. Do not recreate `.ws/` or add Linear export artifacts.
-- Fresh subagent review reports no material issues:
-  - Use fresh subagents for gate/docs review until findings are none or non-issues.
-- Linear is updated:
-  - Move `AUR-256` through an appropriate in-progress/review/done flow with an evidence comment.
+- Valid raw findings parse into raw finding models:
+  - Add `src/reviewgraph/findings.py` with a normalization function that returns typed `RawReviewerFinding` values for valid findings.
+  - Add focused tests proving required fields, severity/confidence enums, evidence provenance fields, and line metadata are preserved.
+- Clarification requests include source stage, source run key, status, and resume target:
+  - Preserve existing `ClarificationRequest` compatibility, but add normalized metadata that captures source stage, stable run key, pending status, and reviewer resume target for graph use.
+  - Do not implement answer ingestion or resume execution in this issue.
+- Suggested replies remain local-only:
+  - Normalize suggested replies into `SuggestedReply` and ensure posting/payload destinations remain out of the normalizer.
+- Non-finding outputs are preserved as suppressible reviewer output:
+  - Normalize `suppressed` and `non_finding` items into `SuppressedReviewerOutput` with stable IDs and reasons.
+- Malformed reviewer JSON is passed to repair/error policy instead of silently coerced:
+  - Normalize mapping/list/schema errors into structured parse errors or failed normalization results.
+  - Do not implement the one-repair attempt; that belongs to `AUR-227`.
+- Reviewer graph-owned fields are not stripped silently:
+  - If a finding attempts `priority`, `fingerprint`, `blocking`, `classification`, `destination`, `verdict`, or other graph-owned fields, preserve that attempt as an explicit rejected/suppressed artifact or parse error so later quality policy can prove reviewer self-declaration was ignored.
+
+## Current Baseline
+
+- `src/reviewgraph/reviewers.py` currently builds typed `ReviewerResult` artifacts, but `_finding()` strips `GRAPH_OWNED_REVIEWER_FIELDS` before `RawReviewerFinding.from_mapping`.
+- `src/reviewgraph/runner.py` currently re-parses `reviewer_result.raw_output` in `_classify_reviewer_output`, which is why graph-owned field attempts are still suppressible in current broad tests.
+- `RawReviewerFinding.from_mapping` already rejects graph-owned fields when they reach the model.
+- Existing broad tests in `tests/test_reviewers_fake.py`, `tests/test_cli.py`, and `tests/test_tracer_fixture_run.py` should remain green while focused `tests/test_findings.py` is added.
 
 ## Implementation Plan
 
-1. Move `AUR-256` to `In Progress`.
-2. Re-fetch PRD 0004 milestone state, linked issues, and issue comments for evidence.
-3. Commit this gate plan before making documentation changes.
-4. Use a fresh subagent to review the gate plan.
-5. Inspect current docs and code to identify durable PRD 0004 details that should be in progressive disclosure docs rather than only in plans or Linear comments.
-6. Refactor documentation in small commits:
-   - README current runnable slice/status.
-   - `docs/architecture/state-graph.md` for implemented PRD 0004 graph contracts and remaining future graph work.
-   - `docs/harnesses/harness-engineering.md` for implemented PRD 0004 harness families and fail-closed proof.
-   - `docs/plans/implementation-plan.md` for sequencing narrative updates, without copying Linear as the backlog.
-   - Add or update ADRs only for durable orchestration decisions that future implementers need.
-7. Create a temporary Linear backlog export in the canonical checker shape, run `python scripts/check_docs.py --backlog-export ...`, and remove the export before completion.
-8. Run docs and code validation.
-9. Use fresh subagents to review code/tests/docs/Linear evidence until no material findings remain.
-10. Add a Linear evidence comment and move `AUR-256` to `Done`.
-11. Push only after the milestone gate and documentation refactor are complete.
+1. Create `src/reviewgraph/findings.py` with a small, pure normalization API. Keep it independent of GitHub transports, posting, rendering, approval, live LLM, and side-effect modules.
+2. Define a result shape for successful normalized artifacts plus parse/error artifacts. Prefer existing models where possible; add the minimum additional typed metadata needed for source stage/run-key/status/resume-target without broad model churn.
+3. Move item parsing logic from `reviewers.py` into `findings.py`, but change graph-owned field handling so it is explicit and testable instead of silently stripped.
+4. Update `reviewers.py` to call the new normalizer for valid mapping outputs and to preserve existing behavior for raw strings/missing output until `AUR-227`.
+5. Update `runner.py` only as far as needed to consume normalized typed artifacts for valid outputs or to keep a compatibility bridge while avoiding behavior drift. Do not implement quality classification extraction here.
+6. Add `tests/test_findings.py` covering valid findings, local notes, clarification requests with source metadata, suggested replies, non-findings, malformed items, and graph-owned field attempts.
+7. Run the focused harness and broad regressions that exercise fake reviewer and dry-run output paths.
 
 ## Out Of Scope
 
-- No new runtime behavior unless validation exposes a blocker.
-- No live GitHub, live LLM, approval, finalization, or writer features.
-- No copy of the full Linear backlog into durable docs.
-- No `.ws/` or temporary export artifacts.
+- No quality/postability classification extraction.
+- No malformed JSON repair attempt; `AUR-227` owns repair.
+- No diff-anchor validation; `AUR-204` owns anchors and changed-line location validation.
+- No clarification answer ingestion or resume; `AUR-206` owns resume.
+- No verdict policy extraction; `AUR-207` owns verdict.
+- No live GitHub, live LLM, approval, finalization, or writer behavior.
 
 ## Validation Plan
 
 ```bash
-python -m pytest tests/test_graph_empty.py tests/test_stage_cursor.py tests/test_routing.py tests/test_routing_risk.py tests/test_risk.py tests/test_reviewer_runs.py tests/test_reviewers_fake.py tests/test_required_reviewer_failure.py -q
-python -m pytest tests/test_tracer_fixture_run.py tests/test_cli.py tests/test_render.py -q
-python -m pytest tests/test_reviewer_context.py tests/test_contract_boundaries.py tests/test_context_budget.py tests/test_prompt_injection_memory.py -q
-python -m pytest -q
-python -m py_compile src/reviewgraph/*.py
+python -m pytest tests/test_findings.py
+python -m pytest tests/test_reviewers_fake.py tests/test_required_reviewer_failure.py tests/test_reviewer_runs.py
+python -m pytest tests/test_tracer_fixture_run.py tests/test_cli.py tests/test_render.py
+python -m pytest tests/test_reviewer_context.py tests/test_contract_boundaries.py tests/test_context_budget.py tests/test_prompt_injection_memory.py
 python scripts/check_docs.py
-python scripts/check_docs.py --backlog-export <temporary-linear-export.json>
 git diff --check
 ```
 
 ## Completion Evidence To Collect
 
-- Linear milestone inventory proving implementation issues are `Done`.
-- PRD 0004 implemented/deferred acceptance mapping.
-- Focused, regression, full, docs, py-compile, and diff-check outputs.
-- Temporary Linear backlog export check output, with the export removed before completion.
-- Documentation refactor commit SHAs.
-- Fresh subagent review results with no material findings.
-- Final Linear evidence comment for `AUR-256`.
+- Focused `tests/test_findings.py` output.
+- Reviewer/failure regression output.
+- Tracer/CLI/render regression output.
+- Boundary regression output for reviewer context and memory safety.
+- Docs and diff checks.
+- Code review/subagent findings and fixes.
+- Linear evidence comment mapping every acceptance criterion to code/tests.
