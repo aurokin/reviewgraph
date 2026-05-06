@@ -34,8 +34,8 @@ The user-facing finding location remains `path`, `line`, and optional `line_end`
 3. Anchor validation should be deterministic and target-bound. `target_commit_sha` must be the current review target head SHA.
 4. AUR-204 supports single-hunk `RIGHT` anchors from fixture changed ranges. A multi-line finding is anchorable only when `line_end` stays inside the same changed range; otherwise it remains non-inline.
 5. `file_status` and `old_path` are source-validated when the helper derives the anchor from the changed file. Posting validation still validates target/finding binding and treats these fields as descriptive metadata because it does not receive the source changed file.
-6. Dry-run inline candidates must be visible in machine output and posting plan state, but remain non-public-payload items.
-7. Findings with missing or invalid anchors should not raise during dry-run rendering. They should remain non-inline output unless the caller explicitly asked to force them as inline candidates.
+6. Derived anchors should be visible on finding JSON by default. A finding becomes an `inline_candidate` posting-plan item only when the caller explicitly passes its ID through `inline_candidate_ids`; that explicit path remains dry-run only and non-public.
+7. Findings with missing or invalid anchors should not raise during dry-run rendering. They should remain normal non-inline output unless the caller explicitly asked to force them as inline candidates, in which case existing posting validation should fail clearly.
 8. Keep current AUR-202 quality eligibility intact. Do not rewrite general postability heuristics, evidence provenance, testing-specific policy, ranking, approval, or GitHub posting.
 
 ## Implementation Plan
@@ -55,9 +55,9 @@ The user-facing finding location remains `path`, `line`, and optional `line_end`
    - Stale target SHA or mismatched path remains rejected by existing posting validation.
    - Inline candidate posting-plan items are `inline_candidate` and `public_payload_eligible=false`.
 
-3. Wire dry-run inline candidates narrowly.
+3. Wire anchor enrichment narrowly.
    - Attach a `DiffAnchor` to classified findings after quality classification when a fixture-safe anchor can be derived.
-   - Feed the anchored finding IDs into `build_posting_plan(..., inline_candidate_ids=...)`.
+   - Do not automatically feed every anchored finding ID into `build_posting_plan(..., inline_candidate_ids=...)`; preserve current top-level dry-run payload behavior unless a caller explicitly requests inline candidates.
    - Keep candidate issue-comment payload top-level only; inline candidates must not enter the public payload body.
 
 4. Render machine-visible anchor metadata.
