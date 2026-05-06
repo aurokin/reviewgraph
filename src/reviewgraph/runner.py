@@ -396,7 +396,20 @@ def _is_postable_finding(finding: ClassifiedFinding) -> bool:
 
 def _has_concrete_finding_evidence(evidence: str) -> bool:
     normalized = evidence.casefold().strip()
-    return not bool(re.fullmatch(r"changed line \d+\.?", normalized))
+    if not normalized:
+        return False
+    if re.fullmatch(
+        r"(?:n/?a|none|unknown|tbd|see (?:diff|above)|"
+        r"(?:changed\s+)?lines?\s+\d+(?:\s*[-,]\s*\d+)*\.?)",
+        normalized,
+    ):
+        return False
+    if not re.search(r"\b(changed lines?|new branch|introduced|now)\b", normalized):
+        return False
+    detail = re.sub(r"^changed\s+lines?\s+\d+(?:\s*[-,]\s*\d+)*\s*[:.-]?\s*", "", normalized)
+    if len(detail.split()) < 3:
+        return False
+    return bool(re.search(r"[a-z]{3,}", detail))
 
 
 def _is_testing_advice(finding: ClassifiedFinding, text: str) -> bool:

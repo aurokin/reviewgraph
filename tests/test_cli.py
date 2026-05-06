@@ -443,6 +443,43 @@ def test_generic_coverage_with_weak_behavior_evidence_is_suppressed(tmp_path: Pa
     assert review["classified_output"]["postable_findings"] == []
 
 
+@pytest.mark.parametrize("evidence", ("N/A", "see diff", "line 12", "changed lines 12-14", "Changed line 12."))
+def test_placeholder_or_location_only_evidence_is_suppressed(tmp_path: Path, evidence: str) -> None:
+    fixture_path = tmp_path / "placeholder-evidence.json"
+    fixture = _basic_fixture()
+    fixture["raw_reviewer_outputs"][0]["items"] = [
+        {
+            "type": "postable_finding",
+            "id": "finding-placeholder-evidence",
+            "title": "Cache miss returns stale data",
+            "body": "The new branch returns stale data when the cache misses.",
+            "evidence": evidence,
+            "path": "src/cache.py",
+            "line": 12,
+            "priority": 1,
+            "severity": "warning",
+            "confidence": "high",
+            "fingerprint": "fixture-placeholder-evidence",
+        }
+    ]
+    fixture_path.write_text(json.dumps(fixture))
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path))
+    review = result.json_data["review"]
+
+    assert result.json_data["local_verdict"] == "no_findings"
+    assert result.json_data["post_enabled"] is False
+    assert review["candidate_payload_preview"] is None
+    assert review["classified_output"]["postable_findings"] == []
+    assert review["classified_output"]["suppressed"] == [
+        {
+            "id": "finding-placeholder-evidence",
+            "classification": "non_finding",
+            "reason": "Finding candidate did not meet postable quality policy.",
+        }
+    ]
+
+
 def test_generic_coverage_with_vague_scenario_is_suppressed(tmp_path: Path) -> None:
     fixture_path = tmp_path / "generic-coverage-vague-scenario.json"
     fixture = _basic_fixture()
