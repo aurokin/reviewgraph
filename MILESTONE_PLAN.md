@@ -6,7 +6,7 @@ Active execution artifact for this milestone. Linear remains the durable source 
 
 - Milestone: `PRD 0005: Review Quality`
 - Milestone ID: `7c623166-927e-43d7-a14d-41af005a2587`
-- Current execution status: `AUR-201`, `AUR-227`, `AUR-202`, `AUR-204`, `AUR-203`, `AUR-205`, `AUR-206`, and `AUR-226` are `Done`; `AUR-207` is `In Progress`; remaining milestone gate is pending in Linear.
+- Current execution status: all PRD 0005 implementation issues are `Done`; `AUR-257` milestone gate is `In Progress`.
 - Implementation issues:
   - `AUR-201` / `RG-012: Normalize Reviewer Output` / `Done`
   - `AUR-202` / `RG-013: Classify Review Quality` / `Done`
@@ -14,11 +14,11 @@ Active execution artifact for this milestone. Linear remains the durable source 
   - `AUR-204` / `RG-015: Validate Diff Anchors For Inline Candidates` / `Done`
   - `AUR-205` / `RG-016: Stop For Clarification Requests` / `Done`
   - `AUR-206` / `RG-017: Resume From Clarification Answers` / `Done`
-  - `AUR-207` / `RG-018: Compute Local Verdict` / `In Progress`
+  - `AUR-207` / `RG-018: Compute Local Verdict` / `Done`
   - `AUR-226` / `RG-037: Continue After Optional Reviewer Failure` / `Done`
   - `AUR-227` / `RG-038: Repair Or Record Malformed Reviewer JSON` / `Done`
 - Gate issue:
-  - `AUR-257` / `Complete PRD 0005: Review Quality` / `Backlog`
+  - `AUR-257` / `Complete PRD 0005: Review Quality` / `In Progress`
 
 ## Milestone Intent
 

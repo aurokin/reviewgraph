@@ -1,87 +1,104 @@
-# ISSUE PLAN: AUR-207 Compute Local Verdict
+# ISSUE PLAN: AUR-257 Complete PRD 0005 Review Quality
 
-Active issue plan for `AUR-207` / `RG-018: Compute Local Verdict`.
+Active issue plan for `AUR-257` / `Complete PRD 0005: Review Quality`.
 
 Linear remains the source of truth for issue state and relationships.
 
 ## Linear Snapshot
 
-- Issue: `AUR-207`
+- Issue: `AUR-257`
 - Status at plan time: `In Progress`
 - Milestone: `PRD 0005: Review Quality`
-- Title: `RG-018: Compute Local Verdict`
-- Harness: `python -m pytest tests/test_verdict.py`
-- Out of scope from Linear: public GitHub review events.
+- Title: `Complete PRD 0005: Review Quality`
+- Gate rule: close only after all implementation issues in the PRD milestone are complete.
 
 ## Intent
 
-Extract local verdict and post-eligibility policy from `runner.py` into an explicit module so the graph owns the private recommendation separately from GitHub artifact behavior.
+Close PRD 0005 only after proving the review-quality milestone is complete in code, tests, Linear evidence, and durable documentation.
 
-This slice should not implement GitHub `REQUEST_CHANGES`, approval, finalization, or writer behavior. The local verdict is dry-run/private state. Candidate payloads remain top-level issue-comment previews and continue to exclude request-changes wording by default.
+This is a milestone gate, not a new feature slice. The work should focus on completion audit, progressive-disclosure docs refactor, final validation, fresh review, and Linear closure.
 
 ## Current Baseline
 
-- `ReviewVerdict` already supports `comment`, `request_changes`, `needs_clarification`, and `no_findings`.
-- `runner.py` currently has a private `_local_verdict` helper:
-  - blocking pending clarification -> `needs_clarification`;
-  - any postable finding -> `comment`;
-  - no findings -> `no_findings`.
-- `runner.py` computes `post_enabled` inline from:
-  - no graph errors;
-  - no blocking clarification;
-  - local verdict is `comment`;
-  - at least one classified finding.
-- Existing tests already prove many integration outputs, but there is no focused `tests/test_verdict.py` and no durable `src/reviewgraph/verdict.py`.
-- `posting.py` already excludes local request-changes verdict text from candidate payloads by default and rejects explicit public request-changes verdict inclusion.
+- All PRD 0005 implementation issues are `Done` in Linear:
+  - `AUR-201` normalize reviewer output;
+  - `AUR-227` repair or record malformed reviewer JSON;
+  - `AUR-202` classify review quality;
+  - `AUR-204` validate diff anchors for inline candidates;
+  - `AUR-203` classify testing feedback quality;
+  - `AUR-205` stop for clarification requests;
+  - `AUR-206` resume from clarification answers;
+  - `AUR-226` continue after optional reviewer failure;
+  - `AUR-207` compute local verdict.
+- Each completed issue has a Linear evidence comment with commits, focused harnesses, regression validation, and review status.
+- No `.ws/` tree is present.
+- Current local branch is ahead of `origin/main`; do not push until this gate and documentation work are complete.
+- Durable docs have PRD 0005 content spread across README, findings contract, review quality, state graph, harness engineering, implementation plan, and ADR 0007. README still under-describes PRD 0005 as part of the current runnable slice.
 
 ## Decisions
 
-1. Create `src/reviewgraph/verdict.py` with narrow, deterministic policy helpers.
-2. Keep `request_changes` computation conservative for this milestone:
-   - Do not generate `request_changes` from low-confidence findings.
-   - Do not generate `request_changes` from ambiguous issues; those should be clarification requests and produce `needs_clarification`.
-   - In this slice, default postable findings continue to produce `comment` unless a future policy explicitly authorizes request-changes recommendations.
-3. Add `compute_post_enabled` beside verdict computation so required reviewer failures and clarification blocks remain explicit graph-owned policy instead of inline runner booleans.
-4. Required reviewer failure semantics do not change: top-level `GraphError`s keep `post_enabled=false` while dry-run output remains renderable.
-5. Public GitHub artifact kind stays `issue_comment`. Local verdict must not imply a GitHub review event.
+1. Treat Linear issue evidence as milestone input, but do not copy the full issue tree into durable docs.
+2. Refactor docs for progressive disclosure:
+   - README tells a drop-in agent what exists now and where to start.
+   - Architecture docs hold durable contracts and behavioral boundaries.
+   - Harness docs hold focused test families and validation commands.
+   - PRDs stay product-scope artifacts, not implementation changelogs.
+   - ADRs capture durable tradeoffs future agents might reopen.
+3. Keep docs concrete for implementation agents: name the modules, state fields, harnesses, and boundaries they must preserve.
+4. Do not introduce live GitHub, live LLM, approval, writer, semantic dedupe, or inline posting scope during the docs pass.
 
 ## Implementation Plan
 
-1. Add `src/reviewgraph/verdict.py`.
-   - `compute_local_verdict(findings, clarification_gate)` returns `needs_clarification`, `comment`, or `no_findings`.
-   - `compute_post_enabled(errors, clarification_gate, local_verdict, findings)` returns false for graph errors, blocking clarification, non-comment verdict, or no findings.
-   - Keep signatures small and based on existing typed outputs.
+1. Perform milestone completion audit.
+   - Reconfirm every PRD 0005 implementation issue is `Done`.
+   - Reconfirm each issue has an evidence comment.
+   - Reconfirm no temporary `.ws/` artifacts remain.
+   - Reconfirm local validation and current git state.
 
-2. Wire `runner.py` to the new module.
-   - Remove the private `_local_verdict` helper.
-   - Preserve the existing output shape and dry-run behavior.
-   - Keep `partial_review` metadata available before verdict/post-enabled computation, but do not make optional failures block posting.
+2. Refactor durable docs in narrow commits.
+   - Update README current runnable slice/repository status for PRD 0005.
+   - Tighten `docs/architecture/review-quality.md` around normalization -> repair -> classification -> local verdict.
+   - Tighten `docs/architecture/findings-contract.md` only where schema/partial-review/verdict details need better agent handoff.
+   - Tighten `docs/architecture/state-graph.md` only for clarification stop/resume, reviewer failure, and verdict boundaries if needed.
+   - Tighten `docs/harnesses/harness-engineering.md` so PRD 0005 focused harnesses are discoverable.
+   - Add an ADR only if the final review finds a durable tradeoff not already covered by ADR 0007.
 
-3. Add focused harness `tests/test_verdict.py`.
-   - Unit-test `compute_local_verdict` and `compute_post_enabled`.
-   - Prove blocking clarification yields `needs_clarification`, not `request_changes`.
-   - Prove low-confidence or suppressed/no finding paths cannot generate `request_changes`.
-   - Prove graph errors disable posting even if findings exist.
-   - Prove optional partial review does not disable posting by itself through an integration fixture if needed.
-   - Prove dry-run output renders local verdict and candidate payload artifact remains `issue_comment`.
-   - Prove public request-changes wording remains excluded from candidate payloads by default.
+3. Run validation.
+   - Focused PRD 0005 harness family.
+   - Broader tracer/reviewer/failure/boundary regressions.
+   - Full pytest, py-compile, docs check, and diff check.
 
-4. Update durable docs narrowly.
-   - `docs/architecture/review-quality.md` should mention local verdict as private policy state.
-   - `docs/harnesses/harness-engineering.md` should name `tests/test_verdict.py`.
-   - Avoid broader milestone docs refactor until the PRD 0005 gate.
+4. Use fresh subagents for milestone review.
+   - Review code/tests/docs/Linear evidence against PRD 0005 acceptance.
+   - Fix all material findings and commit after each review-fix batch.
+
+5. Rerun final validation after the last review-fix batch.
+   - Focused PRD 0005 harness family.
+   - Full pytest.
+   - Py-compile, docs check, and diff check.
+
+6. Close Linear gate and push only after the audit is clean.
+   - Add AUR-257 evidence comment with checklist and validation commands.
+   - Move AUR-257 to `In Review`, then `Done`.
+   - Push the completed local commits.
 
 ## Verification
 
-- Focused: `python -m pytest tests/test_verdict.py -q`
-- Related regression: `python -m pytest tests/test_clarification.py tests/test_required_reviewer_failure.py tests/test_optional_reviewer_failure.py tests/test_posting.py tests/test_render.py -q`
-- Full: `python -m pytest -q`
-- Hygiene: `python -m py_compile src/reviewgraph/*.py && python scripts/check_docs.py && git diff --check`
+- Focused PRD 0005 harnesses:
+  - `python -m pytest tests/test_findings.py tests/test_reviewer_json_repair.py tests/test_quality.py tests/test_diff_anchor.py tests/test_quality_testing.py tests/test_clarification.py tests/test_clarification_resume.py tests/test_optional_reviewer_failure.py tests/test_verdict.py -q`
+- Regression harnesses:
+  - `python -m pytest tests/test_tracer_fixture_run.py tests/test_cli.py tests/test_render.py -q`
+  - `python -m pytest tests/test_reviewers_fake.py tests/test_required_reviewer_failure.py tests/test_reviewer_runs.py -q`
+  - `python -m pytest tests/test_reviewer_context.py tests/test_contract_boundaries.py tests/test_context_budget.py tests/test_prompt_injection_memory.py tests/test_redaction.py -q`
+- Full/hygiene:
+  - `python -m pytest -q`
+  - `python -m py_compile src/reviewgraph/*.py && python scripts/check_docs.py && git diff --check`
 
 ## Out Of Scope
 
-- GitHub `REQUEST_CHANGES`, `COMMENT`, or `APPROVE` review submission.
+- New review-quality behavior beyond doc corrections required by the audit.
+- Live GitHub reads.
+- Live LLM reviewers.
 - Approval/finalization/writer behavior.
-- New ranking policy beyond existing graph-owned finding priority.
-- Public request-changes wording.
-- Live GitHub or live LLM behavior.
+- Semantic deduplication.
+- Inline GitHub posting.
