@@ -49,6 +49,7 @@ This issue should not add product behavior unless the gate audit finds a durable
 
 1. Re-fetch all PRD 0003 issues, comments, and the milestone from Linear immediately before final validation.
 2. Generate a temporary canonical backlog export from fetched Linear data. Include all active PRD 0003 issues in dependency order. Filter `blocked_by` to blockers inside the exported PRD 0003 issue set and separately document any external blockers/status in the gate evidence.
+   - Fail closed if any external blocker is active or unresolved unless there is a recorded Linear rationale that the blocker is stale, canceled, or not applicable to this milestone gate.
 3. Run the backlog export checker and remove the temporary export afterward:
    - `python scripts/check_docs.py --backlog-export <tmp-file>`
 4. Run focused gate harnesses:
@@ -65,9 +66,10 @@ This issue should not add product behavior unless the gate audit finds a durable
    - Confirm contract/config/context modules still avoid importing writer, approval/finalization implementations, live LLM clients, or transport modules.
    - Confirm dry-run/no-writer behavior remains covered by tests.
 8. Audit durable docs against PRD 0003 and the full issue set. Patch only durable gaps.
-9. Use fresh subagent review of the fetched Linear proof, backlog export, validation results, side-effect audit, and any doc changes. Iterate until material findings are gone.
-10. Commit any gate/doc proof changes.
-11. Comment on `AUR-254` with evidence, mark it `Done`, and update the milestone if Linear supports a completion status for milestones.
+9. If step 8 changes any file, rerun the relevant focused checks plus the full final validation from step 6 after the last edit.
+10. Use fresh subagent review of the fetched Linear proof, backlog export, final validation results, side-effect audit, and any doc changes. Iterate until material findings are gone.
+11. Commit any gate/doc proof changes.
+12. Comment on `AUR-254` with evidence, mark it `Done`, and update the milestone if Linear supports a completion status for milestones.
 
 ## Out Of Scope
 
