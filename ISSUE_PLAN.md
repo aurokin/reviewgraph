@@ -33,29 +33,32 @@ This issue should not add product behavior unless the gate audit finds a durable
 - Raw vs classified reviewer output and quality downgrade proof: `src/reviewgraph/models.py`, `src/reviewgraph/runner.py`, `tests/test_models.py`, `tests/test_cli.py`, `tests/test_tracer_fixture_run.py`.
 - Redaction service and status gates: `src/reviewgraph/redaction.py`, `src/reviewgraph/render.py`, `tests/test_redaction.py`, `tests/test_render.py`.
 - Context budget and reviewer context package contracts: `src/reviewgraph/context_budget.py`, `src/reviewgraph/reviewer_context.py`, `tests/test_context_budget.py`.
-- Durable docs: `docs/prds/0003-contracts.md`, `docs/architecture/state-graph.md`, `docs/architecture/reviewer-config.md`, `docs/harnesses/harness-engineering.md`, `docs/implementation/README.md`.
-- Linear ordering proof: temporary PRD 0003 backlog export checked with `python scripts/check_docs.py --backlog-export <tmp-file>`.
+- Durable docs: `docs/prds/0003-contracts.md`, `docs/architecture/state-graph.md`, `docs/architecture/findings-contract.md`, `docs/architecture/side-effects.md`, `docs/architecture/llm-data-handling.md`, `docs/architecture/review-quality.md`, `docs/architecture/reviewer-config.md`, `docs/harnesses/harness-engineering.md`, and `docs/implementation/README.md`.
+- Linear ordering proof: temporary PRD 0003 backlog export derived from freshly fetched Linear milestone, issue, relationship, and comment data, then checked with `python scripts/check_docs.py --backlog-export <tmp-file>`.
 
 ## Implementation Plan
 
-1. Generate a temporary canonical Linear backlog export for PRD 0003 with the ordered issue list and blocker references:
-   - `AUR-312` no blockers.
-   - `AUR-192` blocked by `AUR-312`.
-   - `AUR-237` blocked by `AUR-192`.
-   - `AUR-211` blocked by `AUR-237`.
-   - `AUR-254` blocked by `AUR-312`, `AUR-192`, `AUR-237`, and `AUR-211`.
-2. Run the backlog export checker and remove the temporary export afterward.
-3. Run focused gate harnesses:
+1. Re-fetch `AUR-312`, `AUR-192`, `AUR-237`, `AUR-211`, `AUR-254`, their comments, and the PRD 0003 milestone from Linear immediately before final validation.
+2. Generate a temporary canonical Linear backlog export for PRD 0003 from the fetched state, using the actual direct blocker relationships rather than inferred transitive blockers:
+   - Expected chain from the milestone plan: `AUR-312` -> `AUR-192` -> `AUR-237` -> `AUR-211` -> `AUR-254`.
+   - If fetched Linear direct blockers differ from this chain, use the fetched direct blockers in the export and document the mismatch in the gate comment.
+3. Run the backlog export checker and remove the temporary export afterward.
+4. Run focused gate harnesses:
    - `python -m pytest tests/test_models.py tests/test_config.py tests/test_contract_boundaries.py tests/test_fixtures.py tests/test_fixture_manifest.py tests/test_redaction.py tests/test_context_budget.py`
-4. Run full validation:
+   - Include side-effect guard harnesses in the focused command or as separate checks: `tests/test_posting.py`, `tests/test_render.py`, and dry-run/no-writer coverage in `tests/test_cli.py` and `tests/test_tracer_fixture_run.py`.
+5. Run full validation:
    - `python -m pytest`
    - `python -m py_compile src/reviewgraph/*.py`
    - `python scripts/check_docs.py`
    - `git diff --check`
-5. Audit durable docs against PRD 0003 and the gate checklist. Patch only durable gaps.
-6. Use fresh subagent review of the gate proof and any doc changes. Iterate until material findings are gone.
-7. Commit the gate plan and any gate/doc proof changes.
-8. Comment on AUR-254 with evidence, mark it `Done`, and update the milestone if Linear supports a completion status for milestones.
+6. Run a static no-live-side-effect audit over the repo:
+   - Search for live GitHub, LLM, approval, finalization, writer, network, and subprocess transport introductions.
+   - Confirm contract/config/context modules still avoid importing writer, approval/finalization implementations, live LLM clients, or transport modules.
+   - Confirm dry-run/no-writer behavior remains covered by tests.
+7. Audit durable docs against PRD 0003 and the gate checklist, including `findings-contract`, `side-effects`, `llm-data-handling`, and `review-quality`. Patch only durable gaps.
+8. Use fresh subagent review of the fetched Linear proof, backlog export, validation results, side-effect audit, and any doc changes. Iterate until material findings are gone.
+9. Commit any gate/doc proof changes.
+10. Comment on AUR-254 with evidence, mark it `Done`, and update the milestone if Linear supports a completion status for milestones.
 
 ## Out Of Scope
 
@@ -71,5 +74,6 @@ This issue should not add product behavior unless the gate audit finds a durable
 - Backlog export check output.
 - Focused harness output.
 - Full validation output.
+- Static no-live-side-effect audit output.
 - Subagent final no-findings result.
 - Confirmation that `.ws/` is absent and no temporary export remains in the repo.
