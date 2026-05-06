@@ -20,8 +20,10 @@ This is a gate and documentation slice, not a new behavior implementation slice.
 
 - All PRD 0004 implementation issues are done:
   - Re-fetch the milestone issue inventory and confirm `AUR-194`, `AUR-195`, `AUR-196`, `AUR-197`, `AUR-235`, `AUR-198`, `AUR-199`, `AUR-200`, and `AUR-225` are `Done` with evidence comments.
+- PRD 0004 acceptance surface is accounted for:
+  - Map user stories and implementation decisions to completed issue evidence or an explicit durable deferral note. Clarification resume and final payload construction are not silently closed by this milestone; they are deferred to later clarification/side-effect PRDs.
 - Focused and full validation passes:
-  - Run the PRD 0004 focused harness families plus full suite, docs check, py-compile, and diff check.
+  - Run the PRD 0004 focused harness families plus full suite, docs check, Linear backlog export check, py-compile, and diff check.
 - Documentation is refactored for progressive disclosure and harness engineering:
   - Update the narrow durable docs that an implementation agent needs: README current slice, architecture/state graph, harness strategy, implementation plan, and any decision docs needed for PRD 0004.
 - Temporary planning artifacts are handled:
@@ -44,10 +46,11 @@ This is a gate and documentation slice, not a new behavior implementation slice.
    - `docs/harnesses/harness-engineering.md` for implemented PRD 0004 harness families and fail-closed proof.
    - `docs/plans/implementation-plan.md` for sequencing narrative updates, without copying Linear as the backlog.
    - Add or update ADRs only for durable orchestration decisions that future implementers need.
-7. Run docs and code validation.
-8. Use fresh subagents to review code/tests/docs/Linear evidence until no material findings remain.
-9. Add a Linear evidence comment and move `AUR-256` to `Done`.
-10. Push only after the milestone gate and documentation refactor are complete.
+7. Create a temporary Linear backlog export in the canonical checker shape, run `python scripts/check_docs.py --backlog-export ...`, and remove the export before completion.
+8. Run docs and code validation.
+9. Use fresh subagents to review code/tests/docs/Linear evidence until no material findings remain.
+10. Add a Linear evidence comment and move `AUR-256` to `Done`.
+11. Push only after the milestone gate and documentation refactor are complete.
 
 ## Out Of Scope
 
@@ -65,13 +68,16 @@ python -m pytest tests/test_reviewer_context.py tests/test_contract_boundaries.p
 python -m pytest -q
 python -m py_compile src/reviewgraph/*.py
 python scripts/check_docs.py
+python scripts/check_docs.py --backlog-export <temporary-linear-export.json>
 git diff --check
 ```
 
 ## Completion Evidence To Collect
 
 - Linear milestone inventory proving implementation issues are `Done`.
+- PRD 0004 implemented/deferred acceptance mapping.
 - Focused, regression, full, docs, py-compile, and diff-check outputs.
+- Temporary Linear backlog export check output, with the export removed before completion.
 - Documentation refactor commit SHAs.
 - Fresh subagent review results with no material findings.
 - Final Linear evidence comment for `AUR-256`.

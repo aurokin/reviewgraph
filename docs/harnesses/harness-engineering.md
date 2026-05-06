@@ -100,6 +100,7 @@ Golden tests should protect product behavior without freezing incidental wording
 - `advance_or_finish_stage` is the only node that mutates cursor fields.
 - `clarification_review` is transient and never lives in the normal queue.
 - Resume from clarification reruns only affected reviewers and does not pop unrelated stages.
+- PRD 0004 implements normal-stage cursor traces and keeps clarification resume as later graph work. Until resume exists, clarification fixtures must still prove that unanswered clarification disables posting eligibility and stops before side effects.
 
 ### Memory And Trust
 
@@ -115,6 +116,7 @@ Golden tests should protect product behavior without freezing incidental wording
 - Reviewer adapters receive only `ReviewerContextPackage` and return structured `ReviewerResult`.
 - Reviewer adapters do not receive GitHub transports, approval state, finalization code, payload builders, or writer clients.
 - Fake and live reviewers share the same input/output contract.
+- Fake reviewer harnesses must cover completed output, explicit required failure, explicit optional failure, malformed raw strings, malformed mappings, and missing fixture/reviewer/stage keys. Required failures are graph errors; optional failures are reviewer-result errors plus local notes.
 - Capabilities default to `none` or `diff_context`; tool-using reviewers are future work. Any `tools` config accepted before that policy exists is inert metadata only and must not become callable handles, provider tool schemas, live-call budget, repository access, GitHub access, or write access.
 - Prompt-input harnesses must prove instructions are separate from context data. Untrusted or passive memory is exposed only as labeled metadata in MVP; bodies must not enter prompt instructions or prompt data.
 - Context-package traces must include selected reviewer config metadata, memory IDs, trust labels, resolved status, passive/actionable state, truncation status, omitted-context IDs, and capability policy.
@@ -142,6 +144,7 @@ Golden tests should protect product behavior without freezing incidental wording
 
 - Dry-run mode never invokes the writer.
 - Rejected approval, missing approval, no approved findings, local-note-only, suggested-reply-only, suppressed-only, and clarification-only runs never invoke the writer.
+- Required reviewer failure runs never invoke the writer: dry-run JSON must expose the graph error, failed reviewer result/status, no candidate payload, and local-only posting plan.
 - MVP payload kind is top-level `issue_comment`; formal PR reviews, inline comments, labels, statuses, `APPROVE`, and `REQUEST_CHANGES` are rejected.
 - Approval binds approved item IDs, review target, final full comment hash, actor, permission, and checked-at time.
 - Finalization re-checks target freshness, actor, permission, redaction, payload hash, marker reconciliation, and duplicate fingerprints before writer reachability.

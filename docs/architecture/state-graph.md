@@ -214,6 +214,23 @@ Graph traces should record `active_stage_before`, `active_stage_after`, `suspend
 
 Unanswered clarification requests keep `post_enabled` false. A timeout or rejected clarification can produce local notes, but cannot produce a high-confidence blocking verdict for the ambiguous issue.
 
+## Reviewer execution state
+
+Reviewer execution is graph-owned state, not prompt-owned control flow.
+
+Implemented fixture orchestration records:
+
+- `SelectedReviewer` values with reviewer name, active stage, and trigger/gate reasons.
+- `ReviewerRunKey` values bound to target hash, config hash, stage, reviewer, attempt, retry metadata, and clarification ID when present.
+- `reviewer_run_status` values for `selected`, `running`, `completed`, `failed`, and `skipped`.
+- `ReviewerResult` values with run key, status, raw output, typed normalized artifacts when available, and errors.
+
+Selection may not treat a reviewer as complete just because it was selected. Completed and policy-approved skipped statuses suppress reruns. Failed statuses suppress reruns only after retry exhaustion.
+
+In the fixture/fake-reviewer path, an explicit required reviewer failure is fail-closed but still renderable: the graph records a durable `GraphError`, preserves the failed `ReviewerResult` and failed `ReviewerRunStatus`, sets `post_enabled=false`, omits candidate GitHub payloads, and converts the posting plan to local-only. Optional reviewer failures are recorded as failed `ReviewerResult`s and local notes, but they do not create top-level graph errors or block post eligibility by themselves.
+
+Malformed fixture data or malformed raw-output schema is not a successful review. Those errors keep the existing parse/error behavior and should not be downgraded into fail-closed dry-run output.
+
 ## Final payload
 
 `approval_gate` records approved item IDs and approval metadata only, including the GitHub actor and permission snapshot shown to the human approver. `finalize_github_payload` builds the final issue-comment body from approved item IDs, computes the final hash, verifies it matches `approval.approved_final_payload_hash`, verifies the current GitHub actor still matches the approved actor, verifies permission and full review target freshness, verifies redaction status, and only then allows `post_or_emit` to call the writer.

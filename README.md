@@ -10,7 +10,7 @@ ReviewGraph reads GitHub pull requests, uses the PR conversation as shared revie
 
 ## Current runnable slice
 
-The current implementation includes the PRD 0002 fixture tracer bullet plus the PRD 0010 reviewer-context boundary harness. It does not perform live GitHub reads, live LLM calls, approval, or posting. It proves the dry-run product shape with packaged fixtures, deterministic fake reviewer output, scoped reviewer context packages, passive/trusted PR memory labeling, and non-live provider request previews:
+The current implementation includes the PRD 0002 fixture tracer bullet, the PRD 0010 reviewer-context boundary harness, and the PRD 0004 graph-orchestration slice. It does not perform live GitHub reads, live LLM calls, approval, or posting. It proves the dry-run product shape with packaged fixtures, staged reviewer selection, deterministic risk/size routing, reviewer run status, deterministic fake reviewer output, required-reviewer fail-closed behavior, scoped reviewer context packages, passive/trusted PR memory labeling, and non-live provider request previews:
 
 ```bash
 PYTHONPATH=src python -m reviewgraph.cli --fixture-pr basic-pr --print-markdown
@@ -20,6 +20,7 @@ Useful validation commands:
 
 ```bash
 python -m pytest tests/test_tracer_fixture_run.py
+python -m pytest tests/test_stage_cursor.py tests/test_routing.py tests/test_reviewer_runs.py
 python -m pytest tests/test_reviewer_context.py tests/test_prompt_injection_memory.py
 python -m pytest
 python scripts/check_docs.py
@@ -71,4 +72,4 @@ Read in this order:
 
 ## Repository status
 
-Fixture dry-run tracer, context budgeting, reviewer context package, inert reviewer tool metadata, passive-memory prompt boundaries, prompt-injection memory harness, provider preview redaction, and side-effect import boundaries are implemented. Live GitHub reads, live LLM reviewers, approval finalization, and GitHub writers are still future milestones.
+Fixture dry-run tracer, context budgeting, reviewer context package, inert reviewer tool metadata, passive-memory prompt boundaries, prompt-injection memory harness, provider preview redaction, staged reviewer selection, deterministic risk/size gates, reviewer run status, fake reviewer execution, required-reviewer fail-closed dry-run output, and side-effect import boundaries are implemented. Clarification resume, live GitHub reads, live LLM reviewers, approval finalization, and GitHub writers are still future milestones.

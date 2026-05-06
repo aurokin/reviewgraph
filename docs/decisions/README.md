@@ -10,6 +10,7 @@ Decision records capture durable tradeoffs that should outlive individual implem
 4. [Linear backlog, docs as contracts](0004-linear-backlog-docs-are-contracts.md)
 5. [Inert reviewer tool metadata](0005-inert-reviewer-tool-metadata.md)
 6. [Passive memory is metadata-only in reviewer prompts](0006-passive-memory-metadata-only.md)
+7. [Required reviewer failure is fail-closed graph state](0007-required-reviewer-fail-closed-state.md)
 
 ## Rule
 

@@ -10,9 +10,24 @@
 
 ## Implementation posture
 
-Start with tracer bullets, not a complete policy engine. The first useful implementation should run a fixture PR through the graph, select reviewers with staged reasons, emit markdown/JSON, classify output into postable and non-postable items, and prove no GitHub writer is called. Reviewer context boundaries and clarification/resume are part of the early graph shape, not late integration polish. Live reads, live LLM calls, and approval-gated posting come after the fixture graph proves those contracts.
+Start with tracer bullets, not a complete policy engine. The first useful implementation should run a fixture PR through the graph, select reviewers with staged reasons, emit markdown/JSON, classify output into postable and non-postable items, and prove no GitHub writer is called. Reviewer context boundaries and clarification state are part of the early graph shape, not late integration polish. Answered clarification resume, live reads, live LLM calls, and approval-gated posting come after the fixture graph proves those contracts.
 
 The executable backlog lives in Linear. Treat this plan as the durable sequencing narrative, not the complete ticket list. Every implementation issue should identify the narrowest contract doc, the deterministic fixture or fake, the harness command, the expected artifact, and the explicit out-of-scope boundary before code lands.
+
+## Implemented orchestration checkpoint
+
+The PRD 0004 graph-orchestration slice now proves these contracts in fixtures and harnesses:
+
+- empty LangGraph dry-run initialization with no-writer proof;
+- normal stage cursor state and transition traces;
+- active-stage reviewer selection for always/path/diff/label/risk/size triggers;
+- deterministic risk and size state before risk-gated selection;
+- reviewer run keys, run status, completion/skipped suppression, retry selection, and retry exhaustion;
+- deterministic fake reviewer execution behind `ReviewerContextPackage`;
+- required fake reviewer failure as graph-owned fail-closed state with dry-run output preserved;
+- optional fake reviewer failure as non-terminal reviewer-result error plus local note.
+
+Remaining graph work is intentionally staged in later PRDs: clarification resume, live GitHub reads, live LLM reviewer execution, approval/finalization, and writer behavior.
 
 ## MVP constraints
 

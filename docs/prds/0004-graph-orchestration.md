@@ -52,3 +52,26 @@ Implement the LangGraph workflow around explicit stage cursor state, reviewer ru
 ## Further Notes
 
 This PRD is the core LangGraph demonstration. It should stay rigorous even if individual reviewer logic remains fake or deterministic in early slices.
+
+## Implementation Status
+
+The PRD 0004 milestone completed the fixture-backed orchestration slice, not every future graph node named in the full product design.
+
+Implemented:
+
+- empty fixture dry-run graph initialization with no-writer proof;
+- normal stage cursor invariants and transition traces for `initial_triage`, `specialized_review`, and `logic_review`;
+- active-stage reviewer selection for always, path, diff, label, risk, and size triggers;
+- deterministic risk/size graph state before risk gates;
+- reviewer run keys, selected/running/completed/failed/skipped statuses, retry selection, and retry exhaustion semantics;
+- deterministic fake reviewer execution through `ReviewerContextPackage`;
+- required fake reviewer failure as fail-closed graph state that preserves dry-run output and disables posting eligibility;
+- optional fake reviewer failure as a non-terminal failed reviewer result plus local note;
+- dry-run bypass of approval and writer paths.
+
+Deferred intentionally:
+
+- answered clarification resume through `clarification_review` remains future graph work;
+- approval, final payload construction, actor/permission checks, target freshness checks, marker reconciliation, and writer reachability belong to PRD 0007 side effects;
+- live GitHub reads belong to PRD 0006;
+- live LLM reviewer execution belongs to PRD 0008.

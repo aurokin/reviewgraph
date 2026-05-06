@@ -28,13 +28,14 @@ The product point is not to add live integrations. It is to demonstrate that Lan
 
 ## Current Code Snapshot
 
-- `src/reviewgraph/runner.py` already runs fixture PRs through a deterministic dry-run path, but the orchestration is still a local Python loop rather than a dedicated graph/state boundary.
-- Stage cursor behavior exists as local variables plus trace dictionaries. It needs explicit cursor helpers/state so `advance_or_finish_stage` is the sole cursor mutator.
-- Reviewer selection exists inside `runner.py` for always, path, diff pattern, label, conversation pattern, risk, and size triggers. It should be carved toward graph-owned routing with deterministic risk state instead of ad hoc fixture risk helpers.
-- `ReviewerRunKey`, `ReviewerRunStatus`, `RiskAssessment`, and `RiskThresholds` are modeled in `src/reviewgraph/models.py`, but reviewer run status and retry policy are not yet used by execution.
-- Fake reviewer behavior now flows through a deterministic adapter boundary that consumes `ReviewerContextPackage`, returns `ReviewerResult`/errors keyed by selected reviewers, and records `reviewer_results` in dry-run JSON.
-- Required and optional reviewer failures are represented as first-class fake reviewer outcomes. `AUR-225` owns the remaining policy gap: required failures should fail closed without aborting local dry-run rendering, while optional failures remain non-terminal.
-- Dry-run writer reachability is already tested through the current runner and should remain default-safe through every slice.
+- `src/reviewgraph/graph.py` provides the empty LangGraph dry-run slice used to prove state initialization and no-writer reachability.
+- `src/reviewgraph/state.py` owns stage cursor helpers and transition traces. `advance_or_finish_stage` is the only stage cursor mutator for implemented PRD 0004 behavior.
+- `src/reviewgraph/routing.py` owns active-stage reviewer selection for always, path, diff pattern, label, conversation pattern, risk, and size triggers.
+- `src/reviewgraph/risk.py` records deterministic risk/size facts before risk gates select reviewers.
+- `src/reviewgraph/reviewer_runs.py` owns reviewer run keys, run status registration, completed/skipped suppression, retry decisions, and retry exhaustion semantics.
+- `src/reviewgraph/reviewers.py` owns deterministic fake reviewer execution through `ReviewerContextPackage`; dry-run JSON records `reviewer_results`.
+- `src/reviewgraph/runner.py` wires the fixture tracer through the graph-owned state contracts and preserves dry-run no-writer behavior.
+- Required fake reviewer failures now record durable graph errors, force `post_enabled=false`, preserve local dry-run output, and make the posting plan local-only. Optional fake reviewer failures remain failed reviewer results plus local notes without blocking post eligibility by themselves.
 
 ## Execution Order
 
@@ -106,6 +107,24 @@ Update the narrowest durable docs alongside behavior:
 - Risk/size classification and routing proof belong in `docs/harnesses/harness-engineering.md` and, if durable enough, `docs/architecture/reviewer-config.md`.
 - Fake reviewer and graph tracer behavior belongs in `docs/plans/implementation-plan.md` only if sequencing changes materially.
 - Keep Linear as the executable backlog. Do not copy the issue tree into durable product docs beyond this active execution plan.
+
+## PRD 0004 Acceptance Surface
+
+- Implemented in this milestone:
+  - Empty fixture dry-run graph initialization and no-writer proof.
+  - Stage cursor invariants and transition traces for normal stages.
+  - Active-stage reviewer selection with always/path/diff/label/risk/size gates and explainable trigger reasons.
+  - Deterministic risk/size state before risk gate routing.
+  - Reviewer run keys, statuses, idempotent completion suppression, and retry exhaustion semantics.
+  - Deterministic fake reviewer execution behind `ReviewerContextPackage`.
+  - Explicit required fake reviewer failure fail-closed behavior and optional failure non-terminal behavior.
+- Already present from earlier tracer/context work and exercised by PRD 0004:
+  - Clarification requests can stop dry-run posting eligibility in fixture runs.
+  - Dry-run mode bypasses approval/writer paths.
+- Deferred intentionally to later PRDs/milestones:
+  - Answered clarification resume and rerunning only affected reviewers remains future graph work tied to review-quality/clarification slices.
+  - Approval gate, final payload construction, actor/permission/freshness validation, marker reconciliation, and writer reachability are PRD 0007 side-effect work.
+  - Live GitHub reads are PRD 0006; live LLM reviewers are PRD 0008.
 
 ## Milestone Completion Criteria
 
