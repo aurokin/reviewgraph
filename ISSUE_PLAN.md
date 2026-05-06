@@ -1,102 +1,108 @@
-# ISSUE PLAN: AUR-213 Read GitHub PR Metadata With Fake Transport
+# ISSUE PLAN: AUR-247 Fail Closed On GitHub Read Gaps
 
-Active issue plan for `AUR-213` / `RG-024: Read GitHub PR Metadata With Fake Transport`.
+Active issue plan for `AUR-247` / `RG-058: Fail Closed On GitHub Read Gaps`.
 
 Linear remains the source of truth for issue state and relationships.
 
 ## Linear Snapshot
 
-- Issue: `AUR-213`
+- Issue: `AUR-247`
 - Status at plan time: `In Progress`
 - Milestone: `PRD 0006: GitHub Read And Memory`
-- Title: `RG-024: Read GitHub PR Metadata With Fake Transport`
-- Harness from Linear: `python -m pytest tests/test_github_fake_read.py`
-- Out of scope from Linear: live GitHub and comments pagination.
+- Title: `RG-058: Fail Closed On GitHub Read Gaps`
+- Harness from Linear: `python -m pytest tests/test_github_read_gaps.py`
+- Linear comments at start: none.
+- Out of scope from Linear: downstream quality/posting enforcement.
 
 ## Intent
 
-Create the first GitHub read adapter contract using a deterministic fake transport. This slice should parse PR refs, fetch PR metadata and changed files, return `PullRequestContext` plus `ReviewTarget`, and require no write credentials.
+Make incomplete GitHub read context impossible to mistake for graph-complete review input. GitHub read failures, partial pagination failures, unavailable required resources, and unknown required thread state should become explicit `ReadGap` and `GraphError` state before memory, routing, reviewers, quality, or posting can rely on partial context.
 
-This issue should also establish the early bridge shape required by the milestone plan so later GitHub dry-run work does not discover runner incompatibility late: an explicit read-result envelope, changed-line metadata or anchor-unavailable metadata, read gaps list, thread-state availability marker, optional actor/permission snapshot field, and redaction status for GitHub-sourced text/errors.
+This issue should not implement real pagination or the end-to-end GitHub dry-run CLI path. It should create the policy and harness surface that later pagination and dry-run integration must call.
 
 ## Current Baseline
 
-- There is no `src/reviewgraph/github.py`.
-- `src/reviewgraph/fixtures.py` already parses fixtures into `PullRequestContext` and `ReviewTarget`.
-- `src/reviewgraph/models.py` already has `ReviewTarget`, `PullRequestContext`, `PullRequestChangedFile`, `PullRequestComment`, `PullRequestReview`, `PullRequestReviewThread`, `ReadGap`, and `RedactionStatus`.
-- `src/reviewgraph/runner.py` still expects fixture-specific `ChangedFile.changed_ranges` for diff anchors and fixture raw reviewer outputs for fake reviewer execution.
-- `src/reviewgraph/redaction.py` provides shared redaction; adapter errors and GitHub-sourced text must use it before display or persistence.
+- `src/reviewgraph/github.py` now returns `GitHubReadResult` for fake metadata/files reads.
+- Metadata/files-only reads already include required gaps for `comments`, `reviews`, `review_comments`, and `thread_state`.
+- `ReadGap` currently stores `resource`, `required`, `reason`, and `retryable`, but there is no shared classifier for GitHub read failure reasons.
+- `GraphError` already disables `post_enabled` through `compute_post_enabled()`.
+- Existing fixture runner fail-closed paths preserve dry-run output by emitting errors, `post_enabled=false`, local-only posting plans, and no candidate payload.
+- `render_review()` currently renders truncation, memory, posting plan, and candidate payload, but not read gaps directly.
+- `AUR-214` will implement real pagination; `AUR-239` will wire GitHub PR refs into CLI/runner.
 
 ## Decisions
 
-1. Add `src/reviewgraph/github.py` as the read adapter boundary. Keep it independent of CLI, runner, approval, finalization, and writer code.
-2. Use a protocol-style fake transport interface with read-only methods. It must not expose or require write credentials.
-3. Parse both `owner/repo#number` and GitHub PR URLs into a typed reference. Invalid refs fail with redacted errors.
-4. Return a `GitHubReadResult` envelope containing:
-   - parsed PR ref;
-   - `PullRequestContext`;
-   - `ReviewTarget`;
-   - PR author plus base/head ref names as GitHub metadata extras, because `PullRequestContext` currently stores SHAs but not these fields;
-   - changed-line metadata derived from unified patches when possible;
-   - anchor-unavailable metadata for files where changed lines cannot be derived;
-   - a resource-coverage/read-scope marker that says this result is `metadata_files_only`, with `metadata` and `files` complete but `comments`, `reviews`, `review_comments`, and `thread_state` not fetched yet;
-   - `read_gaps`, initially empty for metadata/files resources only;
-   - `thread_state_available` with an explicit reason such as `not_fetched_in_scope`, distinct from future `unavailable_from_transport`;
-   - optional `actor_permission` snapshot, initially `None`;
-   - redaction status.
-5. `GitHubChangedFileLines` must directly satisfy the current changed-file protocols used by `diff_anchor.py`: it should expose `path`, `changed_ranges`, `status`, `previous_path`, `patch_status`, and `contains_line()`. Unsupported or unavailable patch shapes must not create false anchors; they should produce explicit anchor-unavailable metadata.
-6. Do not wire the adapter into CLI or runner in this issue; keep `AUR-239` responsible for the end-to-end GitHub dry-run path.
-7. Do not fetch comments, reviews, review comments, or thread state in this issue. Later issues fill those resources and convert missing required resources into fail-closed read gaps before graph-ready use.
-8. Support only `github.com` PR URLs for MVP. GitHub Enterprise host support is deferred until a host policy exists.
-9. Preserve raw typed PR context in memory for later graph use, but expose redacted serialization/status/error helpers for any display, logging, trace, or persisted artifact.
+1. Add a small `src/reviewgraph/read_gaps.py` policy module rather than burying read-gap decisions inside GitHub adapter code, runner code, or prompts.
+2. Keep `ReadGap` as the durable model for now. Do not expand `models.py` unless the policy cannot be expressed with existing fields.
+3. Classify GitHub resource failures with deterministic reason codes:
+   - `forbidden` / terminal 403;
+   - `not_found` / terminal 404;
+   - `rate_limited` / retryable;
+   - `timeout` / retryable;
+   - `unavailable` / terminal;
+   - `pagination_incomplete` / retryable or terminal depending on source error;
+   - `thread_state_unknown` / terminal until a later policy proves it safe;
+   - `not_fetched_in_scope` / retryable for metadata/files-only placeholders.
+4. Required gaps create fail-closed graph errors. Optional gaps remain visible but must not create graph errors by themselves.
+5. Fail-closed GitHub read state should be renderable without running reviewers: no review findings, no candidate payload, `post_enabled=false`, and explicit read-gap/error output in markdown and JSON.
+6. Distinguish read gaps from context truncation. Pagination/read failures happen before context budgeting and are represented as `ReadGap`; configured budget truncation still uses `TruncationNotice`.
+7. Do not implement real later-page data fetching in this issue. Use deterministic fake read-gap fixtures/harness inputs that represent pagination failure and unknown thread state.
+8. Do not wire CLI `--github-pr` or live `gh` behavior in this issue. Provide reusable functions and tests that AUR-214/AUR-239 can consume.
 
 ## Implementation Plan
 
-1. Add focused failing tests in `tests/test_github_fake_read.py`.
-   - PR ref parsing for `owner/repo#number`.
-   - PR URL parsing for `https://github.com/owner/repo/pull/123`.
-   - Invalid refs reject `#0`, negative and non-integer PR numbers, missing owner/repo, unsupported hosts or schemes, query/fragment URLs, and redacted invalid input in error text.
-   - Fake transport happy path returns metadata, PR author, base/head refs, labels, target SHAs, merge base, changed files, patches, and `ReviewTarget`.
-   - `GitHubReadResult` records resource coverage as metadata/files only and cannot be mistaken for graph-ready complete context.
-   - Fake transport records only read calls and has no writer/write API requirement.
-   - Secret-like PR title/body/patch text and adapter error data are redacted in serializable envelope/status/error helpers, while raw typed context remains available only as in-memory data.
-   - Changed ranges are derived from unified patch hunks and directly satisfy existing anchor protocols.
-   - Multi-hunk patches and multiline finding ranges are supported.
-   - Deleted, binary/no-patch, oversized/unavailable patch, and unsupported hunk cases degrade to anchor-unavailable metadata instead of partial or false anchors. Renamed files with available parseable patches must preserve previous_path and remain anchorable.
+1. Add `tests/test_github_read_gaps.py` first.
+   - Required GitHub metadata/files-only gaps from `GitHubReadResult` become graph errors and suppress review/posting.
+   - Optional gaps are rendered but do not create graph errors.
+   - Fetch failure can be represented as a terminal fail-closed state with no `PullRequestContext`, no reviewers, no findings, no posting plan candidate, and a redacted error.
+   - Required failure classifications cover 403, 404, rate limit, timeout, unavailable, pagination incomplete, and unknown thread state, with expected retryable values.
+   - Partial pagination failure is distinct from configured context truncation: read-gap JSON is populated while truncation stays empty unless a separate budget notice is supplied.
+   - Dry-run markdown and JSON include read gaps and fail-closed reasons.
+   - Read-gap text and adapter errors pass through redaction before render output.
 
-2. Implement `src/reviewgraph/github.py`.
-   - Define `GitHubPRRef`, `GitHubPRMetadata`, `GitHubChangedFileLines`, `GitHubReadResult`, resource coverage/status values, structured adapter errors, and a small fake transport contract.
-   - Implement `parse_github_pr_ref`.
-   - Implement `read_github_pr_with_fake_transport`.
-   - Convert fake transport dictionaries into existing typed models.
-   - Keep validation errors specific, structured, and redacted.
+2. Implement `src/reviewgraph/read_gaps.py`.
+   - Define resource/failure constants or `StrEnum` values if useful.
+   - Add helpers to build `ReadGap` values for GitHub resources.
+   - Add a classifier from fake GitHub failure metadata/status to `ReadGap`.
+   - Add `graph_errors_from_read_gaps(read_gaps)` for required gaps.
+   - Add a small fail-closed dry-run result builder or render helper that preserves dry-run output shape without invoking reviewers.
 
-3. Add boundary and docs proof.
-   - Add or extend static import tests so `src/reviewgraph/github.py` cannot import live transports, network clients, approval, finalization, posting writer, or side-effect code.
-   - Document the new fake read contract, metadata extras, resource coverage, raw-vs-redacted result rule, and changed-line bridge in `docs/architecture/github-integration.md`.
-   - Add the AUR-213 harness expectation to `docs/harnesses/harness-engineering.md`.
+3. Extend render support narrowly.
+   - Add `read_gaps` and `errors` inputs to `render_review()` with defaults.
+   - Render read gaps in JSON and markdown separately from truncation.
+   - Render graph errors in JSON and markdown so GitHub read failure is visible even when no reviewers run.
+   - Preserve existing render defaults and fixture dry-run outputs.
 
-4. Keep package and default test posture unchanged.
-   - No new runtime dependency unless unavoidable.
-   - No live `gh`, network, `requests`, approval, finalization, or writer import.
-   - No CLI behavior change yet.
+4. Integrate with the fake GitHub read envelope only where needed.
+   - Reuse `GitHubReadResult.read_gaps`.
+   - Keep `src/reviewgraph/github.py` read-only and free of runner/approval/writer imports.
+   - If helper functions need a GitHub-specific wrapper, keep dependencies one-way: GitHub/read-gap policy can depend on models and redaction, but not on CLI, runner, posting, approval, finalization, or writer modules.
+
+5. Update durable docs.
+   - `docs/architecture/state-graph.md`: required read gaps create graph errors, stop reviewer execution for GitHub read targets, set `post_enabled=false`, suppress candidate payloads, and remain distinct from truncation.
+   - `docs/architecture/github-integration.md`: failure classification and unknown thread-state behavior.
+   - `docs/harnesses/harness-engineering.md`: AUR-247 focused harness and read-gap render expectations.
 
 ## Verification
 
 - Focused:
-  - `python -m pytest tests/test_github_fake_read.py -q`
-- Regression:
-  - `python -m pytest tests/test_fixtures.py tests/test_memory.py tests/test_routing.py tests/test_cli.py tests/test_redaction.py tests/test_contract_boundaries.py tests/test_reviewer_context.py tests/test_context_budget.py tests/test_render.py -q`
+  - `python -m pytest tests/test_github_read_gaps.py -q`
+- Related regression:
+  - `python -m pytest tests/test_github_fake_read.py tests/test_render.py tests/test_verdict.py tests/test_contract_boundaries.py -q`
+- Wider PRD 0006/runner regression:
+  - `python -m pytest tests/test_fixtures.py tests/test_memory.py tests/test_routing.py tests/test_cli.py tests/test_redaction.py tests/test_reviewer_context.py tests/test_context_budget.py tests/test_diff_anchor.py -q`
 - Hygiene:
+  - `python -m pytest -q`
   - `python -m py_compile src/reviewgraph/*.py`
   - `python scripts/check_docs.py`
   - `git diff --check`
 
 ## Out Of Scope
 
+- Real GitHub pagination.
 - Live GitHub reads.
 - CLI GitHub PR target support.
-- Runner integration for GitHub read results.
-- Comments, reviews, review comments, and thread-state pagination.
-- Fail-closed read-gap policy beyond carrying an empty read-gap list in the read-result envelope.
+- Building conversation memory from GitHub comments/reviews.
+- Running reviewers from GitHub read results.
+- Downstream quality/posting implementation beyond making required read gaps produce graph errors, `post_enabled=false`, no candidate payload, and renderable dry-run evidence.
 - Approval, finalization, writer behavior, inline comments, labels, statuses, and formal PR reviews.
