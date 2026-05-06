@@ -1,112 +1,93 @@
-# MILESTONE PLAN: PRD 0002 MVP Tracer Bullet
+# MILESTONE PLAN: PRD 0003 Contracts
 
-Historical execution artifact for this milestone. Linear remains the durable source for issue status, milestone order, blockers, and handoff details; if this file conflicts with Linear, Linear wins. Fetch current milestone state from Linear before acting on this plan.
+Active execution artifact for this milestone. Linear remains the durable source for issue status, milestone order, blockers, and handoff details; if this file conflicts with Linear, Linear wins. Re-fetch current Linear state before starting each issue.
 
-## Linear scope snapshot
+## Linear Scope Snapshot
 
-- Milestone: `PRD 0002: MVP Tracer Bullet`
+- Milestone: `PRD 0003: Contracts`
+- Milestone ID: `1a431524-5899-43e1-9dce-e626d8de8796`
+- Current status: 0% complete when this plan was drafted.
 - Implementation issues:
-  - `AUR-208` / `RG-019: Build Posting Plan For Dry Run`
-  - `AUR-209` / `RG-020: Render Redacted Markdown And JSON`
-  - `AUR-210` / `RG-021: Add Fixture Dry-Run CLI`
-  - `AUR-238` / `RG-049: Add Fixture Tracer Bullet Golden Run`
-- Gate issue: `AUR-258` / `Complete PRD 0002: MVP Tracer Bullet`
+  - `AUR-192` / `RG-003: Parse Fixture PR With Review Target`
+  - `AUR-211` / `RG-022: Enforce Context Budget And Truncation Notes`
+  - `AUR-237` / `RG-048: Add Core Redaction Service`
+- Gate issue: `AUR-254` / `Complete PRD 0003: Contracts`
+- Issue comments: none on `AUR-192`, `AUR-211`, `AUR-237`, or `AUR-254` at plan time.
 
-## Current gate snapshot
+## Milestone Intent
 
-As of the latest AUR-258 gate pass:
+PRD 0003 turns the PRD 0002 tracer's intentionally thin contracts into durable schemas and validation harnesses. The milestone should make fixture parsing, review target binding, context budgeting, truncation notes, and redaction explicit enough that later graph, memory, live LLM, live GitHub read, approval, and writer milestones cannot smuggle safety decisions through prompts or ad hoc dictionaries.
 
-- `AUR-208`, `AUR-209`, `AUR-210`, and `AUR-238` are `Done` in Linear.
-- `AUR-258` is `In Review` and owns the final PRD 0002 completion audit.
-- The local repository has unpushed AUR-258 gate commits after `208b0d5`; do not push again until the active goal's push condition is satisfied.
-- The public GitHub repository exists at `https://github.com/aurokin/reviewgraph`; no further push should happen for gate work until the active goal's push condition is satisfied.
-- Documentation drift addressed: `README.md` and `docs/operations/README.md` now describe the fixture-only tracer runtime and keep live GitHub, live LLM, approval, and writer behavior future-scoped.
-- Coverage gap addressed: committed fixture graph proofs now cover `basic-pr`, `specialized-review-pr`, and `ambiguous-logic-pr`.
+This milestone does not need live adapters, prompt wording, persistence, formal approval UI, or provider-specific LLM calls. It should preserve the current fixture dry-run behavior while hardening the contracts underneath it.
 
-## Milestone intent
+## Current Code Snapshot
 
-PRD 0002 should produce the first runnable ReviewGraph demo without live GitHub reads, live LLM calls, approval, or writers. The tracer path is:
+- `src/reviewgraph/models.py` has a minimal dataclass surface for `ReviewTarget`, `DiffAnchor`, classified outputs, selected reviewers, memory references, truncation notices, and redaction status. It does not yet contain the full PRD 0003 `ReviewState`, `ReviewerRunKey`, raw reviewer output, risk, read-gap, approval, finalization, permission, marker reconciliation, or writer-result contracts.
+- `src/reviewgraph/fixtures.py` can load packaged JSON fixtures, validate a small fixture shape, validate reviewer config fields, parse changed files/ranges, and produce `FixturePR` records. It does not yet provide the required fixture corpus, target hash helpers, manifest consumption validation, PR metadata/comments/reviews/thread schemas, or typed `ReviewTarget` parsing.
+- `src/reviewgraph/redaction.py` has deterministic regex redaction for private keys, authorization headers, bearer tokens, GitHub tokens, API-key-like assignments, `.env` assignments, and standalone key shapes. Coverage is currently exercised through tracer/render tests, not a dedicated redaction harness across all required surfaces.
+- `src/reviewgraph/runner.py` owns a fixture-only dry-run shell. It should keep using fixture/fake data, but PRD 0003 work should move reusable contracts into focused modules instead of expanding runner-local policy.
+- `src/reviewgraph/fixtures_data/manifest.json` contains only the PRD 0002 tracer fixtures: `basic-pr`, `specialized-review-pr`, and `ambiguous-logic-pr`. Harness engineering requires the broader corpus names before later milestones build on them.
+- Current default tests prove the PRD 0002 slice. PRD 0003 should add focused harnesses instead of relying on tracer tests as proxy evidence.
 
-```text
-fixture PR
-  -> conversation memory
-  -> review target
-  -> context budget
-  -> staged reviewer selection
-  -> fake reviewer outputs
-  -> quality classification
-  -> local verdict
-  -> dry-run posting plan
-  -> markdown and JSON output
-  -> no writer reachable
-```
+## Execution Order
 
-## Sequencing risk
+1. `AUR-192` first: fixture schema and immutable review target parsing are the foundation for the rest of this milestone. Add the required manifest scenarios, typed fixture PR context, stable target hash behavior, invalid-shape errors, and manifest consumption validation.
+2. `AUR-211` second: context budgets depend on parsed changed files, patches, conversation memory, and fixture corpus entries. Add explicit budget models, deterministic truncation/defer decisions, omitted-context markers, and structured local-note candidates.
+3. `AUR-237` third: redaction already exists, but it needs a focused service contract and harness coverage over fixture text, logs/traces/error payloads, rendered output, candidate/final payload text, and future provider-bound request text. Tie redaction status into state-facing contracts before payload validation.
+4. `AUR-254` last: complete the milestone audit only after all implementation issues are `Done`, docs are refactored for PRD 0003 drift, default validation is green, Linear-derived backlog validation is green, and fresh subagent review reports no material issues.
 
-The durable PRD index says the MVP tracer bullet depends on contracts, fake adapters, a graph shell, review quality classification, and rendering. Several of those concerns have later PRD milestones. For this milestone, implement the smallest executable contract needed to make the tracer bullet real, and leave later PRDs to harden, expand, and live-integrate those surfaces.
+## Issue Workflow
 
-Do not turn PRD 0002 into the full product. A thin but honest vertical slice is better than broad policy completeness.
+For each implementation issue:
 
-The hidden-foundation work must be owned explicitly instead of being smuggled into the final golden test:
+1. Re-fetch the issue, its comments, and current related milestone state from Linear.
+2. Move the issue to `In Progress`.
+3. Replace `ISSUE_PLAN.md` with a narrow plan for that issue and commit it before implementation.
+4. Use fresh subagents to review the issue plan before code changes.
+5. Implement the smallest contract/harness slice that satisfies the issue and does not implement later milestone scope.
+6. Run the issue harness named by Linear, plus any broader tests that cover touched shared behavior.
+7. Use fresh subagents for code/docs review until no material findings remain.
+8. Commit the completed issue, and commit separately after every review-fix batch.
+9. Move the issue to `In Review`, add a Linear evidence comment with commands and artifact coverage, then move it to `Done` only when the issue acceptance criteria are mapped to concrete evidence.
 
-- `AUR-208` may create the Python skeleton, placeholder pytest harness, minimal shared models, redaction primitive, posting-plan destinations, candidate payload metadata, and a side-effect sentinel port needed to prove dry-run writer unreachability.
-- `AUR-209` may create the renderer and secret-like fixture assertions for markdown, JSON, and candidate payload previews.
-- `AUR-210` may create the minimal fixture runner/graph shell, fixture reference parsing, and a minimal fixture-specific reviewer config path.
-- `AUR-238` should integrate and harden the already-existing foundations. It should not be the first owner of graph shell, fake reviewer output, normalization, quality classification, local verdict, or render behavior.
+## Harness Strategy
 
-Later PRDs still own full schema completeness, full config validation, rich graph orchestration, fake/live adapter hardening, clarification resume, live reads, approval, and writers.
+- `AUR-192` harness target: `python -m pytest tests/test_fixtures.py`
+- `AUR-211` harness target: `python -m pytest tests/test_context_budget.py`
+- `AUR-237` harness target: `python -m pytest tests/test_redaction.py`
+- Regression target after each issue: run affected existing tests plus `python -m pytest` when shared contracts change.
+- Documentation target after each behavior/doc shift: `python scripts/check_docs.py`
+- Backlog target at gate: export the Linear-derived PRD 0003 order and run `python scripts/check_docs.py --backlog-export <tmp-file>`.
 
-## Pre-implementation evidence snapshot
+## Contract Guardrails
 
-- The repository currently has documentation and examples only; there is no `pyproject.toml`, package skeleton, runtime graph, or pytest suite.
-- `docs/prds/0002-mvp-tracer-bullet.md` requires fixture-only execution, deterministic fake reviewers, explicit dry-run mode, staged routing evidence, quality-classified output, markdown/JSON rendering, and no writer reachability.
-- `docs/architecture/state-graph.md` defines the durable state fields and stage cursor semantics. This milestone may implement a minimal subset, but it must not contradict those names or routing boundaries.
-- `docs/architecture/findings-contract.md`, `docs/architecture/review-quality.md`, and `docs/architecture/side-effects.md` define output classes, postability rules, local notes, suggested replies, and dry-run posting destinations.
-- `examples/review_agents.example.yaml` exists but selects more than one always-on reviewer. PRD 0002 may add a narrower fixture config for the baseline golden run; the full example should remain a later config-validation target unless the issue explicitly needs it.
+- Preserve dry-run by default. No PRD 0003 work should introduce live GitHub reads, live LLM calls, approval prompts, or writer reachability.
+- Keep GitHub writes behind later side-effect gates. Fixture parsing, context budgeting, and redaction may prepare state, but must not call or import writer code.
+- Keep reviewer output separated from graph-owned decisions. Raw reviewer contracts may propose issues; classified findings, postability, final priority, blocking, fingerprints, and destinations remain graph-owned.
+- Keep `ReviewTarget` immutable and hashable from owner/repo, PR number, base SHA, head SHA, merge-base SHA, and diff basis. Hashes must change when base/head/diff basis changes.
+- Keep untrusted PR comments passive. They may exist in fixture memory, but must not select reviewers, satisfy evidence, influence verdicts, approve posting, or enter public payload text in MVP.
+- Redact secret-like content before rendering, tracing, errors, payload validation, future provider-bound requests, and public payload generation. Raw-content tracing or raw provider submission must remain opt-in and off by default.
+- Do not couple reviewer prompts or context packages to GitHub transport or side-effect modules.
 
-## Implementation strategy
+## Documentation Work
 
-1. Re-fetch every PRD 0002 issue and the gate from Linear before starting each issue. Move each issue through `In Progress`, `In Review`, and `Done` as work advances.
-2. Treat `AUR-208` as the first implementation issue because it can bootstrap the runtime surface and define posting-plan destinations, target metadata, finding IDs, hashes, redaction hooks, and the writer sentinel consumed by later issues.
-3. Implement `AUR-209` after posting-plan models exist, keeping rendering deterministic and redacted. Markdown golden checks should compare meaningful sections, not every incidental word. Redaction tests must include token-like external PR text and verify markdown, JSON, and public payload preview fields.
-4. Implement `AUR-210` after render output exists. The CLI should accept fixture references, default to dry-run, emit markdown and JSON, use a minimal baseline fixture config, and fail closed for invalid fixture/config input.
-5. Implement `AUR-238` last as the milestone integration proof. It should assert the full fixture run covers the tracer path, includes clarification-request output at least as a classified/rendered item, and proves the dry-run graph cannot invoke the writer sentinel.
-6. When a missing foundation is unavoidable, add the narrowest package/module support needed by the current issue and mark the future-hardening boundary in tests or docs. Do not silently implement later PRD scope.
-7. Use fixture data and deterministic fake reviewer results only. No network credentials, live LLM calls, live GitHub reads, approvals, or real writer adapters.
-8. After each issue implementation, run the issue harness plus the relevant broader test set, use fresh subagents for review until no material issues remain, commit, and update Linear with the exact harness evidence.
-9. Before closing `AUR-258`, re-check milestone membership in Linear, validate a Linear-derived backlog export with `python scripts/check_docs.py --backlog-export ...`, run the full default validation suite, and perform the milestone-end documentation audit required by the active goal.
+Update the narrowest durable docs alongside behavior:
 
-## Non-goals
+- Fixture schema, manifest expectations, target hashing, and fixture corpus guidance belong in `docs/harnesses/harness-engineering.md`, `docs/plans/implementation-plan.md`, or a focused architecture doc if the contract needs one.
+- State, gate, raw reviewer, approval, and writer-result schema decisions belong in `docs/architecture/state-graph.md`, `docs/architecture/findings-contract.md`, `docs/architecture/side-effects.md`, or a new ADR if the decision constrains future implementation.
+- Redaction and live-data handling belong in `docs/architecture/llm-data-handling.md` and any relevant harness guidance.
+- Do not copy the full Linear issue tree into repo docs. Keep Linear as the executable backlog and docs as progressive-disclosure contracts.
 
-- No live GitHub read adapter.
-- No live LLM adapter.
-- No real GitHub writer, approval storage, formal PR review payload, inline posting, or request-changes submission. A no-op/sentinel writer port is allowed only so tests can prove dry-run writer unreachability.
-- No semantic deduplication.
-- No full repository checkout or test execution of reviewed PRs.
-- No local mirror of the Linear issue tree.
-- No push until the larger active goal permits pushing.
+## Milestone Completion Criteria
 
-## Validation target
+PRD 0003 is complete when:
 
-The milestone is complete when:
-
-- `AUR-208`, `AUR-209`, `AUR-210`, and `AUR-238` are done in Linear.
-- `AUR-258` is done in Linear after the gate audit.
-- The repo has a runnable fixture dry-run path that produces markdown and JSON without credentials.
-- Tests prove the run includes selected reviewer reasons, memory IDs, target metadata, classified findings, local notes, clarification requests, suppressed counts, local verdict, posting plan, redacted markdown/JSON/payload previews, and writer-sentinel-unreachable dry-run behavior.
-- Default local validation passes, including `python scripts/check_docs.py`, a Linear-derived backlog export check with `python scripts/check_docs.py --backlog-export ...`, the pytest suite added by this milestone, and `git diff --check`.
-- The milestone-end documentation audit finds no missing durable PRD 0002 guidance for future implementation agents.
-
-## Gate audit plan
-
-`AUR-258` closes this milestone by proving the plan above against current artifacts:
-
-1. Re-fetch PRD 0002 milestone state and linked issue comments from Linear.
-2. Build a prompt-to-artifact checklist from PRD 0002, `AUR-208`, `AUR-209`, `AUR-210`, and `AUR-238`.
-3. Map each checklist item to concrete evidence in tests, code, docs, or Linear comments.
-4. Prove or explicitly defer each PRD 0002 testing decision, including specialized-review and ambiguous logic fixture graph tests.
-5. Run focused tracer/CLI/render/posting harnesses plus full default validation.
-6. Validate a temporary Linear-derived PRD 0002 backlog export with `scripts/check_docs.py --backlog-export` and preserve summary evidence in a Linear comment.
-7. Update the narrowest durable docs for PRD 0002 drift, especially any agent-facing startup docs that still say there is no implementation or blur current fixture-only runtime with future LangGraph/live behavior.
-8. Use fresh subagents for plan review and final code/docs review.
-9. Move `AUR-258` to `Done` only after the audit has no missing, incomplete, weakly verified, or uncovered requirement.
+- `AUR-192`, `AUR-211`, and `AUR-237` are `Done` in Linear with evidence comments.
+- `AUR-254` is `Done` only after the final gate audit.
+- `MILESTONE_PLAN.md` and the historical committed `ISSUE_PLAN.md` versions document the plan used for each issue.
+- Focused harnesses exist and pass for fixtures, context budget, and redaction.
+- The full default test suite passes.
+- `python scripts/check_docs.py`, `git diff --check`, and a PRD 0003 Linear-derived backlog export check pass.
+- Documentation has been audited and refactored for the PRD 0003 contracts an implementation agent needs when dropping into the repo.
+- Fresh subagent review of the final code/docs reports no material issues.
+- No unapproved live API, live LLM, approval, or GitHub writer behavior has been introduced.
