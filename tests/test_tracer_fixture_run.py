@@ -54,6 +54,39 @@ EXPECTED_TRACE = {
     "transition_reason": "start_initial_triage",
 }
 
+EXPECTED_COMPLETED_TRACE = [
+    EXPECTED_TRACE,
+    {
+        "active_stage_before": "initial_triage",
+        "active_stage_after": "specialized_review",
+        "suspended_stage_before": None,
+        "suspended_stage_after": None,
+        "stage_queue_before": ["specialized_review", "logic_review"],
+        "stage_queue_after": ["logic_review"],
+        "transition_reason": "complete_initial_triage_start_specialized_review",
+    },
+    {
+        "active_stage_before": "specialized_review",
+        "active_stage_after": "logic_review",
+        "suspended_stage_before": None,
+        "suspended_stage_after": None,
+        "stage_queue_before": ["logic_review"],
+        "stage_queue_after": [],
+        "transition_reason": "complete_specialized_review_start_logic_review",
+    },
+    {
+        "active_stage_before": "logic_review",
+        "active_stage_after": None,
+        "suspended_stage_before": None,
+        "suspended_stage_after": None,
+        "stage_queue_before": [],
+        "stage_queue_after": [],
+        "transition_reason": "finish_review_stages",
+    },
+]
+
+EXPECTED_AMBIGUOUS_TRACE = EXPECTED_COMPLETED_TRACE[:-1]
+
 EXPECTED_REVIEWER = {
     "name": "correctness",
     "stage": "initial_triage",
@@ -79,7 +112,7 @@ def test_basic_fixture_tracer_golden_run() -> None:
     assert data["fixture_ref"] == "fixture:basic-pr"
     assert data["local_verdict"] == "comment"
     assert data["side_effects"] == {"writer_called": False, "writer_call_count": 0}
-    assert data["graph_trace"] == [EXPECTED_TRACE]
+    assert data["graph_trace"] == EXPECTED_COMPLETED_TRACE
     assert data["selected_reviewers"] == [EXPECTED_REVIEWER]
     assert review["selected_reviewers"] == [EXPECTED_REVIEWER]
 
@@ -215,18 +248,7 @@ def test_specialized_review_fixture_proves_staged_reviewer_introduction() -> Non
             "reasons": ["specialized_review triggers.paths=src/auth/*"],
         },
     ]
-    assert data["graph_trace"] == [
-        EXPECTED_TRACE,
-        {
-            "active_stage_before": "initial_triage",
-            "active_stage_after": "specialized_review",
-            "suspended_stage_before": None,
-            "suspended_stage_after": None,
-            "stage_queue_before": ["specialized_review", "logic_review"],
-            "stage_queue_after": ["logic_review"],
-            "transition_reason": "complete_initial_triage_start_specialized_review",
-        },
-    ]
+    assert data["graph_trace"] == EXPECTED_COMPLETED_TRACE
     assert review["classified_output"]["local_notes"][0]["id"] == "note-auth-shape"
     assert review["classified_output"]["postable_findings"][0]["id"] == "finding-test-mode-mfa"
     assert review["candidate_payload_preview"]["artifact_kind"] == "issue_comment"
@@ -258,18 +280,7 @@ def test_ambiguous_logic_fixture_stops_for_clarification_without_candidate_paylo
             "reasons": ["logic_review triggers.diff_patterns=requires product intent"],
         },
     ]
-    assert data["graph_trace"] == [
-        EXPECTED_TRACE,
-        {
-            "active_stage_before": "initial_triage",
-            "active_stage_after": "logic_review",
-            "suspended_stage_before": None,
-            "suspended_stage_after": None,
-            "stage_queue_before": ["specialized_review", "logic_review"],
-            "stage_queue_after": [],
-            "transition_reason": "complete_initial_triage_skip_specialized_review_start_logic_review",
-        },
-    ]
+    assert data["graph_trace"] == EXPECTED_AMBIGUOUS_TRACE
     assert classified["postable_findings"] == []
     assert classified["local_notes"][0]["id"] == "note-discount-shape"
     assert classified["clarification_requests"] == [

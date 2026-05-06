@@ -51,6 +51,13 @@ class DryRunResult:
     writer_call_count: int
 
 
+@dataclass(frozen=True)
+class _StageRunResult:
+    selected_reviewers: tuple[SelectedReviewer, ...]
+    graph_trace: list[dict[str, Any]]
+    classified: dict[str, tuple[Any, ...]]
+
+
 NORMAL_STAGES = ("initial_triage", "specialized_review", "logic_review")
 
 
@@ -63,12 +70,13 @@ def run_fixture_dry_run(
     writer_call_count_before = _writer_call_count(writer_sentinel)
     fixture = load_fixture_pr(fixture_ref)
     config = load_reviewer_config(reviewer_config_path)
-    selected_reviewers = _select_reviewers(config, fixture)
-    graph_trace = _graph_trace(selected_reviewers)
+    stage_run = _run_review_stages(config, fixture)
+    selected_reviewers = stage_run.selected_reviewers
+    graph_trace = stage_run.graph_trace
     review_target = _review_target(fixture)
     memory_references = _memory_references(fixture)
     truncation_notices = _truncation_notices(fixture)
-    classified = _classify_raw_outputs(fixture, selected_reviewers=selected_reviewers)
+    classified = stage_run.classified
     _validate_output_item_ids(classified)
     _validate_finding_fingerprints(classified["findings"])
     local_verdict = _local_verdict(
@@ -123,26 +131,88 @@ def run_fixture_dry_run(
     )
 
 
-def _select_reviewers(config: ReviewerConfig, fixture: FixturePR) -> tuple[SelectedReviewer, ...]:
-    selected: list[SelectedReviewer] = []
+def _run_review_stages(config: ReviewerConfig, fixture: FixturePR) -> _StageRunResult:
+    raw_outputs_by_key = _raw_outputs_by_key(fixture)
+    selected_reviewers: list[SelectedReviewer] = []
+    graph_trace: list[dict[str, Any]] = []
+    classified = _empty_classified_lists()
+    seen_raw_keys: set[tuple[str, str]] = set()
+    active_stage: str | None = None
+    stage_queue = list(NORMAL_STAGES)
+
     for stage in NORMAL_STAGES:
-        for name in sorted(config.agents):
-            agent = config.agents[name]
-            stages = agent.get("stages")
-            triggers = agent.get("triggers")
-            if isinstance(stages, list) and stage in stages and isinstance(triggers, dict):
-                reasons = _trigger_reasons(stage=stage, triggers=triggers, fixture=fixture)
-                if not reasons:
-                    continue
-                selected.append(
-                    SelectedReviewer(
-                        name=name,
-                        stage=stage,
-                        reasons=tuple(reasons),
-                    )
+        before_active = active_stage
+        before_queue = list(stage_queue)
+        if not stage_queue or stage_queue[0] != stage:
+            raise RunnerError(f"stage cursor expected {stage}")
+        stage_queue.pop(0)
+        active_stage = stage
+        graph_trace.append(
+            _stage_transition_trace(
+                active_stage_before=before_active,
+                active_stage_after=active_stage,
+                stage_queue_before=before_queue,
+                stage_queue_after=stage_queue,
+            )
+        )
+
+        stage_reviewers = _select_reviewers_for_stage(config, fixture, stage)
+        if stage == "initial_triage" and not stage_reviewers:
+            raise RunnerError("reviewer config has no eligible initial_triage always-on reviewer")
+        selected_reviewers.extend(stage_reviewers)
+        for reviewer in stage_reviewers:
+            key = (reviewer.name, reviewer.stage)
+            reviewer_output = raw_outputs_by_key.get(key)
+            if reviewer_output is None:
+                raise RunnerError(
+                    "raw reviewer output was not selected; missing raw reviewer output for selected reviewer: "
+                    f"{reviewer.name}/{reviewer.stage}"
                 )
-    if not any(reviewer.stage == "initial_triage" for reviewer in selected):
-        raise RunnerError("reviewer config has no eligible initial_triage always-on reviewer")
+            seen_raw_keys.add(key)
+            _classify_reviewer_output(fixture, reviewer_output=reviewer_output, classified=classified)
+        if classified["clarification_requests"]:
+            break
+    else:
+        graph_trace.append(
+            {
+                "active_stage_before": active_stage,
+                "active_stage_after": None,
+                "suspended_stage_before": None,
+                "suspended_stage_after": None,
+                "stage_queue_before": list(stage_queue),
+                "stage_queue_after": list(stage_queue),
+                "transition_reason": "finish_review_stages",
+            }
+        )
+
+    extra_raw_keys = sorted(set(raw_outputs_by_key) - seen_raw_keys)
+    if extra_raw_keys:
+        extra = ", ".join(f"{reviewer}/{stage}" for reviewer, stage in extra_raw_keys)
+        raise RunnerError(f"raw reviewer output was not selected: {extra}")
+    return _StageRunResult(
+        selected_reviewers=tuple(selected_reviewers),
+        graph_trace=graph_trace,
+        classified={key: tuple(value) for key, value in classified.items()},
+    )
+
+
+def _select_reviewers_for_stage(config: ReviewerConfig, fixture: FixturePR, stage: str) -> tuple[SelectedReviewer, ...]:
+    selected: list[SelectedReviewer] = []
+    for name in sorted(config.agents):
+        agent = config.agents[name]
+        stages = agent.get("stages")
+        triggers = agent.get("triggers")
+        if isinstance(stages, list) and stage in stages and isinstance(triggers, dict):
+            reasons = _trigger_reasons(stage=stage, triggers=triggers, fixture=fixture)
+            if not reasons:
+                continue
+            selected.append(
+                SelectedReviewer(
+                    name=name,
+                    stage=stage,
+                    reasons=tuple(reasons),
+                )
+            )
     return tuple(selected)
 
 
@@ -164,49 +234,25 @@ def _path_matches(path: str, pattern: str) -> bool:
     return path == pattern or fnmatch(path, pattern) or path.startswith(pattern.rstrip("/") + "/")
 
 
-def _graph_trace(selected_reviewers: tuple[SelectedReviewer, ...]) -> list[dict[str, Any]]:
-    selected_stages = [stage for stage in NORMAL_STAGES if any(reviewer.stage == stage for reviewer in selected_reviewers)]
-    if not selected_stages or selected_stages[0] != "initial_triage":
-        raise RunnerError("initial_triage must be the first selected review stage")
-
-    traces = [_initial_triage_trace()]
-    active_stage = "initial_triage"
-    stage_queue = ["specialized_review", "logic_review"]
-    for next_stage in selected_stages[1:]:
-        before_queue = list(stage_queue)
-        skipped: list[str] = []
-        while stage_queue and stage_queue[0] != next_stage:
-            skipped.append(stage_queue.pop(0))
-        if not stage_queue:
-            raise RunnerError(f"selected stage {next_stage} is not in the remaining stage queue")
-        stage_queue.pop(0)
-        reason = f"complete_{active_stage}_start_{next_stage}"
-        if skipped:
-            reason = f"complete_{active_stage}_skip_{'_'.join(skipped)}_start_{next_stage}"
-        traces.append(
-            {
-                "active_stage_before": active_stage,
-                "active_stage_after": next_stage,
-                "suspended_stage_before": None,
-                "suspended_stage_after": None,
-                "stage_queue_before": before_queue,
-                "stage_queue_after": list(stage_queue),
-                "transition_reason": reason,
-            }
-        )
-        active_stage = next_stage
-    return traces
-
-
-def _initial_triage_trace() -> dict[str, Any]:
+def _stage_transition_trace(
+    *,
+    active_stage_before: str | None,
+    active_stage_after: str,
+    stage_queue_before: list[str],
+    stage_queue_after: list[str],
+) -> dict[str, Any]:
+    if active_stage_before is None:
+        transition_reason = f"start_{active_stage_after}"
+    else:
+        transition_reason = f"complete_{active_stage_before}_start_{active_stage_after}"
     return {
-        "active_stage_before": None,
-        "active_stage_after": "initial_triage",
+        "active_stage_before": active_stage_before,
+        "active_stage_after": active_stage_after,
         "suspended_stage_before": None,
         "suspended_stage_after": None,
-        "stage_queue_before": ["initial_triage", "specialized_review", "logic_review"],
-        "stage_queue_after": ["specialized_review", "logic_review"],
-        "transition_reason": "start_initial_triage",
+        "stage_queue_before": list(stage_queue_before),
+        "stage_queue_after": list(stage_queue_after),
+        "transition_reason": transition_reason,
     }
 
 
@@ -259,96 +305,96 @@ def _truncation_notices(fixture: FixturePR) -> tuple[TruncationNotice, ...]:
     return tuple(notices)
 
 
-def _classify_raw_outputs(
-    fixture: FixturePR,
-    *,
-    selected_reviewers: tuple[SelectedReviewer, ...],
-) -> dict[str, tuple[Any, ...]]:
-    findings: list[ClassifiedFinding] = []
-    local_notes: list[LocalNote] = []
-    clarification_requests: list[ClarificationRequest] = []
-    suggested_replies: list[SuggestedReply] = []
-    suppressed_outputs: list[SuppressedOutput] = []
-    selected_keys = {(reviewer.name, reviewer.stage) for reviewer in selected_reviewers}
-    seen_keys: set[tuple[str, str]] = set()
+def _raw_outputs_by_key(fixture: FixturePR) -> dict[tuple[str, str], dict[str, Any]]:
+    raw_outputs: dict[tuple[str, str], dict[str, Any]] = {}
     for reviewer_output in fixture.raw_reviewer_outputs:
         if not isinstance(reviewer_output, dict):
             raise RunnerError("raw_reviewer_outputs entries must be objects")
         reviewer = _required_str(reviewer_output, "reviewer", "raw_reviewer_outputs[]")
         stage = _required_str(reviewer_output, "stage", "raw_reviewer_outputs[]")
-        if (reviewer, stage) not in selected_keys:
-            raise RunnerError(f"raw reviewer output {reviewer}/{stage} was not selected")
-        if (reviewer, stage) in seen_keys:
+        if (reviewer, stage) in raw_outputs:
             raise RunnerError(f"raw reviewer output {reviewer}/{stage} is duplicated")
-        seen_keys.add((reviewer, stage))
-        items = reviewer_output.get("items")
-        if not reviewer or not stage or not isinstance(items, list):
+        if not isinstance(reviewer_output.get("items"), list):
             raise RunnerError("raw reviewer output requires reviewer, stage, and items")
-        for item in items:
-            if not isinstance(item, dict):
-                raise RunnerError("raw reviewer output items must be objects")
-            item_type = _required_str(item, "type", "raw reviewer output item")
-            if item_type == "postable_finding":
-                finding = _classified_finding(fixture, reviewer=reviewer, stage=stage, item=item)
-                if _is_postable_finding(finding):
-                    findings.append(finding)
-                else:
-                    suppressed_outputs.append(
-                        SuppressedOutput(
-                            id=finding.id,
-                            reason="Finding candidate did not meet postable quality policy.",
-                        )
-                    )
-            elif item_type == "local_note":
-                _require_fields(item, ("id", "title", "body", "evidence"), "local_note")
-                local_notes.append(
-                    LocalNote(
-                        id=_required_str(item, "id", "local_note"),
-                        title=_required_str(item, "title", "local_note"),
-                        body=_required_str(item, "body", "local_note"),
-                        evidence=_required_str(item, "evidence", "local_note"),
-                    )
-                )
-            elif item_type == "clarification_request":
-                _require_fields(item, ("id", "question", "why_it_matters"), "clarification_request")
-                clarification_requests.append(
-                    ClarificationRequest(
-                        id=_required_str(item, "id", "clarification_request"),
-                        reviewer=reviewer,
-                        question=_required_str(item, "question", "clarification_request"),
-                        why_it_matters=_required_str(item, "why_it_matters", "clarification_request"),
-                    )
-                )
-            elif item_type == "suggested_reply":
-                _require_fields(item, ("id", "source_comment_id", "proposed_body"), "suggested_reply")
-                suggested_replies.append(
-                    SuggestedReply(
-                        id=_required_str(item, "id", "suggested_reply"),
-                        source_comment_id=_required_str(item, "source_comment_id", "suggested_reply"),
-                        proposed_body=_required_str(item, "proposed_body", "suggested_reply"),
-                    )
-                )
-            elif item_type == "suppressed":
-                _require_fields(item, ("id", "reason"), "suppressed")
-                suppressed_outputs.append(
-                    SuppressedOutput(
-                        id=_required_str(item, "id", "suppressed"),
-                        reason=_required_str(item, "reason", "suppressed"),
-                    )
-                )
-            else:
-                raise RunnerError(f"unsupported raw reviewer output type: {item_type}")
-    missing_keys = sorted(selected_keys - seen_keys)
-    if missing_keys:
-        missing = ", ".join(f"{reviewer}/{stage}" for reviewer, stage in missing_keys)
-        raise RunnerError(f"missing raw reviewer output for selected reviewer: {missing}")
+        raw_outputs[(reviewer, stage)] = reviewer_output
+    return raw_outputs
+
+
+def _empty_classified_lists() -> dict[str, list[Any]]:
     return {
-        "findings": tuple(findings),
-        "local_notes": tuple(local_notes),
-        "clarification_requests": tuple(clarification_requests),
-        "suggested_replies": tuple(suggested_replies),
-        "suppressed_outputs": tuple(suppressed_outputs),
+        "findings": [],
+        "local_notes": [],
+        "clarification_requests": [],
+        "suggested_replies": [],
+        "suppressed_outputs": [],
     }
+
+
+def _classify_reviewer_output(
+    fixture: FixturePR,
+    *,
+    reviewer_output: dict[str, Any],
+    classified: dict[str, list[Any]],
+) -> None:
+    reviewer = _required_str(reviewer_output, "reviewer", "raw_reviewer_outputs[]")
+    stage = _required_str(reviewer_output, "stage", "raw_reviewer_outputs[]")
+    items = reviewer_output.get("items")
+    if not isinstance(items, list):
+        raise RunnerError("raw reviewer output requires reviewer, stage, and items")
+    for item in items:
+        if not isinstance(item, dict):
+            raise RunnerError("raw reviewer output items must be objects")
+        item_type = _required_str(item, "type", "raw reviewer output item")
+        if item_type == "postable_finding":
+            finding = _classified_finding(fixture, reviewer=reviewer, stage=stage, item=item)
+            if _is_postable_finding(finding):
+                classified["findings"].append(finding)
+            else:
+                classified["suppressed_outputs"].append(
+                    SuppressedOutput(
+                        id=finding.id,
+                        reason="Finding candidate did not meet postable quality policy.",
+                    )
+                )
+        elif item_type == "local_note":
+            _require_fields(item, ("id", "title", "body", "evidence"), "local_note")
+            classified["local_notes"].append(
+                LocalNote(
+                    id=_required_str(item, "id", "local_note"),
+                    title=_required_str(item, "title", "local_note"),
+                    body=_required_str(item, "body", "local_note"),
+                    evidence=_required_str(item, "evidence", "local_note"),
+                )
+            )
+        elif item_type == "clarification_request":
+            _require_fields(item, ("id", "question", "why_it_matters"), "clarification_request")
+            classified["clarification_requests"].append(
+                ClarificationRequest(
+                    id=_required_str(item, "id", "clarification_request"),
+                    reviewer=reviewer,
+                    question=_required_str(item, "question", "clarification_request"),
+                    why_it_matters=_required_str(item, "why_it_matters", "clarification_request"),
+                )
+            )
+        elif item_type == "suggested_reply":
+            _require_fields(item, ("id", "source_comment_id", "proposed_body"), "suggested_reply")
+            classified["suggested_replies"].append(
+                SuggestedReply(
+                    id=_required_str(item, "id", "suggested_reply"),
+                    source_comment_id=_required_str(item, "source_comment_id", "suggested_reply"),
+                    proposed_body=_required_str(item, "proposed_body", "suggested_reply"),
+                )
+            )
+        elif item_type == "suppressed":
+            _require_fields(item, ("id", "reason"), "suppressed")
+            classified["suppressed_outputs"].append(
+                SuppressedOutput(
+                    id=_required_str(item, "id", "suppressed"),
+                    reason=_required_str(item, "reason", "suppressed"),
+                )
+            )
+        else:
+            raise RunnerError(f"unsupported raw reviewer output type: {item_type}")
 
 
 def _validate_finding_fingerprints(findings: tuple[ClassifiedFinding, ...]) -> None:

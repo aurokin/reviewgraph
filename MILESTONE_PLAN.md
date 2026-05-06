@@ -14,14 +14,14 @@ Historical execution artifact for this milestone. Linear remains the durable sou
 
 ## Current gate snapshot
 
-As of the AUR-258 gate plan:
+As of the latest AUR-258 gate pass:
 
 - `AUR-208`, `AUR-209`, `AUR-210`, and `AUR-238` are `Done` in Linear.
-- `AUR-258` is `In Progress` and owns the final PRD 0002 completion audit.
-- The local repository is clean on `main` at `208b0d5`.
+- `AUR-258` is `In Review` and owns the final PRD 0002 completion audit.
+- The local repository has unpushed AUR-258 gate commits after `208b0d5`; do not push again until the active goal's push condition is satisfied.
 - The public GitHub repository exists at `https://github.com/aurokin/reviewgraph`; no further push should happen for gate work until the active goal's push condition is satisfied.
-- Known documentation drift to audit: `README.md` still describes the repo as scaffold-only even though PRD 0002 has added a runnable fixture dry-run CLI and tracer harness.
-- Known coverage gap to audit: PRD 0002 asks for normal, specialized-review, and ambiguous logic fixture graph tests. The current committed tracer baseline proves the normal `basic-pr` path; AUR-258 must add the missing fixture graph proofs or record an explicit durable deferment with follow-up Linear scope before closing.
+- Documentation drift addressed: `README.md` and `docs/operations/README.md` now describe the fixture-only tracer runtime and keep live GitHub, live LLM, approval, and writer behavior future-scoped.
+- Coverage gap addressed: committed fixture graph proofs now cover `basic-pr`, `specialized-review-pr`, and `ambiguous-logic-pr`.
 
 ## Milestone intent
 
