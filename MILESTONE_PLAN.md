@@ -6,12 +6,12 @@ Active execution artifact for this milestone. Linear remains the durable source 
 
 - Milestone: `PRD 0005: Review Quality`
 - Milestone ID: `7c623166-927e-43d7-a14d-41af005a2587`
-- Current execution status: `AUR-201`, `AUR-227`, and `AUR-202` are `Done`; `AUR-204` is `In Progress`; remaining implementation issues are pending in Linear.
+- Current execution status: `AUR-201`, `AUR-227`, `AUR-202`, and `AUR-204` are `Done`; `AUR-203` is `In Progress`; remaining implementation issues are pending in Linear.
 - Implementation issues:
   - `AUR-201` / `RG-012: Normalize Reviewer Output` / `Done`
   - `AUR-202` / `RG-013: Classify Review Quality` / `Done`
-  - `AUR-203` / `RG-014: Classify Testing Feedback Quality` / `Backlog`
-  - `AUR-204` / `RG-015: Validate Diff Anchors For Inline Candidates` / `In Progress`
+  - `AUR-203` / `RG-014: Classify Testing Feedback Quality` / `In Progress`
+  - `AUR-204` / `RG-015: Validate Diff Anchors For Inline Candidates` / `Done`
   - `AUR-205` / `RG-016: Stop For Clarification Requests` / `Backlog`
   - `AUR-206` / `RG-017: Resume From Clarification Answers` / `Backlog`
   - `AUR-207` / `RG-018: Compute Local Verdict` / `Backlog`
@@ -33,7 +33,7 @@ The product point is restraint. ReviewGraph should prefer no finding over a plau
 - `src/reviewgraph/quality.py` now owns general typed review-quality classification from normalized `ReviewerResult` artifacts into postable findings, local notes, clarification requests, suggested replies, and suppressed output. `AUR-202` also added neutral hashing and shared passive-memory provenance helpers.
 - `src/reviewgraph/runner.py` delegates normalized reviewer result classification to `classify_review_quality`; `_local_verdict` and optional/required failure wiring still live in runner pending later issues.
 - `src/reviewgraph/posting.py` already keeps suggested replies/local notes/suppressed output local-only, rejects public request-changes wording in candidate payloads, and validates inline candidates when explicitly requested.
-- `DiffAnchor` exists in models and posting validation, but runner-created findings do not yet attach anchors and the graph does not yet produce dry-run inline candidates.
+- `src/reviewgraph/diff_anchor.py` now derives fixture-safe `DiffAnchor` metadata from changed ranges. Runner-created findings render derived anchors in dry-run JSON, while inline candidates remain explicit, dry-run-only, and excluded from public payloads.
 - Existing CLI/tracer tests cover many quality behaviors in broad integration form. PRD 0005 should add focused harnesses as each issue lands and extract policy into narrow modules without broad behavior drift.
 
 ## Execution Order
