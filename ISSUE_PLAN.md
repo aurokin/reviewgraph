@@ -25,13 +25,13 @@ Some basic status transitions already exist from earlier routing work. This issu
 - Selected-but-not-run reviewers are not treated as completed:
   - Assert selected/running/failed statuses remain runnable unless retry policy exhausts them.
 - Completed reviewers are not rerun for the same target/config:
-  - Assert completed and skipped statuses suppress runnable selection for the same stable key.
+  - Assert completed and skipped statuses suppress runnable selection for the same target/config/stage/reviewer, even when attempt or retry metadata differs.
 - Retry exhaustion records permanent failure:
   - Add retry policy helpers with a configurable max attempt count; assert exhausted failures record a final `failed` status with a reason and do not schedule another runnable key.
 
 ## Implementation Plan
 
-1. Add `src/reviewgraph/reviewer_runs.py` with helpers for making run keys, registering selection, recording status, deciding runnable suppression, and advancing retry attempts.
+1. Add `src/reviewgraph/reviewer_runs.py` with helpers for making run keys, registering selection, recording status, deciding runnable suppression by target/config/stage/reviewer identity, and advancing retry attempts.
 2. Move routing key/status registration from `src/reviewgraph/routing.py` into the reviewer-run helper while preserving current selected/completed/skipped behavior.
 3. Update runner status transitions to use the same helper for selected/running/completed/failed/skipped updates.
 4. Add `tests/test_reviewer_runs.py` for key fields, stable keys, status transitions, selected-not-completed behavior, completed/skipped suppression, and retry exhaustion.
