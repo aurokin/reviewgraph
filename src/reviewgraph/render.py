@@ -372,7 +372,25 @@ def _finding_json(finding: ClassifiedFinding, context: "_RenderContext") -> dict
     }
     if finding.line_end is not None:
         data["line_end"] = finding.line_end
+    if finding.diff_anchor is not None:
+        data["diff_anchor"] = _diff_anchor_json(finding.diff_anchor, context)
     return data
+
+
+def _diff_anchor_json(anchor: "DiffAnchor", context: "_RenderContext") -> dict[str, Any]:
+    return {
+        "path": context.redact(anchor.path),
+        "old_path": context.redact(anchor.old_path) if anchor.old_path is not None else None,
+        "file_status": context.redact(anchor.file_status),
+        "hunk_id": context.redact(anchor.hunk_id),
+        "hunk_start": anchor.hunk_start,
+        "hunk_end": anchor.hunk_end,
+        "side": anchor.side,
+        "start_side": anchor.start_side,
+        "line": anchor.line,
+        "start_line": anchor.start_line,
+        "target_commit_sha": context.redact(anchor.target_commit_sha),
+    }
 
 
 def _local_note_json(note: LocalNote, context: "_RenderContext") -> dict[str, Any]:

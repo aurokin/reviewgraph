@@ -105,6 +105,7 @@ def build_posting_plan(
             if not finding.diff_anchor.validates_finding_location(
                 path=finding.path,
                 line=finding.line,
+                line_end=finding.line_end,
                 target_commit_sha=review_target.head_sha,
             ):
                 raise PostingPlanError("inline candidates require a diff anchor overlapping changed target code")

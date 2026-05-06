@@ -325,13 +325,21 @@ class DiffAnchor:
     def overlaps_changed_target(self) -> bool:
         return self.side == "RIGHT" and self.hunk_start <= self.line <= self.hunk_end
 
-    def validates_finding_location(self, *, path: str, line: int, target_commit_sha: str) -> bool:
+    def validates_finding_location(
+        self,
+        *,
+        path: str,
+        line: int,
+        target_commit_sha: str,
+        line_end: int | None = None,
+    ) -> bool:
+        finding_line_end = line if line_end is None else line_end
         return (
             self.path == path
             and self.line == line
             and self.target_commit_sha == target_commit_sha
             and self.start_line is not None
-            and self.hunk_start <= self.start_line <= self.line <= self.hunk_end
+            and self.hunk_start <= self.start_line <= self.line <= finding_line_end <= self.hunk_end
             and self.start_side == "RIGHT"
             and self.overlaps_changed_target
         )

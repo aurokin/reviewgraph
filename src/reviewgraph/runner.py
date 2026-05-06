@@ -22,6 +22,7 @@ from reviewgraph.context_budget import (
     merge_context_budgets,
     reviewer_key,
 )
+from reviewgraph.diff_anchor import attach_diff_anchors
 from reviewgraph.hashing import canonical_json_hash
 from reviewgraph.memory import build_conversation_memory
 from reviewgraph.models import (
@@ -131,6 +132,11 @@ def run_fixture_dry_run(
         **stage_run.classified,
         "local_notes": budgeted_context.local_notes + stage_run.classified["local_notes"],
     }
+    classified["findings"] = attach_diff_anchors(
+        changed_files=budgeted_fixture.changed_files,
+        review_target=review_target,
+        findings=classified["findings"],
+    )
     _validate_output_item_ids(classified)
     _validate_finding_fingerprints(classified["findings"])
     local_verdict = _local_verdict(
@@ -144,6 +150,7 @@ def run_fixture_dry_run(
     )
     posting_plan = build_posting_plan(
         findings=classified["findings"],
+        review_target=review_target,
         local_notes=classified["local_notes"],
         suggested_replies=classified["suggested_replies"],
         clarification_requests=classified["clarification_requests"],

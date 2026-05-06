@@ -28,6 +28,19 @@ EXPECTED_FINDING = {
     "path": "src/cache.py",
     "line": 12,
     "fingerprint": "sha256:f057847d9ec647ddf253d83316a2a8edefff5bf4a3606d0b205872131c0459c1",
+    "diff_anchor": {
+        "path": "src/cache.py",
+        "old_path": None,
+        "file_status": "modified",
+        "hunk_id": "src/cache.py:10-14",
+        "hunk_start": 10,
+        "hunk_end": 14,
+        "side": "RIGHT",
+        "start_side": "RIGHT",
+        "line": 12,
+        "start_line": 12,
+        "target_commit_sha": "head456",
+    },
 }
 
 EXPECTED_LOCAL_NOTE = {

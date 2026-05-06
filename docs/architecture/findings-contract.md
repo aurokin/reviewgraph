@@ -65,6 +65,8 @@ memory is being used safely.
     "old_path": null,
     "file_status": "modified",
     "hunk_id": "src/example.ts:40-45",
+    "hunk_start": 40,
+    "hunk_end": 45,
     "side": "RIGHT",
     "start_side": "RIGHT",
     "line": 42,
@@ -240,7 +242,7 @@ Suppress findings when they are generic, unsupported by the PR context, reviewer
 
 Postable findings should include a changed-file location with the shortest practical line range. Inline candidates must overlap the diff. Findings without a precise location should remain local notes unless a top-level post format is explicitly approved.
 
-`DiffAnchor` is separate from user-facing location. It exists to support future inline comments and must include path, old path when renamed, file status, hunk ID, side/start side, line/start line, and target commit SHA. MVP does not post inline comments; it may render inline candidates in dry-run output only.
+`DiffAnchor` is separate from user-facing location. It exists to support future inline comments and must include path, old path when renamed, file status, hunk ID, hunk bounds, side/start side, line/start line, and target commit SHA. MVP does not post inline comments; explicit inline candidates are dry-run-only posting-plan items and do not enter the public top-level payload.
 
 ## Priority policy
 

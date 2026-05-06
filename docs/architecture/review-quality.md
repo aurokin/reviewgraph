@@ -50,7 +50,7 @@ Postable findings should have a precise location.
 - Keep ranges as short as possible, usually one line and rarely more than 5-10 lines.
 - If the issue is real but cannot be located precisely, keep it as a top-level local note unless the renderer has an approved top-level comment format for it.
 - Logic reviewers may cite cross-file evidence, but the postable location should still point to the changed line that introduced the risk.
-- Inline posting requires a validated `DiffAnchor`; MVP renders inline candidates only and posts approved findings in a top-level PR comment.
+- Inline posting requires a validated `DiffAnchor`; MVP can render explicit inline candidates as dry-run-only plan items, but public payloads remain top-level issue comments.
 
 ## Priority
 
