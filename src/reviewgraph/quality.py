@@ -336,11 +336,12 @@ def _is_postable_finding(finding: ClassifiedFinding) -> bool:
         return False
     if not _has_concrete_finding_evidence(finding.evidence):
         return False
-    text = f"{finding.title}\n{finding.body}\n{finding.evidence}".casefold()
-    if not _has_public_comment_shape(f"{finding.title}\n{finding.body}"):
+    public_text = f"{finding.title}\n{finding.body}"
+    text = f"{public_text}\n{finding.evidence}".casefold()
+    if not _has_public_comment_shape(public_text):
         return False
     if _is_testing_advice(finding, text):
-        return _has_testing_finding_shape(text)
+        return _has_testing_finding_shape(public_text=public_text.casefold(), text=text)
     if _is_generic_speculative_advice(text):
         return False
     if not _has_non_testing_finding_shape(text):
@@ -436,16 +437,31 @@ def _is_testing_advice(finding: ClassifiedFinding, text: str) -> bool:
     return any(term in text for term in testing_terms)
 
 
-def _has_testing_finding_shape(text: str) -> bool:
-    missing_coverage = (
-        ("coverage" in text or "test" in text)
-        and any(term in text for term in ("missing", "no ", "without", "lacks", "not covered", "does not cover"))
-    )
+def _has_testing_finding_shape(*, public_text: str, text: str) -> bool:
     return (
-        missing_coverage
+        _has_identifiable_missing_coverage_target(public_text)
         and _has_concrete_testing_shape(text)
         and not _has_only_vague_testing_scenario(text)
     )
+
+
+def _has_identifiable_missing_coverage_target(text: str) -> bool:
+    patterns = (
+        r"\bmissing\s+(?!tests?\b|coverage\b|regression\s+(?:tests?|coverage)\b)(?:[\w-]+\s+){1,8}(?:tests?|coverage)\b",
+        r"\bmissing\s+(?:regression\s+)?(?:tests?|coverage)\s+(?:for|covering|on|in|with|when|around)\s+\w+",
+        r"\bno\s+(?:regression\s+)?tests?\s+(?:for|covering|on|in|with|when|around)\s+\w+",
+        r"\bno\s+(?:regression\s+)?tests?\s+(?:currently\s+|that\s+)?covers?\s+\w+",
+        r"\bno\s+(?:regression\s+)?coverage\s+(?:for|covering|on|in|with|when|around)\s+(?!this\s+change\b)\w+",
+        r"\bno\s+(?!coverage\s+(?:for|on)\s+this\s+change\b)(?:[\w-]+\s+){1,8}coverage\b",
+        r"\bwithout\s+(?:a\s+)?(?:regression\s+)?tests?\s+(?:for|covering|on|in|with|when|around)\s+\w+",
+        r"\bwithout\s+(?:regression\s+)?coverage\s+(?:for|covering|on|in|with|when|around)\s+\w+",
+        r"\blacks\s+(?!tests?\b|coverage\b)(?:[\w-]+\s+){1,8}(?:tests?|coverage)\b",
+        r"\blacks\s+(?:regression\s+)?tests?\s+(?:for|covering|on|in|with|when|around)\s+\w+",
+        r"\blacks\s+(?:regression\s+)?coverage\s+(?:for|covering|on|in|with|when|around)\s+\w+",
+        r"\b(?:tests?|coverage)\s+(?:does\s+not|doesn't|do\s+not|don't)\s+cover\s+\w+",
+        r"\bnot\s+covered\s+(?:by|for|on|in|with|when|around)\s+\w+",
+    )
+    return any(re.search(pattern, text) for pattern in patterns)
 
 
 def _has_only_vague_testing_scenario(text: str) -> bool:
@@ -477,7 +493,7 @@ def _has_non_testing_finding_shape(text: str) -> bool:
 def _has_concrete_testing_shape(text: str) -> bool:
     scenario = bool(re.search(r"\b(whenever|when|if|after|before|with|without|on|in|to|via|from|while|where)\b", text))
     introduced = bool(re.search(r"\b(changed line|new branch|introduced|now)\b", text))
-    coverage_target = bool(re.search(r"\b(regression test|regression coverage|coverage|test)\b", text))
+    coverage_target = bool(re.search(r"\b(regression tests?|regression coverage|coverage|tests?)\b", text))
     return scenario and introduced and coverage_target
 
 

@@ -65,7 +65,13 @@ Critical or request-changes recommendations require high confidence and concrete
 
 ## Testing Findings
 
-Testing reviewer output is postable only when it names changed behavior, a concrete regression scenario, and identifiable missing coverage. Generic "add tests" comments should become `local_note` or `non_finding`.
+Testing reviewer output is postable only when it proves all three parts of the testing bar:
+
+1. changed behavior introduced or exposed by the PR;
+2. a concrete regression scenario, input, caller path, or environment where that behavior matters;
+3. an identifiable missing coverage target, such as a regression test for the named behavior or coverage that does not cover the named path.
+
+Generic "add tests", "improve coverage", and "coverage for this change" comments should become `local_note` or `non_finding` unless they also meet that bar.
 
 ## Context Limits
 

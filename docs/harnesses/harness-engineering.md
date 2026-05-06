@@ -131,7 +131,7 @@ Golden tests should protect product behavior without freezing incidental wording
 - Medium-confidence concrete findings may remain postable only when non-blocking; low-confidence or intent-dependent mergeability concerns become clarification requests or suppressed output.
 - Generic, speculative, pre-existing, reviewer-declared duplicate, omitted-context-dependent, or locationless issues are local notes or suppressed output.
 - Suggested replies are local-only in MVP.
-- Testing feedback is postable only with changed behavior, a concrete regression scenario, and identifiable missing coverage.
+- Testing feedback is postable only with changed behavior, a concrete regression scenario, and identifiable missing coverage. `tests/test_quality_testing.py` is the focused testing-quality harness; it proves concrete testing findings are postable, generic or vague missing-test advice is suppressed, explicit testing local notes stay local-only, and suppressed testing output cannot enter candidate payload previews.
 
 ### Rendering And Redaction
 
