@@ -147,6 +147,7 @@ Golden tests should protect product behavior without freezing incidental wording
 - Rejected approval, missing approval, no approved findings, local-note-only, suggested-reply-only, suppressed-only, and clarification-only runs never invoke the writer.
 - Required reviewer failure runs never invoke the writer: dry-run JSON must expose the graph error, failed reviewer result/status, no candidate payload, and local-only posting plan.
 - Optional reviewer failure runs remain partial local reviews: `tests/test_optional_reviewer_failure.py` proves the failed optional reviewer is recorded in partial-review metadata, other reviewer output still classifies, later stages continue, and optional failure alone does not block post eligibility.
+- Local verdict runs are private policy checks: `tests/test_verdict.py` proves ambiguity cannot become request-changes, graph errors disable post eligibility, dry-run output renders the local verdict, and GitHub payload previews remain issue comments without public request-changes wording by default.
 - MVP payload kind is top-level `issue_comment`; formal PR reviews, inline comments, labels, statuses, `APPROVE`, and `REQUEST_CHANGES` are rejected.
 - Approval binds approved item IDs, review target, final full comment hash, actor, permission, and checked-at time.
 - Finalization re-checks target freshness, actor, permission, redaction, payload hash, marker reconciliation, and duplicate fingerprints before writer reachability.

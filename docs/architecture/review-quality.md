@@ -63,6 +63,12 @@ ReviewGraph should track priority separately from severity. Schemas store priori
 
 Critical or request-changes recommendations require high confidence and concrete evidence. Medium-confidence findings may be postable only when they are concrete and non-blocking. Low-confidence or ambiguous issues cannot be blocking.
 
+## Local Verdict
+
+The local verdict is private ReviewGraph policy state, not a GitHub review event. It can explain `comment`, `request_changes`, `needs_clarification`, or `no_findings` in dry-run output, but MVP candidate payloads remain top-level issue comments and exclude public request-changes wording by default.
+
+Only high-confidence critical or graph-owned blocking findings from reviewers configured with `verdict_power: request_changes` can produce a private request-changes recommendation. Blocking clarification requests produce `needs_clarification`, not fake certainty. Required reviewer failures disable post eligibility even when other findings exist. Optional reviewer failures may make the run partial, but they do not disable posting by themselves.
+
 ## Testing Findings
 
 Testing reviewer output is postable only when it proves all three parts of the testing bar:

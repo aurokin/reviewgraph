@@ -69,6 +69,7 @@ from reviewgraph.reviewer_context import build_reviewer_context_package
 from reviewgraph.reviewer_runs import record_reviewer_run_status, reviewer_run_key_for_selection
 from reviewgraph.reviewers import FakeReviewerAdapter, execute_fake_reviewer, fake_registry_from_fixture_outputs
 from reviewgraph.state import StageCursor, StageCursorTransition, advance_or_finish_stage, initial_stage_cursor
+from reviewgraph.verdict import compute_local_verdict, compute_post_enabled
 
 
 class RunnerError(ValueError):
@@ -153,15 +154,19 @@ def run_fixture_dry_run(
         config=config,
         reviewer_results=stage_run.reviewer_results,
     )
-    local_verdict = _local_verdict(
+    local_verdict = compute_local_verdict(
         findings=classified["findings"],
         clarification_gate=clarification_gate,
+        reviewer_verdict_powers={
+            name: agent.verdict_power
+            for name, agent in config.agents.items()
+        },
     )
-    post_enabled = (
-        not stage_run.errors
-        and not clarification_gate.blocks_posting
-        and local_verdict == ReviewVerdict.COMMENT
-        and bool(classified["findings"])
+    post_enabled = compute_post_enabled(
+        errors=stage_run.errors,
+        clarification_gate=clarification_gate,
+        local_verdict=local_verdict,
+        findings=classified["findings"],
     )
     posting_plan = build_posting_plan(
         findings=classified["findings"],
@@ -792,18 +797,6 @@ def _required_bool(data: dict[str, Any], field: str, label: str) -> bool:
     if type(value) is not bool:
         raise RunnerError(f"{label}.{field} must be a boolean")
     return value
-
-
-def _local_verdict(
-    *,
-    findings: tuple[ClassifiedFinding, ...],
-    clarification_gate: ClarificationGateResult,
-) -> ReviewVerdict:
-    if clarification_gate.blocks_posting:
-        return ReviewVerdict.NEEDS_CLARIFICATION
-    if findings:
-        return ReviewVerdict.COMMENT
-    return ReviewVerdict.NO_FINDINGS
 
 
 def _candidate_payload(
