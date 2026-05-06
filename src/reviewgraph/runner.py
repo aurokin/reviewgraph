@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -35,6 +36,7 @@ from reviewgraph.models import (
     PRConversationMemory,
     RawReviewerFinding,
     ReviewConfig,
+    ReviewerResult,
     RiskAssessment,
     ReviewerRunKey,
     ReviewerRunStatus,
@@ -61,7 +63,9 @@ from reviewgraph.redaction import redact_data
 from reviewgraph.render import RenderedReview, render_review
 from reviewgraph.risk import classify_change_risk, risk_assessment_to_json
 from reviewgraph.routing import select_reviewers_for_active_stage
+from reviewgraph.reviewer_context import build_reviewer_context_package
 from reviewgraph.reviewer_runs import record_reviewer_run_status, reviewer_run_key_for_selection
+from reviewgraph.reviewers import FakeReviewerAdapter, execute_fake_reviewer, fake_registry_from_fixture_outputs
 from reviewgraph.state import StageCursor, StageCursorTransition, advance_or_finish_stage, initial_stage_cursor
 
 
@@ -82,6 +86,7 @@ class _StageRunResult:
     selected_reviewers: tuple[SelectedReviewer, ...]
     reviewer_run_keys: tuple[ReviewerRunKey, ...]
     reviewer_run_status: dict[str, ReviewerRunStatus]
+    reviewer_results: tuple[ReviewerResult, ...]
     graph_trace: list[dict[str, Any]]
     classified: dict[str, tuple[Any, ...]]
     context_budget: ContextBudget
@@ -116,6 +121,7 @@ def run_fixture_dry_run(
         budgeted_fixture,
         memory_references=memory_references,
         budget_limits=context_budget_limits,
+        budgeted_context=budgeted_context,
         risk=risk_assessment,
         omitted_file_paths=budgeted_context.context_budget.omitted_file_paths,
     )
@@ -173,6 +179,7 @@ def run_fixture_dry_run(
         risk=risk_assessment,
         selected_reviewers=selected_reviewers,
         reviewer_run_status=stage_run.reviewer_run_status,
+        reviewer_results=stage_run.reviewer_results,
         graph_trace=graph_trace,
         writer_call_count=writer_call_count,
         rendered=rendered,
@@ -191,10 +198,18 @@ def _run_review_stages(
     *,
     memory_references: tuple[MemoryReference, ...],
     budget_limits: ContextBudget,
+    budgeted_context: BudgetedInputContext,
     risk: RiskAssessment,
     omitted_file_paths: tuple[str, ...] = (),
 ) -> _StageRunResult:
     raw_outputs_by_key = _raw_outputs_by_key(fixture)
+    fake_adapter = FakeReviewerAdapter(
+        fixture_id=fixture.id,
+        registry=fake_registry_from_fixture_outputs(
+            fixture_id=fixture.id,
+            outputs=fixture.raw_reviewer_outputs,
+        ),
+    )
     selected_reviewers: list[SelectedReviewer] = []
     graph_trace: list[dict[str, Any]] = []
     classified = _empty_classified_lists()
@@ -248,28 +263,92 @@ def _run_review_stages(
         selected_reviewers.extend(selected_stage_reviewers)
         for reviewer in stage_reviewers:
             key = (reviewer.name, reviewer.stage)
-            reviewer_output = raw_outputs_by_key.get(key)
-            if reviewer_output is None:
-                _update_reviewer_status(
-                    routing_state,
-                    reviewer,
-                    status=ReviewerRunStatusValue.FAILED,
-                    reason="missing raw reviewer output for selected reviewer",
-                )
-                if not _reviewer_is_required(config, reviewer):
-                    classified["local_notes"].append(_optional_reviewer_failure_note(reviewer))
-                    continue
-                raise RunnerError(
-                    "raw reviewer output was not selected; missing raw reviewer output for selected reviewer: "
-                    f"{reviewer.name}/{reviewer.stage}"
-                )
-            seen_raw_keys.add(key)
             _update_reviewer_status(
                 routing_state,
                 reviewer,
                 status=ReviewerRunStatusValue.RUNNING,
                 reason="deterministic fixture output execution started",
             )
+            reviewer_result = execute_fake_reviewer(
+                adapter=fake_adapter,
+                package=build_reviewer_context_package(
+                    active_stage=stage,
+                    reviewer=reviewer,
+                    reviewer_config=config.agents.get(reviewer.name),
+                    budgeted_context=budgeted_context,
+                ),
+                run_key=reviewer_run_key_for_selection(routing_state, reviewer),
+            )
+            routing_state.reviewer_results.append(reviewer_result)
+            if key in raw_outputs_by_key:
+                seen_raw_keys.add(key)
+            if reviewer_result.status != ReviewerRunStatusValue.COMPLETED:
+                if key not in raw_outputs_by_key:
+                    extra_raw_keys = sorted(set(raw_outputs_by_key) - seen_raw_keys - deferred_raw_keys)
+                    if extra_raw_keys:
+                        extra = ", ".join(f"{reviewer}/{stage}" for reviewer, stage in extra_raw_keys)
+                        raise RunnerError(f"raw reviewer output was not selected: {extra}")
+                fallback_classified = False
+                if _reviewer_result_has_classifiable_raw_output(reviewer_result):
+                    reviewer_output = dict(reviewer_result.raw_output)
+                    try:
+                        _classify_reviewer_output(
+                            fixture,
+                            reviewer_output=reviewer_output,
+                            classified=classified,
+                            memory_references=memory_references,
+                            omitted_file_paths=omitted_file_paths,
+                        )
+                    except RunnerError:
+                        _update_reviewer_status(
+                            routing_state,
+                            reviewer,
+                            status=ReviewerRunStatusValue.FAILED,
+                            reason="deterministic fixture output execution failed",
+                        )
+                        if not _reviewer_is_required(config, reviewer):
+                            classified["local_notes"].append(_optional_reviewer_failure_note(reviewer))
+                            continue
+                        raise
+                    fallback_classified = True
+                if fallback_classified:
+                    _update_reviewer_status(
+                        routing_state,
+                        reviewer,
+                        status=ReviewerRunStatusValue.COMPLETED,
+                        reason="deterministic fixture output handled by legacy classifier",
+                    )
+                    continue
+                reason = _reviewer_result_error(reviewer_result, default="fake reviewer execution failed")
+                _update_reviewer_status(
+                    routing_state,
+                    reviewer,
+                    status=ReviewerRunStatusValue.FAILED,
+                    reason=reason,
+                )
+                if not _reviewer_is_required(config, reviewer):
+                    classified["local_notes"].append(_optional_reviewer_failure_note(reviewer))
+                    continue
+                raise RunnerError(reason)
+            if not isinstance(reviewer_result.raw_output, Mapping):
+                if key not in raw_outputs_by_key:
+                    extra_raw_keys = sorted(set(raw_outputs_by_key) - seen_raw_keys - deferred_raw_keys)
+                    if extra_raw_keys:
+                        extra = ", ".join(f"{reviewer}/{stage}" for reviewer, stage in extra_raw_keys)
+                        raise RunnerError(f"raw reviewer output was not selected: {extra}")
+                reason = _reviewer_result_error(reviewer_result, default="fake reviewer execution failed")
+                if not _reviewer_result_has_classifiable_raw_output(reviewer_result):
+                    _update_reviewer_status(
+                        routing_state,
+                        reviewer,
+                        status=ReviewerRunStatusValue.FAILED,
+                        reason=reason,
+                    )
+                    if not _reviewer_is_required(config, reviewer):
+                        classified["local_notes"].append(_optional_reviewer_failure_note(reviewer))
+                        continue
+                    raise RunnerError(reason)
+            reviewer_output = dict(reviewer_result.raw_output)
             try:
                 _classify_reviewer_output(
                     fixture,
@@ -317,6 +396,7 @@ def _run_review_stages(
         selected_reviewers=tuple(selected_reviewers),
         reviewer_run_keys=tuple(routing_state.reviewer_run_keys),
         reviewer_run_status=dict(routing_state.reviewer_run_status),
+        reviewer_results=tuple(routing_state.reviewer_results),
         graph_trace=graph_trace,
         classified={key: tuple(value) for key, value in classified.items()},
         context_budget=merge_context_budgets(budget_limits, *stage_budgets),
@@ -421,6 +501,18 @@ def _optional_reviewer_failure_note(reviewer: SelectedReviewer) -> LocalNote:
         title="Optional reviewer failed",
         body=f"{reviewer.name} was selected for {reviewer.stage} but failed before producing usable output.",
         evidence=f"Trigger reasons: {', '.join(reviewer.reasons)}",
+    )
+
+
+def _reviewer_result_error(reviewer_result: ReviewerResult, *, default: str) -> str:
+    return reviewer_result.errors[0] if reviewer_result.errors else default
+
+
+def _reviewer_result_has_classifiable_raw_output(reviewer_result: ReviewerResult) -> bool:
+    return (
+        isinstance(reviewer_result.raw_output, Mapping)
+        and "items" in reviewer_result.raw_output
+        and reviewer_result.raw_output.get("failure") is not True
     )
 
 
@@ -651,7 +743,7 @@ def _classify_reviewer_output(
                     proposed_body=_required_str(item, "proposed_body", "suggested_reply"),
                 )
             )
-        elif item_type == "suppressed":
+        elif item_type in {"suppressed", "non_finding"}:
             _require_fields(item, ("id", "reason"), "suppressed")
             classified["suppressed_outputs"].append(
                 SuppressedOutput(
@@ -1102,6 +1194,7 @@ def _json_envelope(
     risk: RiskAssessment,
     selected_reviewers: tuple[SelectedReviewer, ...],
     reviewer_run_status: dict[str, ReviewerRunStatus],
+    reviewer_results: tuple[ReviewerResult, ...],
     graph_trace: list[dict[str, Any]],
     writer_call_count: int,
     rendered: RenderedReview,
@@ -1126,6 +1219,17 @@ def _json_envelope(
                 "status": status.status.value,
             }
             for key, status in sorted(reviewer_run_status.items())
+        ],
+        "reviewer_results": [
+            {
+                "key": result.run_key.stable_key(),
+                "reviewer": result.run_key.reviewer,
+                "stage": result.run_key.stage.value,
+                "status": result.status.value,
+                "errors": list(result.errors),
+                "raw_output": result.raw_output,
+            }
+            for result in reviewer_results
         ],
         "side_effects": {
             "writer_called": writer_call_count > 0,

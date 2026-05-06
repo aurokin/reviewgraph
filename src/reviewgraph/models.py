@@ -593,6 +593,9 @@ class ClarificationStatus:
 @dataclass(frozen=True)
 class ReviewerResult:
     run_key: ReviewerRunKey
+    status: ReviewerRunStatusValue = ReviewerRunStatusValue.COMPLETED
+    raw_output: Mapping[str, object] | str | None = None
+    errors: tuple[str, ...] = field(default_factory=tuple)
     findings: tuple[RawReviewerFinding, ...] = field(default_factory=tuple)
     clarification_requests: tuple[ClarificationRequest, ...] = field(default_factory=tuple)
     local_notes: tuple[LocalNote, ...] = field(default_factory=tuple)
@@ -602,6 +605,11 @@ class ReviewerResult:
     def __post_init__(self) -> None:
         if not isinstance(self.run_key, ReviewerRunKey):
             raise ValueError("reviewer result run_key must be a ReviewerRunKey")
+        if not isinstance(self.status, ReviewerRunStatusValue):
+            raise ValueError("reviewer result status must be a ReviewerRunStatusValue")
+        if self.raw_output is not None and not isinstance(self.raw_output, (Mapping, str)):
+            raise ValueError("reviewer result raw_output must be a mapping, string, or None")
+        _require_string_tuple(self.errors, "reviewer result errors")
         _require_instance_tuple(self.findings, "reviewer result findings", RawReviewerFinding)
         _require_instance_tuple(
             self.clarification_requests,
