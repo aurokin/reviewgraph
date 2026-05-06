@@ -1,54 +1,51 @@
-# MILESTONE PLAN: PRD 0004 Graph Orchestration
+# MILESTONE PLAN: PRD 0005 Review Quality
 
-Active execution artifact for this milestone. Linear remains the durable source for issue status, milestone order, blockers, and handoff details; if this file conflicts with Linear, Linear wins. Re-fetch current Linear state before starting each issue.
+Active execution artifact for this milestone. Linear remains the durable source for issue status, milestone order, blockers, relationships, and handoff details; if this file conflicts with Linear, Linear wins. Re-fetch current Linear state before starting each issue.
 
 ## Linear Scope Snapshot
 
-- Milestone: `PRD 0004: Graph Orchestration`
-- Milestone ID: `c8f7e842-fed0-477c-8877-e9dfbcaf27f4`
-- Current status: `AUR-194` complete; `AUR-195` complete; `AUR-196` complete; `AUR-197` complete; `AUR-235` complete; `AUR-198` complete; `AUR-199` complete; `AUR-200` complete; `AUR-225` complete; `AUR-256` active.
+- Milestone: `PRD 0005: Review Quality`
+- Milestone ID: `7c623166-927e-43d7-a14d-41af005a2587`
+- Current status at intake: all implementation issues are `Backlog`; no evidence comments yet.
 - Implementation issues:
-  - `AUR-194` / `RG-005: Run Empty Dry-Run Graph On Fixture` / `Done`
-  - `AUR-195` / `RG-006: Implement Stage Cursor Invariants` / `Done`
-  - `AUR-196` / `RG-007: Select Always-On Reviewers` / `Done`
-  - `AUR-197` / `RG-008: Select Path Diff And Label Reviewers` / `Done`
-  - `AUR-235` / `RG-046: Classify Change Risk And Size` / `Done`
-  - `AUR-198` / `RG-009: Select Gate-Based Risk And Size Reviewers` / `Done`
-  - `AUR-199` / `RG-010: Track Reviewer Run Status And Retries` / `Done`
-  - `AUR-200` / `RG-011: Run Deterministic Fake Reviewers` / `Done`
-  - `AUR-225` / `RG-036: Block Posting On Required Reviewer Failure` / `Done`
+  - `AUR-201` / `RG-012: Normalize Reviewer Output` / `Backlog`
+  - `AUR-202` / `RG-013: Classify Review Quality` / `Backlog`
+  - `AUR-203` / `RG-014: Classify Testing Feedback Quality` / `Backlog`
+  - `AUR-204` / `RG-015: Validate Diff Anchors For Inline Candidates` / `Backlog`
+  - `AUR-205` / `RG-016: Stop For Clarification Requests` / `Backlog`
+  - `AUR-206` / `RG-017: Resume From Clarification Answers` / `Backlog`
+  - `AUR-207` / `RG-018: Compute Local Verdict` / `Backlog`
+  - `AUR-226` / `RG-037: Continue After Optional Reviewer Failure` / `Backlog`
+  - `AUR-227` / `RG-038: Repair Or Record Malformed Reviewer JSON` / `Backlog`
 - Gate issue:
-  - `AUR-256` / `Complete PRD 0004: Graph Orchestration` / `In Progress`
+  - `AUR-257` / `Complete PRD 0005: Review Quality` / `Backlog`
 
 ## Milestone Intent
 
-PRD 0004 turns the fixture tracer into explicit graph orchestration. The milestone should make staged reviewer introduction, stage cursor state, reviewer run status, deterministic risk/size routing, fake reviewer execution, reviewer failure policy, and dry-run side-effect bypass visible in graph-owned state and harnesses.
+PRD 0005 is the trust bar for ReviewGraph output. The milestone turns reviewer output into graph-owned quality decisions before rendering or posting can see it: postable findings, local notes, clarification requests, suggested replies, and suppressed non-findings.
 
-The product point is not to add live integrations. It is to demonstrate that LangGraph-style orchestration owns routing and side-effect decisions while reviewer agents remain scoped prompt/context runners that return structured output.
+The product point is restraint. ReviewGraph should prefer no finding over a plausible weak finding. Agents may propose issues, questions, notes, and replies, but the graph owns postability, priority, blocking status, fingerprints, local verdicts, and side-effect eligibility.
 
 ## Current Code Snapshot
 
-- `src/reviewgraph/graph.py` provides the empty LangGraph dry-run slice used to prove state initialization and no-writer reachability.
-- `src/reviewgraph/state.py` owns stage cursor helpers and transition traces. `advance_or_finish_stage` is the only stage cursor mutator for implemented PRD 0004 behavior.
-- `src/reviewgraph/routing.py` owns active-stage reviewer selection for always, path, diff pattern, label, conversation pattern, risk, and size triggers.
-- `src/reviewgraph/risk.py` records deterministic risk/size facts before risk gates select reviewers.
-- `src/reviewgraph/reviewer_runs.py` owns reviewer run keys, run status registration, completed/skipped suppression, retry decisions, and retry exhaustion semantics.
-- `src/reviewgraph/reviewers.py` owns deterministic fake reviewer execution through `ReviewerContextPackage`; dry-run JSON records `reviewer_results`.
-- `src/reviewgraph/runner.py` wires the fixture tracer through the graph-owned state contracts and preserves dry-run no-writer behavior.
-- Required fake reviewer failures now record durable graph errors, force `post_enabled=false`, preserve local dry-run output, and make the posting plan local-only. Optional fake reviewer failures remain failed reviewer results plus local notes without blocking post eligibility by themselves.
+- `src/reviewgraph/models.py` already defines `RawReviewerFinding`, `ClassifiedFinding`, `DiffAnchor`, `LocalNote`, `SuggestedReply`, `SuppressedReviewerOutput`, `ClarificationRequest`, `ReviewVerdict`, and graph-owned-field rejection.
+- `src/reviewgraph/reviewers.py` already normalizes deterministic fake reviewer items into typed `ReviewerResult` fields, but malformed repair and quality policy are not extracted into dedicated modules.
+- `src/reviewgraph/runner.py` currently contains legacy in-run normalization/classification helpers such as `_classify_reviewer_output`, `_is_postable_finding`, `_local_verdict`, evidence-provenance checks, and optional/required failure wiring.
+- `src/reviewgraph/posting.py` already keeps suggested replies/local notes/suppressed output local-only, rejects public request-changes wording in candidate payloads, and validates inline candidates when explicitly requested.
+- Existing CLI/tracer tests cover many quality behaviors in broad integration form. PRD 0005 should add focused harnesses and extract policy into narrow modules without broad behavior drift.
 
 ## Execution Order
 
-1. `AUR-194` first: establish the explicit empty dry-run graph path from fixture input to empty output. This can wrap the current runner behavior where useful, but the acceptance proof should be graph/state oriented: fixture target, `run_mode=dry_run`, `post_enabled=false`, empty review outputs, and writer branch unreachable.
-2. `AUR-195` second: implement stage cursor invariants. Create the minimal state/cursor module before broad routing refactors so every later stage uses one cursor contract.
-3. `AUR-196` third: select always-on reviewers for the active stage and persist selected reviewer state with trigger reasons.
-4. `AUR-197` fourth: add path, diff pattern, and label selectors on top of the active-stage routing contract.
-5. `AUR-235` fifth: extract deterministic risk and size classification before risk gates use it. Risk/size facts should be recorded separately from reviewer selection reasons.
-6. `AUR-198` sixth: implement risk and size gates using the `AUR-235` risk assessment. Gate-only reviewers should become selectable when their gates pass.
-7. `AUR-199` seventh: track reviewer run keys, statuses, idempotence, and retry exhaustion. This should happen before fake reviewer execution so execution can record selected/running/completed/failed/skipped instead of treating raw fixture output as implicit success.
-8. `AUR-200` eighth: add deterministic fake reviewer execution through the scoped reviewer context package. Cover raw findings, local notes, clarification requests, suggested replies, non-findings, malformed output, required failures, and optional failures without live LLM calls.
-9. `AUR-225` ninth: make required reviewer failure fail closed while optional reviewer failures remain non-terminal. Preserve local dry-run output and ensure posting-plan construction treats required failure as non-writable state.
-10. `AUR-256` last: close the milestone only after all implementation issues are `Done`, focused/full validation passes, docs reflect the orchestration contracts, Linear evidence is complete, and fresh subagent review finds no material gaps.
+1. `AUR-201` first: extract reviewer-output normalization into a focused contract. Valid reviewer output should become typed raw findings, local notes, clarification requests, suggested replies, and suppressible non-findings. Malformed raw strings or malformed mappings must flow to the explicit repair/error policy rather than being silently coerced.
+2. `AUR-227` second: add the deterministic fake repair/error path for malformed reviewer JSON. This should happen before broader quality classification so malformed inputs have one clear lifecycle: repair once, normalize on success, record required/optional failure on exhaustion.
+3. `AUR-202` third: extract and harden the general quality classifier. It should ignore reviewer self-declared postability/blocking, require changed-code evidence and an actionable scenario, suppress or downgrade generic/speculative/pre-existing/locationless output, and preserve logic-review rules.
+4. `AUR-203` fourth: layer testing-reviewer quality rules on the extracted classifier. Testing output is postable only with changed behavior, a concrete regression scenario, and identifiable missing coverage; generic "add tests" remains local-only or suppressed.
+5. `AUR-204` fifth: validate diff anchors for dry-run inline candidates. Keep inline posting out of scope. Findings without precise changed-line locations remain local-only unless a future top-level exception is explicitly designed.
+6. `AUR-205` sixth: make clarification-stop behavior a focused graph contract. Pending blocking clarification requests set `post_enabled=false`, render the question and why it matters, and prevent the ambiguous issue from producing a local blocking verdict.
+7. `AUR-206` seventh: implement answered clarification resume. `ingest_clarification_answer` records answers without mutating cursor fields; `advance_or_finish_stage` activates transient `clarification_review`; only affected reviewers rerun.
+8. `AUR-226` eighth: confirm optional reviewer failures continue through later stages with partial-review metadata. Earlier PRD 0004 work already covers much of this behavior; this issue should add focused quality-era proof and avoid changing required-failure semantics.
+9. `AUR-207` ninth: extract local verdict policy from classified outputs and failure/clarification state. Local verdict remains private/dry-run state and does not imply GitHub review events or public request-changes wording.
+10. `AUR-257` last: close the milestone only after all implementation issues are `Done`, focused/full validation passes, durable docs capture the final review-quality contracts, Linear evidence is complete, and fresh subagent review reports no material gaps.
 
 ## Issue Workflow
 
@@ -66,20 +63,22 @@ For each issue:
 
 ## Harness Strategy
 
-- `AUR-194` focused harness: `python -m pytest tests/test_graph_empty.py`
-- `AUR-195` focused harness: `python -m pytest tests/test_stage_cursor.py`
-- `AUR-196` focused harness: `python -m pytest tests/test_routing.py`
-- `AUR-197` focused harness: `python -m pytest tests/test_routing.py`
-- `AUR-235` focused harness: `python -m pytest tests/test_risk.py`
-- `AUR-198` focused harness: `python -m pytest tests/test_routing_risk.py`
-- `AUR-199` focused harness: `python -m pytest tests/test_reviewer_runs.py`
-- `AUR-200` focused harness: `python -m pytest tests/test_reviewers_fake.py`
-- `AUR-225` focused harness: `python -m pytest tests/test_required_reviewer_failure.py`
-- Tracer regression harness:
+- `AUR-201` focused harness: `python -m pytest tests/test_findings.py`
+- `AUR-227` focused harness: `python -m pytest tests/test_reviewer_json_repair.py`
+- `AUR-202` focused harness: `python -m pytest tests/test_quality.py`
+- `AUR-203` focused harness: `python -m pytest tests/test_quality_testing.py`
+- `AUR-204` focused harness: `python -m pytest tests/test_diff_anchor.py`
+- `AUR-205` focused harness: `python -m pytest tests/test_clarification.py`
+- `AUR-206` focused harness: `python -m pytest tests/test_clarification_resume.py`
+- `AUR-226` focused harness: `python -m pytest tests/test_optional_reviewer_failure.py`
+- `AUR-207` focused harness: `python -m pytest tests/test_verdict.py`
+- Tracer/CLI regression harness:
   - `python -m pytest tests/test_tracer_fixture_run.py tests/test_cli.py tests/test_render.py`
+- Reviewer/failure regression harness:
+  - `python -m pytest tests/test_reviewers_fake.py tests/test_required_reviewer_failure.py tests/test_reviewer_runs.py`
 - Boundary regression harness:
-  - `python -m pytest tests/test_reviewer_context.py tests/test_contract_boundaries.py tests/test_context_budget.py tests/test_prompt_injection_memory.py`
-- Full validation after shared graph changes:
+  - `python -m pytest tests/test_reviewer_context.py tests/test_contract_boundaries.py tests/test_context_budget.py tests/test_prompt_injection_memory.py tests/test_redaction.py`
+- Full validation after shared policy changes:
   - `python -m pytest -q`
   - `python -m py_compile src/reviewgraph/*.py`
   - `python scripts/check_docs.py`
@@ -87,54 +86,62 @@ For each issue:
 
 ## Contract Guardrails
 
-- Dry-run remains the default. No PRD 0004 work should introduce live GitHub reads, live LLM calls, approval prompts, or writer reachability.
-- Prompts can reason, but graph/state modules decide stage transitions, reviewer selection, retries, clarification stops, posting eligibility, and side-effect reachability.
-- `advance_or_finish_stage` is the only code path that mutates `active_stage`, `suspended_stage`, `stage_queue`, or `completed_stages`.
-- `clarification_review` is transient and never belongs in the normal stage queue.
-- Reviewer selection must record reviewer name, active stage, and trigger reasons in state.
-- Risk and size classification must be deterministic, fixture-testable, and recorded as graph-owned state before risk gates select reviewers.
-- `ReviewerRunKey` must bind target hash, config hash, stage, reviewer, attempt, retry metadata, and clarification ID. A selected key is not completed until execution records completion.
-- Required reviewer failures record durable graph errors and set `post_enabled=false`; optional reviewer failures may carry `ReviewerResult` errors and local notes but do not create top-level graph errors or stop local dry-run output by themselves.
-- Fake reviewers receive only `ReviewerContextPackage`; no fake/live reviewer gets GitHub transports, approval state, finalization code, payload builders, writer clients, or ambient tool callables.
-- Raw reviewer output remains structured input to quality classification. Reviewer output cannot self-declare public destination, postability, approval, blocking verdict, or GitHub review event.
+- Dry-run remains the default. No PRD 0005 work should introduce live GitHub reads, live LLM calls, approval prompts, or writer reachability.
+- Reviewer output cannot self-declare postability, final priority, blocking status, fingerprint, destination, approval, public verdict, or GitHub review event.
+- Findings must be structured before markdown rendering. Markdown is output, not policy state.
+- Postable findings require high-confidence changed-code evidence, an actionable scenario, safe evidence provenance, and a precise changed-code location when available.
+- Critical/request-changes recommendations require high-confidence evidence. Low-confidence or ambiguous issues cannot drive blocking verdicts.
+- Logic-review findings may cite cross-file evidence, but public locations anchor to changed code that introduced or exposed the risk. Unclear product intent becomes clarification, not a blocking finding.
+- Testing findings are postable only with changed behavior, a concrete regression scenario, and identifiable missing coverage. Generic "add tests" output is local-only or suppressed.
+- Suggested replies are local-only in MVP and never become automatic GitHub replies.
+- Inline candidates remain dry-run only. Inline GitHub posting is outside PRD 0005.
+- Passive or untrusted memory cannot support postable findings, verdict-blocking clarifications, routing pressure, approval input, or public payload text.
+- Optional reviewer failures may produce partial-review metadata and local notes without blocking post eligibility by themselves. Required reviewer failures remain fail-closed.
+- The local verdict is private ReviewGraph output. Public request-changes wording is excluded from candidate GitHub payloads by default.
 
 ## Documentation Work
 
 Update the narrowest durable docs alongside behavior:
 
-- Stage cursor, reviewer run status, clarification resume, and graph routing contracts belong in `docs/architecture/state-graph.md`.
-- Orchestration module boundaries belong in `docs/architecture/overview.md`.
-- Risk/size classification and routing proof belong in `docs/harnesses/harness-engineering.md` and, if durable enough, `docs/architecture/reviewer-config.md`.
-- Fake reviewer and graph tracer behavior belongs in `docs/plans/implementation-plan.md` only if sequencing changes materially.
+- Quality classification, output classes, and finding eligibility belong in `docs/architecture/review-quality.md`.
+- Raw and classified schemas, diff anchors, clarification requests, and provenance rules belong in `docs/architecture/findings-contract.md`.
+- Clarification stop/resume graph behavior belongs in `docs/architecture/state-graph.md`.
+- Quality harness families and golden-case expectations belong in `docs/harnesses/harness-engineering.md`.
+- Sequencing narrative belongs in `docs/plans/implementation-plan.md` only if the project phase narrative changes materially.
+- Add an ADR only for a durable tradeoff that future implementers would otherwise reopen.
 - Keep Linear as the executable backlog. Do not copy the issue tree into durable product docs beyond this active execution plan.
 
-## PRD 0004 Acceptance Surface
+## PRD 0005 Acceptance Surface
 
-- Implemented in this milestone:
-  - Empty fixture dry-run graph initialization and no-writer proof.
-  - Stage cursor invariants and transition traces for normal stages.
-  - Active-stage reviewer selection with always/path/diff/label/risk/size gates and explainable trigger reasons.
-  - Deterministic risk/size state before risk gate routing.
-  - Reviewer run keys, statuses, idempotent completion suppression, and retry exhaustion semantics.
-  - Deterministic fake reviewer execution behind `ReviewerContextPackage`.
-  - Explicit required fake reviewer failure fail-closed behavior and optional failure non-terminal behavior.
-- Already present from earlier tracer/context work and exercised by PRD 0004:
-  - Clarification requests can stop dry-run posting eligibility in fixture runs.
-  - Dry-run mode bypasses approval/writer paths.
-- Deferred intentionally to later PRDs/milestones:
-  - Answered clarification resume and rerunning only affected reviewers remains future graph work tied to review-quality/clarification slices.
-  - Approval gate, final payload construction, actor/permission/freshness validation, marker reconciliation, and writer reachability are PRD 0007 side-effect work.
-  - Live GitHub reads are PRD 0006; live LLM reviewers are PRD 0008.
+The milestone is complete when ReviewGraph proves:
+
+- Valid reviewer output normalizes into typed raw artifacts before quality policy runs.
+- Malformed reviewer JSON gets one deterministic fake repair attempt and then either normalizes or records required/optional failure state.
+- General quality classification separates postable findings, local notes, clarification requests, suggested replies, and suppressed non-findings.
+- Generic, speculative, self-declared-blocking, pre-existing, unsupported, unsafe-memory, and locationless output cannot become postable findings.
+- Testing-reviewer output follows the stricter changed-behavior/regression-scenario/missing-coverage bar.
+- Diff anchors are modeled and validated for dry-run inline candidates without enabling inline posting.
+- Blocking clarification requests stop post eligibility and avoid fake certainty.
+- Answered clarifications can resume only affected reviewers through transient `clarification_review`.
+- Optional reviewer failure continuation is proven in the quality-era graph, while required failure remains fail-closed.
+- Local verdict computation is extracted from public GitHub behavior and excludes public request-changes pressure by default.
+
+## Deferred Scope
+
+- Semantic deduplication remains deferred.
+- Inline GitHub comments remain deferred.
+- Automatic replies to human PR comments remain deferred.
+- Live GitHub reads, live LLM reviewers, approval finalization, marker reconciliation, and writer behavior remain later PRDs.
 
 ## Milestone Completion Criteria
 
-`AUR-256` can close only when:
+`AUR-257` can close only when:
 
 - Every implementation issue listed in this plan is `Done` in Linear with an evidence comment.
-- A fresh Linear milestone inventory proves every active PRD 0004 blocker is complete or has an explicit stale/canceled/not-applicable rationale in Linear.
-- Focused validation for all PRD 0004 harness families passes.
-- Tracer, boundary, full validation, docs check, py-compile, and diff check pass.
-- Durable docs explain the final graph orchestration design an implementation agent needs when dropping into the repo.
+- A fresh Linear milestone inventory proves every active PRD 0005 blocker is complete or has an explicit stale/canceled/not-applicable rationale in Linear.
+- Focused validation for all PRD 0005 harness families passes.
+- Tracer, reviewer/failure, boundary, full validation, docs check, py-compile, and diff check pass.
+- Durable docs explain the final review-quality contracts an implementation agent needs when dropping into the repo.
 - Fresh subagent review of code, tests, docs, Linear evidence, and the milestone gate reports no material issues.
-- No unapproved live API, live LLM, approval, or GitHub writer behavior has been introduced.
+- No unapproved live API, live LLM, approval, inline-posting, or GitHub writer behavior has been introduced.
 - No `.ws/` or temporary export artifacts remain.
