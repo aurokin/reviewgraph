@@ -6,37 +6,14 @@ from importlib import resources
 from pathlib import Path
 from typing import Any
 
+from reviewgraph.config import ConfigError, load_reviewer_config as load_config_reviewer_config
+from reviewgraph.models import ReviewConfig as ReviewerConfig
 from reviewgraph.redaction import redact_text
 
 
 MAX_FIXTURE_BYTES = 1_048_576
 DATA_PACKAGE = "reviewgraph"
 DATA_ROOT = "fixtures_data"
-ALLOWED_AGENT_FIELDS = {
-    "capabilities",
-    "context",
-    "description",
-    "model",
-    "required",
-    "stages",
-    "tools",
-    "triggers",
-    "verdict_power",
-}
-ALLOWED_CAPABILITIES = {"none", "diff_context"}
-ALLOWED_STAGES = {"initial_triage", "specialized_review", "logic_review"}
-ALLOWED_TRIGGER_FIELDS = {
-    "always",
-    "changed_files_min",
-    "changed_lines_min",
-    "conversation_patterns",
-    "diff_patterns",
-    "labels",
-    "max_files",
-    "paths",
-    "risk_min",
-}
-ALLOWED_VERDICT_POWERS = {"comment", "request_changes"}
 
 
 class FixtureError(ValueError):
@@ -77,15 +54,11 @@ class FixturePR:
     id: str
     pr_ref: str
     target: dict[str, Any]
+    labels: tuple[str, ...]
     changed_files: tuple[ChangedFile, ...]
     memory: tuple[dict[str, Any], ...]
     truncation: tuple[dict[str, Any], ...]
     raw_reviewer_outputs: tuple[dict[str, Any], ...]
-
-
-@dataclass(frozen=True)
-class ReviewerConfig:
-    agents: dict[str, dict[str, Any]]
 
 
 def default_reviewer_config_path() -> Path:
@@ -124,20 +97,10 @@ def load_fixture_pr(fixture_ref: str) -> FixturePR:
 
 def load_reviewer_config(path: str | Path | None = None) -> ReviewerConfig:
     config_path = Path(path) if path is not None else default_reviewer_config_path()
-    data = _read_json_file(config_path, label="reviewer config")
-    unknown_config_fields = set(data) - {"agents"}
-    if unknown_config_fields:
-        raise FixtureError(f"reviewer config has unsupported fields: {', '.join(sorted(unknown_config_fields))}")
-    agents = data.get("agents")
-    if not isinstance(agents, dict) or not agents:
-        raise FixtureError("reviewer config agents must be a non-empty object")
-    for name, agent in agents.items():
-        if not isinstance(name, str) or not name:
-            raise FixtureError("reviewer config agent names must be non-empty strings")
-        if not isinstance(agent, dict):
-            raise FixtureError(f"reviewer config agent {name} must be an object")
-        _validate_reviewer_agent(name, agent)
-    return ReviewerConfig(agents=agents)
+    try:
+        return load_config_reviewer_config(config_path)
+    except ConfigError as exc:
+        raise FixtureError(str(exc)) from exc
 
 
 def parse_fixture_pr(data: dict[str, Any]) -> FixturePR:
@@ -168,6 +131,7 @@ def parse_fixture_pr(data: dict[str, Any]) -> FixturePR:
         id=_required_str(data, "id", "fixture"),
         pr_ref=_required_str(data, "pr_ref", "fixture"),
         target=data["target"],
+        labels=tuple(_optional_str_list(data, "labels", "fixture")),
         changed_files=changed_files,
         memory=tuple(_optional_list(data, "memory")),
         truncation=tuple(_optional_list(data, "truncation")),
@@ -213,73 +177,6 @@ def _read_json_file(path: Path, *, label: str) -> dict[str, Any]:
     return data
 
 
-def _validate_reviewer_agent(name: str, agent: dict[str, Any]) -> None:
-    unknown_fields = set(agent) - ALLOWED_AGENT_FIELDS
-    if unknown_fields:
-        raise FixtureError(f"reviewer config agent {name} has unsupported fields: {', '.join(sorted(unknown_fields))}")
-    _validate_optional_str(agent, "description", name)
-    stages = agent.get("stages")
-    if not isinstance(stages, list) or not stages:
-        raise FixtureError(f"reviewer config agent {name} must include stages")
-    if not all(isinstance(stage, str) and stage in ALLOWED_STAGES for stage in stages):
-        raise FixtureError(f"reviewer config agent {name} has unsupported stage")
-    if len(set(stages)) != len(stages):
-        raise FixtureError(f"reviewer config agent {name} has duplicate stages")
-    triggers = agent.get("triggers")
-    if not isinstance(triggers, dict):
-        raise FixtureError(f"reviewer config agent {name} must include triggers")
-    _validate_triggers(name, triggers)
-    if "required" in agent and type(agent["required"]) is not bool:
-        raise FixtureError(f"reviewer config agent {name}.required must be a boolean")
-    verdict_power = agent.get("verdict_power", "comment")
-    if not isinstance(verdict_power, str) or verdict_power not in ALLOWED_VERDICT_POWERS:
-        raise FixtureError(f"reviewer config agent {name} has unsupported verdict_power")
-    capabilities = agent.get("capabilities", ["diff_context"])
-    if not isinstance(capabilities, list) or not capabilities:
-        raise FixtureError(f"reviewer config agent {name}.capabilities must be a non-empty list")
-    if not all(isinstance(capability, str) and capability in ALLOWED_CAPABILITIES for capability in capabilities):
-        raise FixtureError(f"reviewer config agent {name} has unsupported capabilities")
-    _validate_optional_str(agent, "model", name)
-    if "tools" in agent:
-        raise FixtureError(f"reviewer config agent {name} has unsupported tools")
-    if "context" in agent and not isinstance(agent["context"], (str, dict)):
-        raise FixtureError(f"reviewer config agent {name}.context must be a string or object")
-
-
-def _validate_triggers(name: str, triggers: dict[str, Any]) -> None:
-    if not triggers:
-        raise FixtureError(f"reviewer config agent {name}.triggers must be non-empty")
-    unknown_trigger_fields = set(triggers) - ALLOWED_TRIGGER_FIELDS
-    if unknown_trigger_fields:
-        raise FixtureError(
-            f"reviewer config agent {name} has unsupported trigger fields: "
-            f"{', '.join(sorted(unknown_trigger_fields))}"
-        )
-    if "always" in triggers and type(triggers["always"]) is not bool:
-        raise FixtureError(f"reviewer config agent {name}.triggers.always must be a boolean")
-    for field in ("paths", "labels", "diff_patterns", "conversation_patterns"):
-        _validate_optional_list_of_str(triggers, field, f"{name}.triggers")
-    for field in ("max_files", "changed_lines_min", "changed_files_min"):
-        if field in triggers and (type(triggers[field]) is not int or triggers[field] <= 0):
-            raise FixtureError(f"reviewer config agent {name}.triggers.{field} must be a positive integer")
-    _validate_optional_str(triggers, "risk_min", f"{name}.triggers")
-
-
-def _validate_optional_str(data: dict[str, Any], field: str, label: str) -> None:
-    if field in data and (not isinstance(data[field], str) or not data[field]):
-        raise FixtureError(f"reviewer config agent {label}.{field} must be a non-empty string")
-
-
-def _validate_optional_list_of_str(data: dict[str, Any], field: str, label: str) -> None:
-    if field not in data:
-        return
-    value = data[field]
-    if not isinstance(value, list) or not value:
-        raise FixtureError(f"reviewer config agent {label}.{field} must be a non-empty list")
-    if not all(isinstance(item, str) and item for item in value):
-        raise FixtureError(f"reviewer config agent {label}.{field} must contain non-empty strings")
-
-
 def _parse_changed_files(value: object) -> tuple[ChangedFile, ...]:
     if not isinstance(value, list) or not value:
         raise FixtureError("fixture.changed_files must be a non-empty list")
@@ -312,6 +209,15 @@ def _optional_list(data: dict[str, Any], field: str) -> list[dict[str, Any]]:
         raise FixtureError(f"fixture.{field} must be a list")
     if not all(isinstance(item, dict) for item in value):
         raise FixtureError(f"fixture.{field} entries must be objects")
+    return value
+
+
+def _optional_str_list(data: dict[str, Any], field: str, label: str) -> list[str]:
+    value = data.get(field, [])
+    if not isinstance(value, list):
+        raise FixtureError(f"{label}.{field} must be a list")
+    if not all(isinstance(item, str) and item for item in value):
+        raise FixtureError(f"{label}.{field} entries must be non-empty strings")
     return value
 
 

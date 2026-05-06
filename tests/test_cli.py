@@ -59,6 +59,39 @@ def test_cli_writes_markdown_and_json_for_fixture_id(tmp_path: Path) -> None:
     assert review["memory"][1]["body"] is None
 
 
+def test_cli_accepts_yaml_reviewer_config(tmp_path: Path) -> None:
+    json_path = tmp_path / "review.json"
+    config_path = tmp_path / "reviewers.yaml"
+    config_path.write_text(
+        """
+agents:
+  correctness:
+    description: Checks deterministic fixture logic.
+    stages: ["initial_triage"]
+    triggers:
+      always: true
+    required: true
+    verdict_power: comment
+    capabilities: ["diff_context"]
+"""
+    )
+
+    exit_code = main(
+        [
+            "--fixture-pr",
+            "basic-pr",
+            "--reviewer-config",
+            str(config_path),
+            "--json-out",
+            str(json_path),
+        ]
+    )
+
+    assert exit_code == 0
+    data = json.loads(json_path.read_text())
+    assert data["selected_reviewers"][0]["name"] == "correctness"
+
+
 def test_cli_json_is_byte_stable(tmp_path: Path) -> None:
     first = tmp_path / "first.json"
     second = tmp_path / "second.json"
@@ -265,25 +298,25 @@ def test_renderer_outputs_redact_secret_like_target_and_path_metadata(tmp_path: 
     assert "[REDACTED]" in serialized
 
 
-def test_secret_like_candidate_fingerprint_fails_closed(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    fixture_path = tmp_path / "secret-fingerprint.json"
+def test_raw_finding_rejects_reviewer_owned_fingerprint(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    fixture_path = tmp_path / "reviewer-owned-fingerprint.json"
     fixture = _basic_fixture()
     fixture["raw_reviewer_outputs"][0]["items"][0]["fingerprint"] = "ghp_abcdefghijklmnopqrstuvwxyz123456"
     fixture_path.write_text(json.dumps(fixture))
 
-    assert main(["--fixture-pr", str(fixture_path)]) == 2
+    assert main(["--fixture-pr", str(fixture_path)]) == 0
 
-    stderr = capsys.readouterr().err
-    assert "postable_finding.fingerprint requires a non-secret stable identity" in stderr
-    assert "ghp_" not in stderr
-    assert "abcdefghijklmnopqrstuvwxyz" not in stderr
+    captured = capsys.readouterr()
+    assert "Raw reviewer finding attempted to set graph-owned fields" in captured.out
+    assert "ghp_" not in captured.out + captured.err
+    assert "abcdefghijklmnopqrstuvwxyz" not in captured.out + captured.err
 
 
-def test_secret_like_fingerprint_with_clarification_fails_closed(
+def test_reviewer_owned_fingerprint_with_clarification_fails_closed(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    fixture_path = tmp_path / "secret-fingerprint-with-clarification.json"
+    fixture_path = tmp_path / "reviewer-owned-fingerprint-with-clarification.json"
     fixture = _basic_fixture()
     fixture["raw_reviewer_outputs"][0]["items"][0]["fingerprint"] = "ghp_abcdefghijklmnopqrstuvwxyz123456"
     fixture["raw_reviewer_outputs"][0]["items"].append(
@@ -296,22 +329,23 @@ def test_secret_like_fingerprint_with_clarification_fails_closed(
     )
     fixture_path.write_text(json.dumps(fixture))
 
-    assert main(["--fixture-pr", str(fixture_path)]) == 2
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path))
 
-    stderr = capsys.readouterr().err
-    assert "postable_finding.fingerprint requires a non-secret stable identity" in stderr
-    assert "ghp_" not in stderr
-    assert "abcdefghijklmnopqrstuvwxyz" not in stderr
+    assert result.json_data["local_verdict"] == "needs_clarification"
+    assert result.json_data["post_enabled"] is False
+    serialized = json.dumps(result.json_data)
+    assert "Raw reviewer finding attempted to set graph-owned fields" in serialized
+    assert "ghp_" not in serialized
+    assert "abcdefghijklmnopqrstuvwxyz" not in serialized
 
 
-def test_duplicate_fingerprints_with_clarification_fail_closed(
+def test_duplicate_graph_fingerprints_with_clarification_fail_closed(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     fixture_path = tmp_path / "duplicate-fingerprint-with-clarification.json"
     fixture = _basic_fixture()
     duplicate = dict(fixture["raw_reviewer_outputs"][0]["items"][0])
-    duplicate["id"] = "finding-cache-stale-copy"
     fixture["raw_reviewer_outputs"][0]["items"].append(duplicate)
     fixture["raw_reviewer_outputs"][0]["items"].append(
         {
@@ -324,7 +358,7 @@ def test_duplicate_fingerprints_with_clarification_fail_closed(
     fixture_path.write_text(json.dumps(fixture))
 
     assert main(["--fixture-pr", str(fixture_path)]) == 2
-    assert "postable_finding.fingerprint must be unique" in capsys.readouterr().err
+    assert "classified output item ids must be unique" in capsys.readouterr().err
 
 
 def test_duplicate_output_item_ids_with_clarification_fail_closed(
@@ -334,7 +368,6 @@ def test_duplicate_output_item_ids_with_clarification_fail_closed(
     fixture_path = tmp_path / "duplicate-item-id-with-clarification.json"
     fixture = _basic_fixture()
     duplicate = dict(fixture["raw_reviewer_outputs"][0]["items"][0])
-    duplicate["fingerprint"] = "fixture-basic-cache-stale-copy"
     fixture["raw_reviewer_outputs"][0]["items"].append(duplicate)
     fixture["raw_reviewer_outputs"][0]["items"].append(
         {
@@ -369,17 +402,15 @@ def test_generic_low_confidence_raw_finding_is_suppressed(tmp_path: Path) -> Non
     fixture = _basic_fixture()
     fixture["raw_reviewer_outputs"][0]["items"] = [
         {
-            "type": "postable_finding",
+            "type": "finding",
             "id": "finding-generic-tests",
             "title": "Please add tests",
             "body": "Please add tests for this change.",
             "evidence": "Changed line 12.",
             "path": "src/cache.py",
             "line": 12,
-            "priority": 2,
             "severity": "suggestion",
             "confidence": "low",
-            "fingerprint": "fixture-generic-tests",
         }
     ]
     fixture_path.write_text(json.dumps(fixture))
@@ -415,17 +446,15 @@ def test_high_confidence_generic_coverage_raw_finding_is_suppressed(tmp_path: Pa
     fixture = _basic_fixture()
     fixture["raw_reviewer_outputs"][0]["items"] = [
         {
-            "type": "postable_finding",
+            "type": "finding",
             "id": "finding-generic-coverage",
             "title": "No regression coverage",
             "body": "No regression coverage was added for this change.",
             "evidence": "Changed line 12.",
             "path": "src/cache.py",
             "line": 12,
-            "priority": 2,
             "severity": "suggestion",
             "confidence": "high",
-            "fingerprint": "fixture-generic-coverage",
         }
     ]
     fixture_path.write_text(json.dumps(fixture))
@@ -451,17 +480,15 @@ def test_generic_coverage_with_weak_behavior_evidence_is_suppressed(tmp_path: Pa
     fixture = _basic_fixture()
     fixture["raw_reviewer_outputs"][0]["items"] = [
         {
-            "type": "postable_finding",
+            "type": "finding",
             "id": "finding-generic-coverage",
             "title": "No regression coverage",
             "body": "No regression coverage was added for this change.",
             "evidence": "Changed line 12 returns stale data.",
             "path": "src/cache.py",
             "line": 12,
-            "priority": 2,
             "severity": "suggestion",
             "confidence": "high",
-            "fingerprint": "fixture-generic-coverage",
         }
     ]
     fixture_path.write_text(json.dumps(fixture))
@@ -481,17 +508,15 @@ def test_placeholder_or_location_only_evidence_is_suppressed(tmp_path: Path, evi
     fixture = _basic_fixture()
     fixture["raw_reviewer_outputs"][0]["items"] = [
         {
-            "type": "postable_finding",
+            "type": "finding",
             "id": "finding-placeholder-evidence",
             "title": "Cache miss returns stale data",
             "body": "The new branch returns stale data when the cache misses.",
             "evidence": evidence,
             "path": "src/cache.py",
             "line": 12,
-            "priority": 1,
             "severity": "warning",
             "confidence": "high",
-            "fingerprint": "fixture-placeholder-evidence",
         }
     ]
     fixture_path.write_text(json.dumps(fixture))
@@ -517,17 +542,15 @@ def test_generic_coverage_with_vague_scenario_is_suppressed(tmp_path: Path) -> N
     fixture = _basic_fixture()
     fixture["raw_reviewer_outputs"][0]["items"] = [
         {
-            "type": "postable_finding",
+            "type": "finding",
             "id": "finding-vague-coverage",
             "title": "Missing tests",
             "body": "No tests when this changes.",
             "evidence": "Changed line 12 returns stale value.",
             "path": "src/cache.py",
             "line": 12,
-            "priority": 2,
             "severity": "suggestion",
             "confidence": "high",
-            "fingerprint": "fixture-vague-coverage",
         }
     ]
     fixture_path.write_text(json.dumps(fixture))
@@ -546,17 +569,15 @@ def test_high_confidence_generic_refactor_raw_finding_is_suppressed(tmp_path: Pa
     fixture = _basic_fixture()
     fixture["raw_reviewer_outputs"][0]["items"] = [
         {
-            "type": "postable_finding",
+            "type": "finding",
             "id": "finding-generic-refactor",
             "title": "Simplify this code",
             "body": "This could be refactored to be easier to read.",
             "evidence": "Changed line 12.",
             "path": "src/cache.py",
             "line": 12,
-            "priority": 2,
             "severity": "suggestion",
             "confidence": "high",
-            "fingerprint": "fixture-generic-refactor",
         }
     ]
     fixture_path.write_text(json.dumps(fixture))
@@ -582,17 +603,15 @@ def test_high_confidence_speculative_raw_finding_is_suppressed(tmp_path: Path) -
     fixture = _basic_fixture()
     fixture["raw_reviewer_outputs"][0]["items"] = [
         {
-            "type": "postable_finding",
+            "type": "finding",
             "id": "finding-speculative",
             "title": "Potential issue",
             "body": "This may cause problems and requires investigation.",
             "evidence": "Changed line 12 returns a value.",
             "path": "src/cache.py",
             "line": 12,
-            "priority": 2,
             "severity": "suggestion",
             "confidence": "high",
-            "fingerprint": "fixture-speculative",
         }
     ]
     fixture_path.write_text(json.dumps(fixture))
@@ -668,17 +687,15 @@ def test_uncertain_or_preexisting_raw_finding_is_suppressed(
     fixture = _basic_fixture()
     fixture["raw_reviewer_outputs"][0]["items"] = [
         {
-            "type": "postable_finding",
+            "type": "finding",
             "id": "finding-uncertain",
             "title": title,
             "body": body,
             "evidence": evidence,
             "path": "src/cache.py",
             "line": 12,
-            "priority": 2,
             "severity": "warning",
             "confidence": "high",
-            "fingerprint": "fixture-uncertain",
         }
     ]
     fixture_path.write_text(json.dumps(fixture))
@@ -708,17 +725,15 @@ def test_high_confidence_generic_advice_raw_finding_is_suppressed(
     fixture = _basic_fixture()
     fixture["raw_reviewer_outputs"][0]["items"] = [
         {
-            "type": "postable_finding",
+            "type": "finding",
             "id": "finding-generic-advice",
             "title": title,
             "body": body,
             "evidence": "Changed line 12.",
             "path": "src/cache.py",
             "line": 12,
-            "priority": 2,
             "severity": "suggestion",
             "confidence": "high",
-            "fingerprint": "fixture-generic-advice",
         }
     ]
     fixture_path.write_text(json.dumps(fixture))
@@ -744,7 +759,7 @@ def test_concrete_missing_regression_coverage_raw_finding_is_postable(tmp_path: 
     fixture = _basic_fixture()
     fixture["raw_reviewer_outputs"][0]["items"] = [
         {
-            "type": "postable_finding",
+            "type": "finding",
             "id": "finding-cache-coverage",
             "title": "Missing regression coverage for cache miss",
             "body": (
@@ -754,10 +769,8 @@ def test_concrete_missing_regression_coverage_raw_finding_is_postable(tmp_path: 
             "evidence": "Changed line 12 returns stale value when the cache misses.",
             "path": "src/cache.py",
             "line": 12,
-            "priority": 2,
             "severity": "warning",
             "confidence": "high",
-            "fingerprint": "fixture-cache-coverage",
         }
     ]
     fixture_path.write_text(json.dumps(fixture))
@@ -769,7 +782,8 @@ def test_concrete_missing_regression_coverage_raw_finding_is_postable(tmp_path: 
     assert result.json_data["post_enabled"] is True
     assert review["classified_output"]["postable_findings"][0]["id"] == "finding-cache-coverage"
     assert review["classified_output"]["suppressed"] == []
-    assert review["candidate_payload_preview"]["item_fingerprints"] == ["fixture-cache-coverage"]
+    assert len(review["candidate_payload_preview"]["item_fingerprints"]) == 1
+    assert review["candidate_payload_preview"]["item_fingerprints"][0].startswith("sha256:")
 
 
 def test_concrete_testing_finding_with_generic_lead_in_is_postable(tmp_path: Path) -> None:
@@ -777,7 +791,7 @@ def test_concrete_testing_finding_with_generic_lead_in_is_postable(tmp_path: Pat
     fixture = _basic_fixture()
     fixture["raw_reviewer_outputs"][0]["items"] = [
         {
-            "type": "postable_finding",
+            "type": "finding",
             "id": "finding-coverage-generic-leadin",
             "title": "Missing regression coverage for cache miss",
             "body": (
@@ -787,10 +801,8 @@ def test_concrete_testing_finding_with_generic_lead_in_is_postable(tmp_path: Pat
             "evidence": "Changed line 12 returns stale value when the cache misses.",
             "path": "src/cache.py",
             "line": 12,
-            "priority": 2,
             "severity": "warning",
             "confidence": "high",
-            "fingerprint": "fixture-coverage-generic-leadin",
         }
     ]
     fixture_path.write_text(json.dumps(fixture))
@@ -809,7 +821,7 @@ def test_concrete_testing_finding_outside_non_testing_harm_allowlist_is_postable
     fixture = _basic_fixture()
     fixture["raw_reviewer_outputs"][0]["items"] = [
         {
-            "type": "postable_finding",
+            "type": "finding",
             "id": "finding-oauth-signup-coverage",
             "title": "Missing OAuth signup coverage",
             "body": (
@@ -819,10 +831,8 @@ def test_concrete_testing_finding_outside_non_testing_harm_allowlist_is_postable
             "evidence": "Changed line 12 accepts empty usernames when signup uses OAuth.",
             "path": "src/cache.py",
             "line": 12,
-            "priority": 2,
             "severity": "warning",
             "confidence": "high",
-            "fingerprint": "fixture-oauth-signup-coverage",
         }
     ]
     fixture_path.write_text(json.dumps(fixture))
@@ -861,17 +871,15 @@ def test_concrete_missing_regression_coverage_general_domain_is_postable(
     fixture = _basic_fixture()
     fixture["raw_reviewer_outputs"][0]["items"] = [
         {
-            "type": "postable_finding",
+            "type": "finding",
             "id": "finding-general-coverage",
             "title": title,
             "body": body,
             "evidence": evidence,
             "path": "src/cache.py",
             "line": 12,
-            "priority": 2,
             "severity": "warning",
             "confidence": "high",
-            "fingerprint": "fixture-general-coverage",
         }
     ]
     fixture_path.write_text(json.dumps(fixture))
@@ -890,17 +898,15 @@ def test_correctness_finding_that_mentions_test_mode_is_postable(tmp_path: Path)
     fixture = _basic_fixture()
     fixture["raw_reviewer_outputs"][0]["items"] = [
         {
-            "type": "postable_finding",
+            "type": "finding",
             "id": "finding-test-mode-bypass",
             "title": "Test mode bypasses auth",
             "body": "The new branch skips auth when test mode is enabled, so callers can reach protected data.",
             "evidence": "Changed line 12 skips auth when test mode is enabled.",
             "path": "src/cache.py",
             "line": 12,
-            "priority": 1,
             "severity": "critical",
             "confidence": "high",
-            "fingerprint": "fixture-test-mode-bypass",
         }
     ]
     fixture_path.write_text(json.dumps(fixture))
@@ -912,7 +918,8 @@ def test_correctness_finding_that_mentions_test_mode_is_postable(tmp_path: Path)
     assert result.json_data["post_enabled"] is True
     assert review["classified_output"]["postable_findings"][0]["id"] == "finding-test-mode-bypass"
     assert review["classified_output"]["suppressed"] == []
-    assert review["candidate_payload_preview"]["item_fingerprints"] == ["fixture-test-mode-bypass"]
+    assert len(review["candidate_payload_preview"]["item_fingerprints"]) == 1
+    assert review["candidate_payload_preview"]["item_fingerprints"][0].startswith("sha256:")
 
 
 def test_already_authenticated_scenario_is_postable(tmp_path: Path) -> None:
@@ -920,17 +927,15 @@ def test_already_authenticated_scenario_is_postable(tmp_path: Path) -> None:
     fixture = _basic_fixture()
     fixture["raw_reviewer_outputs"][0]["items"] = [
         {
-            "type": "postable_finding",
+            "type": "finding",
             "id": "finding-already-authenticated",
             "title": "Authenticated users skip MFA",
             "body": "The new branch skips MFA when the user was already authenticated.",
             "evidence": "Changed line 12 skips MFA when the user was already authenticated.",
             "path": "src/cache.py",
             "line": 12,
-            "priority": 1,
             "severity": "critical",
             "confidence": "high",
-            "fingerprint": "fixture-already-authenticated",
         }
     ]
     fixture_path.write_text(json.dumps(fixture))
@@ -949,17 +954,15 @@ def test_concrete_helper_finding_is_postable(tmp_path: Path) -> None:
     fixture = _basic_fixture()
     fixture["raw_reviewer_outputs"][0]["items"] = [
         {
-            "type": "postable_finding",
+            "type": "finding",
             "id": "finding-helper-leak",
             "title": "Helper leaks session values",
             "body": "The new helper leaks session values when auth fails.",
             "evidence": "Changed line 12 leaks session values when auth fails.",
             "path": "src/cache.py",
             "line": 12,
-            "priority": 1,
             "severity": "critical",
             "confidence": "high",
-            "fingerprint": "fixture-helper-leak",
         }
     ]
     fixture_path.write_text(json.dumps(fixture))
@@ -998,17 +1001,15 @@ def test_concrete_findings_with_helper_or_understand_wording_are_postable(
     fixture = _basic_fixture()
     fixture["raw_reviewer_outputs"][0]["items"] = [
         {
-            "type": "postable_finding",
+            "type": "finding",
             "id": "finding-concrete-helper-wording",
             "title": title,
             "body": body,
             "evidence": evidence,
             "path": "src/cache.py",
             "line": 12,
-            "priority": 1,
             "severity": "warning",
             "confidence": "high",
-            "fingerprint": "fixture-concrete-helper-wording",
         }
     ]
     fixture_path.write_text(json.dumps(fixture))
@@ -1027,17 +1028,15 @@ def test_concrete_domain_finding_without_known_subject_word_is_postable(tmp_path
     fixture = _basic_fixture()
     fixture["raw_reviewer_outputs"][0]["items"] = [
         {
-            "type": "postable_finding",
+            "type": "finding",
             "id": "finding-cart-discount",
             "title": "Coupon expiry drops discounts",
             "body": "The new branch drops cart discounts when the coupon expires.",
             "evidence": "Changed line 12 drops cart discounts when the coupon expires.",
             "path": "src/cache.py",
             "line": 12,
-            "priority": 1,
             "severity": "warning",
             "confidence": "high",
-            "fingerprint": "fixture-cart-discount",
         }
     ]
     fixture_path.write_text(json.dumps(fixture))
@@ -1096,17 +1095,15 @@ def test_concrete_findings_with_general_harm_wording_are_postable(
     fixture = _basic_fixture()
     fixture["raw_reviewer_outputs"][0]["items"] = [
         {
-            "type": "postable_finding",
+            "type": "finding",
             "id": "finding-general-harm",
             "title": title,
             "body": body,
             "evidence": evidence,
             "path": "src/cache.py",
             "line": 12,
-            "priority": 1,
             "severity": "warning",
             "confidence": "high",
-            "fingerprint": "fixture-general-harm",
         }
     ]
     fixture_path.write_text(json.dumps(fixture))
@@ -1125,17 +1122,15 @@ def test_concrete_security_finding_with_normal_review_language_is_postable(tmp_p
     fixture = _basic_fixture()
     fixture["raw_reviewer_outputs"][0]["items"] = [
         {
-            "type": "postable_finding",
+            "type": "finding",
             "id": "finding-open-redirect",
             "title": "Login redirect accepts user-controlled URL",
             "body": "The new branch accepts a user-controlled redirect URL when login expires, allowing open redirect.",
             "evidence": "Changed line 12 allows open redirect when login expires.",
             "path": "src/cache.py",
             "line": 12,
-            "priority": 1,
             "severity": "critical",
             "confidence": "high",
-            "fingerprint": "fixture-open-redirect",
         }
     ]
     fixture_path.write_text(json.dumps(fixture))
@@ -1147,7 +1142,8 @@ def test_concrete_security_finding_with_normal_review_language_is_postable(tmp_p
     assert result.json_data["post_enabled"] is True
     assert review["classified_output"]["postable_findings"][0]["id"] == "finding-open-redirect"
     assert review["classified_output"]["suppressed"] == []
-    assert review["candidate_payload_preview"]["item_fingerprints"] == ["fixture-open-redirect"]
+    assert len(review["candidate_payload_preview"]["item_fingerprints"]) == 1
+    assert review["candidate_payload_preview"]["item_fingerprints"][0].startswith("sha256:")
 
 
 @pytest.mark.parametrize(
@@ -1190,17 +1186,15 @@ def test_concrete_security_and_privacy_finding_wording_is_postable(
     fixture = _basic_fixture()
     fixture["raw_reviewer_outputs"][0]["items"] = [
         {
-            "type": "postable_finding",
+            "type": "finding",
             "id": "finding-security-wording",
             "title": title,
             "body": body,
             "evidence": evidence,
             "path": "src/cache.py",
             "line": 12,
-            "priority": 1,
             "severity": "critical",
             "confidence": "high",
-            "fingerprint": "fixture-security-wording",
         }
     ]
     fixture_path.write_text(json.dumps(fixture))
@@ -1212,7 +1206,8 @@ def test_concrete_security_and_privacy_finding_wording_is_postable(
     assert result.json_data["post_enabled"] is True
     assert review["classified_output"]["postable_findings"][0]["id"] == "finding-security-wording"
     assert review["classified_output"]["suppressed"] == []
-    assert review["candidate_payload_preview"]["item_fingerprints"] == ["fixture-security-wording"]
+    assert len(review["candidate_payload_preview"]["item_fingerprints"]) == 1
+    assert review["candidate_payload_preview"]["item_fingerprints"][0].startswith("sha256:")
 
 
 @pytest.mark.parametrize(
@@ -1243,17 +1238,15 @@ def test_generic_maintenance_finding_with_broad_verb_is_suppressed(
     fixture = _basic_fixture()
     fixture["raw_reviewer_outputs"][0]["items"] = [
         {
-            "type": "postable_finding",
+            "type": "finding",
             "id": "finding-generic-enables",
             "title": "Improve structure",
             "body": body,
             "evidence": evidence,
             "path": "src/cache.py",
             "line": 12,
-            "priority": 3,
             "severity": "suggestion",
             "confidence": "high",
-            "fingerprint": "fixture-generic-enables",
         }
     ]
     fixture_path.write_text(json.dumps(fixture))
@@ -1416,7 +1409,7 @@ def test_malformed_raw_output_field_returns_nonzero(
     fixture_path.write_text(json.dumps(fixture))
 
     assert main(["--fixture-pr", str(fixture_path)]) == 2
-    assert "postable_finding.path is required" in capsys.readouterr().err
+    assert "raw reviewer finding path is required" in capsys.readouterr().err
 
 
 def test_non_string_raw_output_type_returns_nonzero(
@@ -1435,9 +1428,8 @@ def test_non_string_raw_output_type_returns_nonzero(
 @pytest.mark.parametrize(
     ("field", "value", "expected_stderr"),
     (
-        ("title", {"oops": "dict"}, "postable_finding.title is required"),
-        ("body", ["not", "string"], "postable_finding.body is required"),
-        ("fingerprint", 123, "postable_finding.fingerprint is required"),
+        ("title", {"oops": "dict"}, "raw reviewer finding title must be a non-empty string"),
+        ("body", ["not", "string"], "raw reviewer finding rationale must be a non-empty string"),
     ),
 )
 def test_non_string_raw_finding_fields_return_nonzero(
@@ -1650,6 +1642,93 @@ def test_broader_reviewer_config_with_one_eligible_reviewer_works(tmp_path: Path
     assert [reviewer["name"] for reviewer in result.json_data["selected_reviewers"]] == ["correctness"]
 
 
+def test_label_only_reviewer_can_be_selected_from_fixture_labels(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "labelled.json"
+    fixture = _basic_fixture()
+    fixture["labels"] = ["frontend"]
+    fixture["raw_reviewer_outputs"][0]["reviewer"] = "frontend"
+    fixture_path.write_text(json.dumps(fixture))
+    config_path = tmp_path / "reviewers.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "agents": {
+                    "frontend": {
+                        "stages": ["initial_triage"],
+                        "triggers": {"labels": ["frontend"]},
+                    }
+                }
+            }
+        )
+    )
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path), reviewer_config_path=str(config_path))
+
+    assert result.json_data["selected_reviewers"] == [
+        {
+            "name": "frontend",
+            "stage": "initial_triage",
+            "reasons": ["initial_triage triggers.labels=frontend"],
+        }
+    ]
+
+
+def test_regex_diff_pattern_reviewer_can_be_selected(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "regex-diff.json"
+    fixture = _basic_fixture()
+    fixture["changed_files"][0]["patch"] = "@@ -1,1 +1,1 @@\n+requires product intent"
+    fixture["raw_reviewer_outputs"][0]["reviewer"] = "logic"
+    fixture_path.write_text(json.dumps(fixture))
+    config_path = tmp_path / "reviewers.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "agents": {
+                    "logic": {
+                        "stages": ["initial_triage"],
+                        "triggers": {"diff_patterns": ["requires\\s+product\\s+intent"]},
+                    }
+                }
+            }
+        )
+    )
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path), reviewer_config_path=str(config_path))
+
+    assert result.json_data["selected_reviewers"][0]["reasons"] == [
+        "initial_triage triggers.diff_patterns=requires\\s+product\\s+intent"
+    ]
+
+
+def test_unknown_trusted_memory_does_not_select_conversation_pattern_reviewer(tmp_path: Path) -> None:
+    fixture_path = tmp_path / "unknown-memory.json"
+    fixture = _basic_fixture()
+    fixture["memory"][0]["resolved_status"] = "unknown"
+    fixture["memory"][0]["body"] = "This ambiguous behavior needs logic review."
+    fixture_path.write_text(json.dumps(fixture))
+    config_path = tmp_path / "reviewers.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "agents": {
+                    "correctness": {
+                        "stages": ["initial_triage"],
+                        "triggers": {"always": True},
+                    },
+                    "logic": {
+                        "stages": ["initial_triage"],
+                        "triggers": {"conversation_patterns": ["ambiguous behavior"]},
+                    },
+                }
+            }
+        )
+    )
+
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path), reviewer_config_path=str(config_path))
+
+    assert [reviewer["name"] for reviewer in result.json_data["selected_reviewers"]] == ["correctness"]
+
+
 def test_no_eligible_reviewer_returns_nonzero(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     config_path = tmp_path / "reviewers.json"
     config_path.write_text(
@@ -1697,8 +1776,7 @@ def test_invalid_target_metadata_returns_nonzero(
 @pytest.mark.parametrize(
     ("field", "value", "expected_stderr"),
     (
-        ("line", True, "postable_finding.line must be an integer"),
-        ("priority", True, "postable_finding.priority must be an integer"),
+        ("line", True, "raw reviewer finding line must be a positive integer"),
     ),
 )
 def test_boolean_finding_integer_fields_return_nonzero(

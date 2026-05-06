@@ -47,17 +47,15 @@
       "stage": "initial_triage",
       "items": [
         {
-          "type": "postable_finding",
+          "type": "finding",
           "id": "finding-cache-stale",
           "title": "Cache miss returns stale data",
           "body": "The new branch returns stale data when the cache misses. api_key = sk_live_1234567890abcdef",
           "evidence": "Changed line 12 returns the stale value.",
           "path": "src/cache.py",
           "line": 12,
-          "priority": 1,
           "severity": "warning",
-          "confidence": "high",
-          "fingerprint": "fixture-basic-cache-stale"
+          "confidence": "high"
         },
         {
           "type": "local_note",

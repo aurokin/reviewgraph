@@ -288,41 +288,30 @@ def test_request_changes_verdict_is_not_public_by_default() -> None:
 
 
 def test_candidate_payload_rejects_tampered_public_plan_items() -> None:
-    tampered = PostingPlan(
-        items=(
-            PostingPlanItem(
-                id="finding-1",
-                source_classification="suggested_reply",
-                destination=PostingDestination.SUGGESTED_REPLY,
-                public_payload_eligible=True,
-                fingerprint="fp-1",
-            ),
-        )
-    )
-
-    with pytest.raises(PostingPlanError, match="review_body_item"):
-        build_candidate_issue_comment_payload(
-            review_target=target(),
-            posting_plan=tampered,
-            findings=[finding()],
+    with pytest.raises(ValueError, match="public payload"):
+        PostingPlan(
+            items=(
+                PostingPlanItem(
+                    id="finding-1",
+                    source_classification="suggested_reply",
+                    destination=PostingDestination.SUGGESTED_REPLY,
+                    public_payload_eligible=True,
+                    fingerprint="fp-1",
+                ),
+            )
         )
 
-    tampered_local = PostingPlan(
-        items=(
-            PostingPlanItem(
-                id="finding-1",
-                source_classification="postable_finding",
-                destination=PostingDestination.LOCAL_ONLY,
-                public_payload_eligible=True,
-                fingerprint="fp-1",
-            ),
-        )
-    )
-    with pytest.raises(PostingPlanError, match="review_body_item"):
-        build_candidate_issue_comment_payload(
-            review_target=target(),
-            posting_plan=tampered_local,
-            findings=[finding()],
+    with pytest.raises(ValueError, match="public payload"):
+        PostingPlan(
+            items=(
+                PostingPlanItem(
+                    id="finding-1",
+                    source_classification="postable_finding",
+                    destination=PostingDestination.LOCAL_ONLY,
+                    public_payload_eligible=True,
+                    fingerprint="fp-1",
+                ),
+            )
         )
 
     stale_fingerprint = PostingPlan(

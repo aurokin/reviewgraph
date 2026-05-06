@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import hashlib
+import json
+from dataclasses import dataclass, field, fields
 from enum import StrEnum
-from typing import Any
+from types import MappingProxyType
+from typing import Any, Mapping, TypeAlias
 
 
 class Severity(StrEnum):
@@ -37,10 +40,156 @@ class ArtifactKind(StrEnum):
     ISSUE_COMMENT = "issue_comment"
 
 
+class RunMode(StrEnum):
+    DRY_RUN = "dry_run"
+    POST = "post"
+
+
+class ReviewStage(StrEnum):
+    INITIAL_TRIAGE = "initial_triage"
+    SPECIALIZED_REVIEW = "specialized_review"
+    LOGIC_REVIEW = "logic_review"
+    CLARIFICATION_REVIEW = "clarification_review"
+
+
+class ReviewerRunStatusValue(StrEnum):
+    SELECTED = "selected"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+class RiskLevel(StrEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class GateStatus(StrEnum):
+    PASS = "pass"
+    FAIL = "fail"
+    UNKNOWN = "unknown"
+
+
+class FinalizationState(StrEnum):
+    NOT_READY = "not_ready"
+    FINALIZED = "finalized"
+    FAILED_CLOSED = "failed_closed"
+
+
+class WriterStatus(StrEnum):
+    NOT_CALLED = "not_called"
+    POSTED = "posted"
+    RECONCILED = "reconciled"
+    FAILED = "failed"
+
+
+class ClarificationState(StrEnum):
+    PENDING = "pending"
+    ANSWERED = "answered"
+    IN_REVIEW = "in_review"
+    RESOLVED = "resolved"
+    REJECTED = "rejected"
+    TIMED_OUT = "timed_out"
+
+
+class PostingDestination(StrEnum):
+    LOCAL_ONLY = "local_only"
+    TOP_LEVEL_SUMMARY_ITEM = "top_level_summary_item"
+    REVIEW_BODY_ITEM = "review_body_item"
+    INLINE_CANDIDATE = "inline_candidate"
+    SUGGESTED_REPLY = "suggested_reply"
+
+
+ALLOWED_REVIEWER_CAPABILITIES = frozenset({"none", "diff_context"})
+ALLOWED_REVIEWER_VERDICT_POWERS = frozenset({"comment", "request_changes"})
+
+
 def validate_priority(priority: int) -> int:
     if type(priority) is not int or priority < 0 or priority > 3:
         raise ValueError("priority must be an integer from 0 through 3")
     return priority
+
+
+def _sha256_text(text: str) -> str:
+    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _canonical_json_hash(data: object) -> str:
+    encoded = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return _sha256_text(encoded)
+
+
+def _domain_json_hash(domain: str, data: object) -> str:
+    encoded = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return _sha256_text(f"{domain}\n{encoded}")
+
+
+def _require_non_empty(value: str, field_name: str) -> None:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{field_name} is required")
+
+
+def _require_optional_non_empty(value: str | None, field_name: str) -> None:
+    if value is not None:
+        _require_non_empty(value, field_name)
+
+
+def _require_hash_like(value: str, field_name: str) -> None:
+    _require_non_empty(value, field_name)
+    if not value.startswith("sha256:"):
+        raise ValueError(f"{field_name} must be a sha256 hash")
+
+
+def _require_optional_hash_like(value: str | None, field_name: str) -> None:
+    if value is not None:
+        _require_hash_like(value, field_name)
+
+
+def _require_non_negative_int(value: int, field_name: str) -> None:
+    if type(value) is not int or value < 0:
+        raise ValueError(f"{field_name} must be a non-negative integer")
+
+
+def _require_positive_int(value: int, field_name: str) -> None:
+    if type(value) is not int or value <= 0:
+        raise ValueError(f"{field_name} must be a positive integer")
+
+
+def _require_string_tuple(value: tuple[str, ...], field_name: str, *, allow_empty: bool = True) -> None:
+    if not isinstance(value, tuple) or any(not isinstance(item, str) or not item for item in value):
+        raise ValueError(f"{field_name} must be a tuple of non-empty strings")
+    if not allow_empty and not value:
+        raise ValueError(f"{field_name} must include at least one reason")
+
+
+def _require_optional_positive_int(value: int | None, field_name: str) -> None:
+    if value is not None:
+        _require_positive_int(value, field_name)
+
+
+def _require_instance_tuple(value: object, field_name: str, item_type: type[object]) -> None:
+    if not isinstance(value, tuple) or any(not isinstance(item, item_type) for item in value):
+        raise ValueError(f"{field_name} must be a tuple of {item_type.__name__} values")
+
+
+def _require_issue_comment_artifact(value: ArtifactKind, field_name: str) -> None:
+    if not isinstance(value, ArtifactKind) or value != ArtifactKind.ISSUE_COMMENT:
+        raise ValueError(f"{field_name} must be ArtifactKind.ISSUE_COMMENT")
+
+
+def _required_mapping_str(data: Mapping[str, object], field_name: str, label: str) -> str:
+    value = data.get(field_name)
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{label} {field_name} must be a non-empty string")
+    return value
+
+
+def _optional_mapping_str(data: Mapping[str, object], field_name: str, label: str) -> str | None:
+    if field_name not in data:
+        return None
+    return _required_mapping_str(data, field_name, label)
 
 
 @dataclass(frozen=True)
@@ -55,11 +204,13 @@ class ReviewTarget:
     def __post_init__(self) -> None:
         if "/" not in self.owner_repo:
             raise ValueError("owner_repo must be in owner/repo form")
-        if self.pr_number <= 0:
+        if type(self.pr_number) is not int or self.pr_number <= 0:
             raise ValueError("pr_number must be positive")
         for name in ("base_sha", "head_sha", "diff_basis"):
             if not getattr(self, name):
                 raise ValueError(f"{name} is required")
+        if self.merge_base_sha is not None and not isinstance(self.merge_base_sha, str):
+            raise ValueError("merge_base_sha must be a string or None")
 
     def to_ordered_dict(self) -> dict[str, Any]:
         return {
@@ -70,6 +221,20 @@ class ReviewTarget:
             "merge_base_sha": self.merge_base_sha,
             "diff_basis": self.diff_basis,
         }
+
+    def target_hash(self) -> str:
+        return _domain_json_hash("reviewgraph.review_target.v1", self.to_ordered_dict())
+
+
+@dataclass(frozen=True)
+class PostingTarget:
+    review_target: ReviewTarget
+    artifact_kind: ArtifactKind = ArtifactKind.ISSUE_COMMENT
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.review_target, ReviewTarget):
+            raise ValueError("posting target review_target must be a ReviewTarget")
+        _require_issue_comment_artifact(self.artifact_kind, "posting target artifact_kind")
 
 
 @dataclass(frozen=True)
@@ -135,6 +300,7 @@ class ClassifiedFinding:
     confidence: Confidence
     fingerprint: str
     classification: OutputClassification = OutputClassification.POSTABLE_FINDING
+    blocking: bool = False
     line_end: int | None = None
     diff_anchor: DiffAnchor | None = None
 
@@ -146,11 +312,16 @@ class ClassifiedFinding:
             raise ValueError("confidence must be a Confidence value")
         if self.classification != OutputClassification.POSTABLE_FINDING:
             raise ValueError("ClassifiedFinding must use postable_finding classification")
+        if type(self.blocking) is not bool:
+            raise ValueError("blocking must be a boolean")
         for name in ("id", "source_reviewer", "source_stage", "title", "body", "evidence", "path", "fingerprint"):
             if not getattr(self, name):
                 raise ValueError(f"{name} is required")
         if self.line <= 0:
             raise ValueError("line must be positive")
+
+
+Finding: TypeAlias = ClassifiedFinding
 
 
 @dataclass(frozen=True)
@@ -161,6 +332,12 @@ class LocalNote:
     evidence: str
     classification: OutputClassification = OutputClassification.LOCAL_NOTE
 
+    def __post_init__(self) -> None:
+        for name in ("id", "title", "body", "evidence"):
+            _require_non_empty(getattr(self, name), f"local note {name}")
+        if self.classification != OutputClassification.LOCAL_NOTE:
+            raise ValueError("LocalNote must use local_note classification")
+
 
 @dataclass(frozen=True)
 class SuggestedReply:
@@ -169,12 +346,159 @@ class SuggestedReply:
     proposed_body: str
     classification: OutputClassification = OutputClassification.SUGGESTED_REPLY
 
+    def __post_init__(self) -> None:
+        for name in ("id", "source_comment_id", "proposed_body"):
+            _require_non_empty(getattr(self, name), f"suggested reply {name}")
+        if self.classification != OutputClassification.SUGGESTED_REPLY:
+            raise ValueError("SuggestedReply must use suggested_reply classification")
+
 
 @dataclass(frozen=True)
-class SuppressedOutput:
+class SuppressedReviewerOutput:
     id: str
     reason: str
     classification: OutputClassification = OutputClassification.NON_FINDING
+
+    def __post_init__(self) -> None:
+        _require_non_empty(self.id, "suppressed reviewer output id")
+        _require_non_empty(self.reason, "suppressed reviewer output reason")
+        if self.classification != OutputClassification.NON_FINDING:
+            raise ValueError("SuppressedReviewerOutput must use non_finding classification")
+
+
+SuppressedOutput: TypeAlias = SuppressedReviewerOutput
+
+
+@dataclass(frozen=True)
+class ReviewerRunKey:
+    target_hash: str
+    config_hash: str
+    stage: ReviewStage
+    reviewer: str
+    attempt: int = 1
+    retry_of: str | None = None
+    clarification_id: str | None = None
+
+    def __post_init__(self) -> None:
+        _require_non_empty(self.target_hash, "target_hash")
+        _require_non_empty(self.config_hash, "config_hash")
+        _require_non_empty(self.reviewer, "reviewer")
+        if not isinstance(self.stage, ReviewStage):
+            raise ValueError("stage must be a ReviewStage")
+        if type(self.attempt) is not int or self.attempt <= 0:
+            raise ValueError("attempt must be a positive integer")
+        _require_optional_non_empty(self.retry_of, "retry_of")
+        _require_optional_non_empty(self.clarification_id, "clarification_id")
+
+    def stable_key(self) -> str:
+        return json.dumps(
+            {
+                "attempt": self.attempt,
+                "clarification_id": self.clarification_id,
+                "config_hash": self.config_hash,
+                "retry_of": self.retry_of,
+                "reviewer": self.reviewer,
+                "stage": self.stage.value,
+                "target_hash": self.target_hash,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
+
+@dataclass(frozen=True)
+class ReviewerRunStatus:
+    status: ReviewerRunStatusValue
+    run_key: ReviewerRunKey
+    reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.status, ReviewerRunStatusValue):
+            raise ValueError("reviewer run status must be a ReviewerRunStatusValue")
+        if not isinstance(self.run_key, ReviewerRunKey):
+            raise ValueError("reviewer run status run_key must be a ReviewerRunKey")
+        _require_optional_non_empty(self.reason, "reviewer run status reason")
+
+
+GRAPH_OWNED_REVIEWER_FIELDS = frozenset(
+    {
+        "approved",
+        "blocking",
+        "classification",
+        "destination",
+        "diff_anchor",
+        "final_priority",
+        "fingerprint",
+        "github_destination",
+        "github_payload",
+        "posting_destination",
+        "posting_plan",
+        "priority",
+        "public_payload_eligible",
+        "review_event",
+        "target_commit_sha",
+        "verdict",
+    }
+)
+
+
+@dataclass(frozen=True)
+class RawReviewerFinding:
+    id: str
+    severity: Severity
+    confidence: Confidence
+    path: str
+    line: int
+    title: str
+    rationale: str
+    evidence: str
+    line_end: int | None = None
+    suggested_fix: str | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("id", "path", "title", "rationale", "evidence"):
+            _require_non_empty(getattr(self, name), f"raw reviewer finding {name}")
+        if not isinstance(self.severity, Severity):
+            raise ValueError("raw reviewer finding severity must be a Severity value")
+        if not isinstance(self.confidence, Confidence):
+            raise ValueError("raw reviewer finding confidence must be a Confidence value")
+        if type(self.line) is not int or self.line <= 0:
+            raise ValueError("raw reviewer finding line must be a positive integer")
+        if self.line_end is not None and (type(self.line_end) is not int or self.line_end < self.line):
+            raise ValueError("raw reviewer finding line_end must be an integer greater than or equal to line")
+        _require_optional_non_empty(self.suggested_fix, "raw reviewer finding suggested_fix")
+
+    @classmethod
+    def from_mapping(cls, data: dict[str, object]) -> "RawReviewerFinding":
+        graph_owned = GRAPH_OWNED_REVIEWER_FIELDS.intersection(data)
+        if graph_owned:
+            raise ValueError(f"raw reviewer finding contains graph-owned fields: {', '.join(sorted(graph_owned))}")
+        required = ("id", "severity", "confidence", "path", "line", "title", "rationale", "evidence")
+        if "rationale" not in data and "body" in data:
+            data = {**data, "rationale": data["body"]}
+        if "type" in data and data["type"] not in {"finding", "raw_finding"}:
+            raise ValueError("raw reviewer finding type must be finding")
+        for name in required:
+            if name not in data:
+                raise ValueError(f"raw reviewer finding {name} is required")
+        line = data["line"]
+        if type(line) is not int or line <= 0:
+            raise ValueError("raw reviewer finding line must be a positive integer")
+        line_end = data.get("line_end")
+        if line_end is not None and (type(line_end) is not int or line_end < line):
+            raise ValueError("raw reviewer finding line_end must be an integer greater than or equal to line")
+        return cls(
+            id=_required_mapping_str(data, "id", "raw reviewer finding"),
+            severity=Severity(_required_mapping_str(data, "severity", "raw reviewer finding")),
+            confidence=Confidence(_required_mapping_str(data, "confidence", "raw reviewer finding")),
+            path=_required_mapping_str(data, "path", "raw reviewer finding"),
+            line=line,
+            title=_required_mapping_str(data, "title", "raw reviewer finding"),
+            rationale=_required_mapping_str(data, "rationale", "raw reviewer finding"),
+            evidence=_required_mapping_str(data, "evidence", "raw reviewer finding"),
+            line_end=line_end,
+            suggested_fix=_optional_mapping_str(data, "suggested_fix", "raw reviewer finding"),
+        )
 
 
 @dataclass(frozen=True)
@@ -186,12 +510,84 @@ class ClarificationRequest:
     blocks_verdict: bool = True
     classification: OutputClassification = OutputClassification.CLARIFICATION_REQUEST
 
+    def __post_init__(self) -> None:
+        for name in ("id", "reviewer", "question", "why_it_matters"):
+            _require_non_empty(getattr(self, name), f"clarification request {name}")
+        if type(self.blocks_verdict) is not bool:
+            raise ValueError("clarification request blocks_verdict must be a boolean")
+        if self.classification != OutputClassification.CLARIFICATION_REQUEST:
+            raise ValueError("ClarificationRequest must use clarification_request classification")
+
+
+@dataclass(frozen=True)
+class ClarificationAnswer:
+    id: str
+    request_id: str
+    answer: str
+    answered_by: str
+    answered_at: str
+
+    def __post_init__(self) -> None:
+        for name in ("id", "request_id", "answer", "answered_by", "answered_at"):
+            _require_non_empty(getattr(self, name), f"clarification answer {name}")
+
+
+@dataclass(frozen=True)
+class ClarificationStatus:
+    request_id: str
+    status: ClarificationState
+    reason: str | None = None
+
+    def __post_init__(self) -> None:
+        _require_non_empty(self.request_id, "clarification status request_id")
+        if not isinstance(self.status, ClarificationState):
+            raise ValueError("clarification status must be a ClarificationState value")
+        _require_optional_non_empty(self.reason, "clarification status reason")
+
+
+@dataclass(frozen=True)
+class ReviewerResult:
+    run_key: ReviewerRunKey
+    findings: tuple[RawReviewerFinding, ...] = field(default_factory=tuple)
+    clarification_requests: tuple[ClarificationRequest, ...] = field(default_factory=tuple)
+    local_notes: tuple[LocalNote, ...] = field(default_factory=tuple)
+    suggested_replies: tuple[SuggestedReply, ...] = field(default_factory=tuple)
+    suppressed_outputs: tuple[SuppressedReviewerOutput, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.run_key, ReviewerRunKey):
+            raise ValueError("reviewer result run_key must be a ReviewerRunKey")
+        _require_instance_tuple(self.findings, "reviewer result findings", RawReviewerFinding)
+        _require_instance_tuple(
+            self.clarification_requests,
+            "reviewer result clarification_requests",
+            ClarificationRequest,
+        )
+        _require_instance_tuple(self.local_notes, "reviewer result local_notes", LocalNote)
+        _require_instance_tuple(self.suggested_replies, "reviewer result suggested_replies", SuggestedReply)
+        _require_instance_tuple(
+            self.suppressed_outputs,
+            "reviewer result suppressed_outputs",
+            SuppressedReviewerOutput,
+        )
+
 
 @dataclass(frozen=True)
 class RedactionStatus:
     redacted: bool
     replacement_count: int
     categories: tuple[str, ...] = field(default_factory=tuple)
+    status: GateStatus = GateStatus.PASS
+
+    def __post_init__(self) -> None:
+        if type(self.redacted) is not bool:
+            raise ValueError("redaction redacted must be a boolean")
+        _require_non_negative_int(self.replacement_count, "redaction replacement_count")
+        _require_string_tuple(self.categories, "redaction categories")
+        if not isinstance(self.status, GateStatus):
+            raise ValueError("redaction status must be a GateStatus")
+        if self.redacted and self.replacement_count <= 0:
+            raise ValueError("redacted payloads require replacement_count")
 
 
 @dataclass(frozen=True)
@@ -224,6 +620,56 @@ class MemoryReference:
 
 
 @dataclass(frozen=True)
+class PullRequestComment:
+    id: str
+    author: str
+    body: str
+    created_at: str
+    author_association: str | None = None
+
+
+@dataclass(frozen=True)
+class PullRequestReview:
+    id: str
+    author: str
+    state: str
+    body: str | None = None
+
+
+@dataclass(frozen=True)
+class PullRequestReviewThread:
+    id: str
+    path: str
+    resolved_status: str
+    comments: tuple[PullRequestComment, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class PullRequestChangedFile:
+    path: str
+    patch: str
+    additions: int = 0
+    deletions: int = 0
+
+
+@dataclass(frozen=True)
+class PullRequestContext:
+    review_target: ReviewTarget
+    title: str
+    body: str | None
+    labels: tuple[str, ...]
+    changed_files: tuple[PullRequestChangedFile, ...]
+    comments: tuple[PullRequestComment, ...] = field(default_factory=tuple)
+    reviews: tuple[PullRequestReview, ...] = field(default_factory=tuple)
+    review_threads: tuple[PullRequestReviewThread, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class PRConversationMemory:
+    entries: tuple[MemoryReference, ...]
+
+
+@dataclass(frozen=True)
 class TruncationNotice:
     resource: str
     truncated: bool
@@ -238,3 +684,423 @@ class TruncationNotice:
             raise ValueError("truncation resource is required")
         if not self.note:
             raise ValueError("truncation note is required")
+
+
+@dataclass(frozen=True)
+class ContextBudget:
+    max_changed_files: int
+    max_patch_bytes: int
+    max_memory_bytes: int
+    max_reviewers: int
+    max_live_calls: int
+    truncation: tuple[TruncationNotice, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class RiskThresholds:
+    changed_files_medium: int
+    changed_files_high: int
+    changed_lines_medium: int
+    changed_lines_high: int
+    risk_min: RiskLevel | None = None
+
+    def __post_init__(self) -> None:
+        _require_positive_int(self.changed_files_medium, "changed_files_medium")
+        _require_positive_int(self.changed_files_high, "changed_files_high")
+        _require_positive_int(self.changed_lines_medium, "changed_lines_medium")
+        _require_positive_int(self.changed_lines_high, "changed_lines_high")
+        if self.changed_files_high <= self.changed_files_medium:
+            raise ValueError("changed_files_high must be greater than changed_files_medium")
+        if self.changed_lines_high <= self.changed_lines_medium:
+            raise ValueError("changed_lines_high must be greater than changed_lines_medium")
+        if self.risk_min is not None and not isinstance(self.risk_min, RiskLevel):
+            raise ValueError("risk_min must be a RiskLevel or None")
+
+
+@dataclass(frozen=True)
+class RiskAssessment:
+    changed_file_count: int
+    changed_line_count: int
+    touched_surfaces: tuple[str, ...]
+    labels: tuple[str, ...]
+    diff_pattern_hints: tuple[str, ...]
+    configured_thresholds: RiskThresholds
+    risk_level: RiskLevel
+    reasons: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        _require_non_negative_int(self.changed_file_count, "changed_file_count")
+        _require_non_negative_int(self.changed_line_count, "changed_line_count")
+        _require_string_tuple(self.touched_surfaces, "touched_surfaces")
+        _require_string_tuple(self.labels, "labels")
+        _require_string_tuple(self.diff_pattern_hints, "diff_pattern_hints")
+        _require_string_tuple(self.reasons, "reasons", allow_empty=False)
+        if not isinstance(self.configured_thresholds, RiskThresholds):
+            raise ValueError("configured_thresholds must be a RiskThresholds value")
+        if not isinstance(self.risk_level, RiskLevel):
+            raise ValueError("risk_level must be a RiskLevel value")
+
+
+@dataclass(frozen=True)
+class ReviewerTriggers:
+    always: bool = False
+    paths: tuple[str, ...] = field(default_factory=tuple)
+    labels: tuple[str, ...] = field(default_factory=tuple)
+    diff_patterns: tuple[str, ...] = field(default_factory=tuple)
+    conversation_patterns: tuple[str, ...] = field(default_factory=tuple)
+    risk_min: RiskLevel | None = None
+    max_files: int | None = None
+    changed_lines_min: int | None = None
+    changed_files_min: int | None = None
+
+    def __post_init__(self) -> None:
+        if type(self.always) is not bool:
+            raise ValueError("reviewer trigger always must be a boolean")
+        _require_string_tuple(self.paths, "reviewer trigger paths")
+        _require_string_tuple(self.labels, "reviewer trigger labels")
+        _require_string_tuple(self.diff_patterns, "reviewer trigger diff_patterns")
+        _require_string_tuple(self.conversation_patterns, "reviewer trigger conversation_patterns")
+        if self.risk_min is not None and not isinstance(self.risk_min, RiskLevel):
+            raise ValueError("reviewer trigger risk_min must be a RiskLevel or None")
+        _require_optional_positive_int(self.max_files, "reviewer trigger max_files")
+        _require_optional_positive_int(self.changed_lines_min, "reviewer trigger changed_lines_min")
+        _require_optional_positive_int(self.changed_files_min, "reviewer trigger changed_files_min")
+        if not any(
+            (
+                self.always,
+                self.paths,
+                self.labels,
+                self.diff_patterns,
+                self.conversation_patterns,
+                self.risk_min is not None,
+                self.max_files is not None,
+                self.changed_lines_min is not None,
+                self.changed_files_min is not None,
+            )
+        ):
+            raise ValueError("reviewer trigger must include at least one selector or gate")
+
+
+@dataclass(frozen=True)
+class ReviewerAgentConfig:
+    name: str
+    description: str | None
+    stages: tuple[ReviewStage, ...]
+    triggers: ReviewerTriggers
+    required: bool = False
+    verdict_power: str = "comment"
+    capabilities: tuple[str, ...] = ("diff_context",)
+    model: str | None = None
+    context: str | None = None
+
+    def __post_init__(self) -> None:
+        _require_non_empty(self.name, "reviewer agent name")
+        _require_optional_non_empty(self.description, "reviewer agent description")
+        _require_optional_non_empty(self.model, "reviewer agent model")
+        _require_optional_non_empty(self.context, "reviewer agent context")
+        if not isinstance(self.stages, tuple) or not self.stages:
+            raise ValueError("reviewer agent stages must be a non-empty tuple")
+        if any(not isinstance(stage, ReviewStage) for stage in self.stages):
+            raise ValueError("reviewer agent stages must contain ReviewStage values")
+        if len(set(self.stages)) != len(self.stages):
+            raise ValueError("reviewer agent stages must not contain duplicates")
+        if not isinstance(self.triggers, ReviewerTriggers):
+            raise ValueError("reviewer agent triggers must be a ReviewerTriggers value")
+        if type(self.required) is not bool:
+            raise ValueError("reviewer agent required must be a boolean")
+        if not isinstance(self.verdict_power, str) or self.verdict_power not in ALLOWED_REVIEWER_VERDICT_POWERS:
+            raise ValueError("reviewer agent has unsupported verdict_power")
+        _require_string_tuple(self.capabilities, "reviewer agent capabilities", allow_empty=False)
+        if len(set(self.capabilities)) != len(self.capabilities):
+            raise ValueError("reviewer agent capabilities must not contain duplicates")
+        if unsupported := sorted(set(self.capabilities) - ALLOWED_REVIEWER_CAPABILITIES):
+            raise ValueError(f"reviewer agent has unsupported capabilities: {', '.join(unsupported)}")
+
+
+@dataclass(frozen=True)
+class ReviewConfig:
+    agents: Mapping[str, ReviewerAgentConfig]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.agents, Mapping) or not self.agents:
+            raise ValueError("review config agents must be a non-empty mapping")
+        for name, agent in self.agents.items():
+            if not isinstance(name, str) or not name:
+                raise ValueError("review config agent names must be non-empty strings")
+            if not isinstance(agent, ReviewerAgentConfig):
+                raise ValueError("review config agents must contain ReviewerAgentConfig values")
+            if agent.name != name:
+                raise ValueError("review config agent mapping key must match reviewer agent name")
+        object.__setattr__(self, "agents", MappingProxyType(dict(self.agents)))
+
+
+@dataclass(frozen=True)
+class ReadGap:
+    resource: str
+    required: bool
+    reason: str
+    retryable: bool = False
+
+
+@dataclass(frozen=True)
+class PostingPlanItem:
+    id: str
+    source_classification: str
+    destination: PostingDestination
+    public_payload_eligible: bool
+    fingerprint: str | None = None
+    body: str | None = None
+
+    def __post_init__(self) -> None:
+        _require_non_empty(self.id, "posting plan item id")
+        _require_non_empty(self.source_classification, "posting plan item source_classification")
+        if not isinstance(self.destination, PostingDestination):
+            raise ValueError("posting plan item destination must be a PostingDestination")
+        if type(self.public_payload_eligible) is not bool:
+            raise ValueError("posting plan item public_payload_eligible must be a boolean")
+        _require_optional_non_empty(self.fingerprint, "posting plan item fingerprint")
+        _require_optional_non_empty(self.body, "posting plan item body")
+        if self.public_payload_eligible and self.destination not in {
+            PostingDestination.TOP_LEVEL_SUMMARY_ITEM,
+            PostingDestination.REVIEW_BODY_ITEM,
+        }:
+            raise ValueError("public payload posting plan items must use a public payload destination")
+
+
+@dataclass(frozen=True)
+class PostingPlan:
+    items: tuple[PostingPlanItem, ...]
+
+    def __post_init__(self) -> None:
+        _require_instance_tuple(self.items, "posting plan items", PostingPlanItem)
+        item_ids = [item.id for item in self.items]
+        if len(set(item_ids)) != len(item_ids):
+            raise ValueError("posting plan item ids must be unique")
+
+    @property
+    def public_payload_items(self) -> tuple[PostingPlanItem, ...]:
+        return tuple(item for item in self.items if item.public_payload_eligible)
+
+
+@dataclass(frozen=True)
+class GitHubReviewPayload:
+    artifact_kind: ArtifactKind
+    review_target: ReviewTarget
+    body: str
+    visible_body_hash: str
+    full_body_hash: str
+    findings_hash: str
+    item_fingerprints: tuple[str, ...]
+    redaction_status: RedactionStatus
+
+    def __post_init__(self) -> None:
+        _require_issue_comment_artifact(self.artifact_kind, "github review payload artifact_kind")
+        if not isinstance(self.review_target, ReviewTarget):
+            raise ValueError("github review payload review_target must be a ReviewTarget")
+        _require_non_empty(self.body, "github review payload body")
+        _require_hash_like(self.visible_body_hash, "github review payload visible_body_hash")
+        _require_hash_like(self.full_body_hash, "github review payload full_body_hash")
+        _require_hash_like(self.findings_hash, "github review payload findings_hash")
+        _require_string_tuple(self.item_fingerprints, "github review payload item_fingerprints")
+        if not isinstance(self.redaction_status, RedactionStatus):
+            raise ValueError("github review payload redaction_status must be a RedactionStatus")
+
+
+CandidateIssueCommentPayload: TypeAlias = GitHubReviewPayload
+
+
+@dataclass(frozen=True)
+class ActorPermissionGateResult:
+    status: GateStatus
+    actor: str | None
+    permission: str | None
+    checked_at: str | None
+    reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.status, GateStatus):
+            raise ValueError("actor permission gate status must be a GateStatus")
+        _require_optional_non_empty(self.actor, "actor permission gate actor")
+        _require_optional_non_empty(self.permission, "actor permission gate permission")
+        _require_optional_non_empty(self.checked_at, "actor permission gate checked_at")
+        _require_optional_non_empty(self.reason, "actor permission gate reason")
+        if self.status == GateStatus.PASS:
+            for name in ("actor", "permission", "checked_at"):
+                if getattr(self, name) is None:
+                    raise ValueError(f"actor permission gate pass requires {name}")
+
+
+@dataclass(frozen=True)
+class PayloadValidationResult:
+    status: GateStatus
+    payload_hash: str | None
+    target_hash: str | None
+    reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.status, GateStatus):
+            raise ValueError("payload validation status must be a GateStatus")
+        _require_optional_hash_like(self.payload_hash, "payload validation payload_hash")
+        _require_optional_hash_like(self.target_hash, "payload validation target_hash")
+        _require_optional_non_empty(self.reason, "payload validation reason")
+        if self.status == GateStatus.PASS:
+            for name in ("payload_hash", "target_hash"):
+                if getattr(self, name) is None:
+                    raise ValueError(f"payload validation pass requires {name}")
+
+
+@dataclass(frozen=True)
+class MarkerReconciliationResult:
+    status: GateStatus
+    trusted_actor: str | None
+    existing_comment_id: str | None = None
+    reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.status, GateStatus):
+            raise ValueError("marker reconciliation status must be a GateStatus")
+        _require_optional_non_empty(self.trusted_actor, "marker reconciliation trusted_actor")
+        _require_optional_non_empty(self.existing_comment_id, "marker reconciliation existing_comment_id")
+        _require_optional_non_empty(self.reason, "marker reconciliation reason")
+        if self.status == GateStatus.PASS and self.trusted_actor is None:
+            raise ValueError("marker reconciliation pass requires trusted_actor")
+
+
+@dataclass(frozen=True)
+class FinalizationStatus:
+    state: FinalizationState
+    final_payload_hash: str | None
+    target_hash: str | None
+    reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.state, FinalizationState):
+            raise ValueError("finalization state must be a FinalizationState")
+        _require_optional_hash_like(self.final_payload_hash, "finalization final_payload_hash")
+        _require_optional_hash_like(self.target_hash, "finalization target_hash")
+        _require_optional_non_empty(self.reason, "finalization reason")
+        if self.state == FinalizationState.FINALIZED:
+            for name in ("final_payload_hash", "target_hash"):
+                if getattr(self, name) is None:
+                    raise ValueError(f"finalized status requires {name}")
+
+
+@dataclass(frozen=True)
+class ApprovalDecision:
+    approved: bool
+    approved_item_ids: tuple[str, ...]
+    approved_final_payload_hash: str
+    approved_review_target_hash: str
+    approved_review_target: ReviewTarget
+    approved_github_actor: str
+    approved_permission: str
+    approved_permission_checked_at: str
+    include_public_verdict: bool
+    approved_by: str
+    timestamp: str
+
+    def __post_init__(self) -> None:
+        if type(self.approved) is not bool:
+            raise ValueError("approval approved must be a boolean")
+        _require_string_tuple(self.approved_item_ids, "approval approved_item_ids")
+        _require_hash_like(self.approved_final_payload_hash, "approval approved_final_payload_hash")
+        _require_hash_like(self.approved_review_target_hash, "approval approved_review_target_hash")
+        if not isinstance(self.approved_review_target, ReviewTarget):
+            raise ValueError("approval approved_review_target must be a ReviewTarget")
+        if self.approved_review_target_hash != self.approved_review_target.target_hash():
+            raise ValueError("approval approved_review_target_hash must match approved_review_target")
+        for name in (
+            "approved_github_actor",
+            "approved_permission",
+            "approved_permission_checked_at",
+            "approved_by",
+            "timestamp",
+        ):
+            _require_non_empty(getattr(self, name), f"approval {name}")
+        if type(self.include_public_verdict) is not bool:
+            raise ValueError("approval include_public_verdict must be a boolean")
+        if self.approved and not self.approved_item_ids:
+            raise ValueError("approved decision requires approved_item_ids")
+
+
+@dataclass(frozen=True)
+class GitHubWriterResult:
+    status: WriterStatus
+    artifact_kind: ArtifactKind
+    target_hash: str
+    payload_hash: str
+    comment_id: str | None = None
+    error: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.status, WriterStatus):
+            raise ValueError("github writer status must be a WriterStatus")
+        _require_issue_comment_artifact(self.artifact_kind, "github writer artifact_kind")
+        _require_hash_like(self.target_hash, "github writer target_hash")
+        _require_hash_like(self.payload_hash, "github writer payload_hash")
+        _require_optional_non_empty(self.comment_id, "github writer comment_id")
+        _require_optional_non_empty(self.error, "github writer error")
+        if self.status in {WriterStatus.POSTED, WriterStatus.RECONCILED} and self.comment_id is None:
+            raise ValueError("posted or reconciled writer result requires comment_id")
+        if self.status == WriterStatus.FAILED and self.error is None:
+            raise ValueError("failed writer result requires error")
+
+
+@dataclass(frozen=True)
+class GraphError:
+    code: str
+    message: str
+    retryable: bool = False
+
+
+@dataclass
+class ReviewState:
+    run_id: str
+    run_mode: RunMode
+    post_enabled: bool
+    pr_ref: str
+    review_target: ReviewTarget
+    posting_target: PostingTarget | None
+    pr: PullRequestContext | None
+    conversation_memory: PRConversationMemory | None
+    read_gaps: list[ReadGap]
+    config: ReviewConfig
+    config_hash: str
+    stage_queue: list[ReviewStage]
+    active_stage: ReviewStage | None
+    suspended_stage: ReviewStage | None
+    completed_stages: list[ReviewStage]
+    risk: RiskAssessment | None
+    selected_reviewers: list[SelectedReviewer]
+    reviewer_run_keys: list[ReviewerRunKey]
+    reviewer_run_status: dict[str, ReviewerRunStatus]
+    reviewer_results: list[ReviewerResult]
+    context_budget: ContextBudget
+    redaction_status: RedactionStatus | None
+    findings: list[Finding]
+    local_notes: list[LocalNote]
+    suggested_replies: list[SuggestedReply]
+    suppressed_outputs: list[SuppressedReviewerOutput]
+    clarification_requests: list[ClarificationRequest]
+    pending_clarification_ids: list[str]
+    clarifications: list[ClarificationAnswer]
+    clarification_status: dict[str, ClarificationStatus]
+    ranked_findings: list[Finding]
+    local_verdict: ReviewVerdict | None
+    rendered_markdown: str | None
+    posting_plan: PostingPlan | None
+    actor_permission_gate: ActorPermissionGateResult | None
+    payload_validation: PayloadValidationResult | None
+    marker_reconciliation: MarkerReconciliationResult | None
+    finalization_status: FinalizationStatus | None
+    candidate_github_payload: GitHubReviewPayload | None
+    final_github_payload: GitHubReviewPayload | None
+    candidate_payload_hash: str | None
+    final_payload_hash: str | None
+    approval: ApprovalDecision | None
+    writer_result: GitHubWriterResult | None
+    errors: list[GraphError]
+
+    @classmethod
+    def field_names(cls) -> tuple[str, ...]:
+        return tuple(field.name for field in fields(cls))

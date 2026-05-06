@@ -2,17 +2,19 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
-from enum import StrEnum
 from inspect import Parameter, signature
 from typing import Iterable
 
 from reviewgraph.models import (
     ArtifactKind,
+    CandidateIssueCommentPayload,
     ClarificationRequest,
     ClassifiedFinding,
     LocalNote,
     OutputClassification,
+    PostingDestination,
+    PostingPlan,
+    PostingPlanItem,
     RedactionStatus,
     ReviewTarget,
     ReviewVerdict,
@@ -22,47 +24,8 @@ from reviewgraph.models import (
 from reviewgraph.redaction import redact_text
 
 
-class PostingDestination(StrEnum):
-    LOCAL_ONLY = "local_only"
-    TOP_LEVEL_SUMMARY_ITEM = "top_level_summary_item"
-    REVIEW_BODY_ITEM = "review_body_item"
-    INLINE_CANDIDATE = "inline_candidate"
-    SUGGESTED_REPLY = "suggested_reply"
-
-
 class PostingPlanError(ValueError):
     pass
-
-
-@dataclass(frozen=True)
-class PostingPlanItem:
-    id: str
-    source_classification: str
-    destination: PostingDestination
-    public_payload_eligible: bool
-    fingerprint: str | None = None
-    body: str | None = None
-
-
-@dataclass(frozen=True)
-class PostingPlan:
-    items: tuple[PostingPlanItem, ...]
-
-    @property
-    def public_payload_items(self) -> tuple[PostingPlanItem, ...]:
-        return tuple(item for item in self.items if item.public_payload_eligible)
-
-
-@dataclass(frozen=True)
-class CandidateIssueCommentPayload:
-    artifact_kind: ArtifactKind
-    review_target: ReviewTarget
-    body: str
-    visible_body_hash: str
-    full_body_hash: str
-    findings_hash: str
-    item_fingerprints: tuple[str, ...]
-    redaction_status: RedactionStatus
 
 
 MARKER_PREFIX = "<!-- reviewgraph:"

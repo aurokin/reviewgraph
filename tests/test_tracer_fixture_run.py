@@ -27,7 +27,7 @@ EXPECTED_FINDING = {
     "evidence": "Changed line 12 returns the stale value.",
     "path": "src/cache.py",
     "line": 12,
-    "fingerprint": "fixture-basic-cache-stale",
+    "fingerprint": "sha256:f057847d9ec647ddf253d83316a2a8edefff5bf4a3606d0b205872131c0459c1",
 }
 
 EXPECTED_LOCAL_NOTE = {
@@ -132,7 +132,7 @@ def test_basic_fixture_tracer_golden_run() -> None:
         "suppressed-generic-tests",
     ]
     assert [item["type"] for item in raw_items] == [
-        "postable_finding",
+        "finding",
         "local_note",
         "suppressed",
     ]
@@ -179,7 +179,7 @@ def test_basic_fixture_tracer_golden_run() -> None:
             "source_classification": "postable_finding",
             "destination": "review_body_item",
             "public_payload_eligible": True,
-            "fingerprint": "fixture-basic-cache-stale",
+            "fingerprint": "sha256:f057847d9ec647ddf253d83316a2a8edefff5bf4a3606d0b205872131c0459c1",
             "body": "The new branch returns stale data when the cache misses. api_key = [REDACTED]",
         },
         {
@@ -212,7 +212,7 @@ def test_basic_fixture_tracer_golden_run() -> None:
         "- P1 Cache miss returns stale data: The new branch returns stale data when the cache misses. "
         "api_key = [REDACTED] (src/cache.py:12)\n"
     )
-    assert preview["item_fingerprints"] == ["fixture-basic-cache-stale"]
+    assert preview["item_fingerprints"] == ["sha256:f057847d9ec647ddf253d83316a2a8edefff5bf4a3606d0b205872131c0459c1"]
     assert preview["visible_body_hash"] == visible_body_hash(preview["body"])
     assert preview["full_body_hash"] == full_body_hash(preview["body"])
     assert preview["findings_hash"] == findings_hash(preview["item_fingerprints"])
@@ -262,7 +262,9 @@ def test_specialized_review_fixture_proves_staged_reviewer_introduction() -> Non
     assert review["classified_output"]["local_notes"][0]["id"] == "note-auth-shape"
     assert review["classified_output"]["postable_findings"][0]["id"] == "finding-test-mode-mfa"
     assert review["candidate_payload_preview"]["artifact_kind"] == "issue_comment"
-    assert review["candidate_payload_preview"]["item_fingerprints"] == ["fixture-specialized-test-mode-mfa"]
+    assert review["candidate_payload_preview"]["item_fingerprints"] == [
+        "sha256:a8a4e55fdce99b9d0dbea51fc7326e36f2824a2a2094c456a12078b75862186c"
+    ]
 
 
 def test_ambiguous_logic_fixture_stops_for_clarification_without_candidate_payload() -> None:

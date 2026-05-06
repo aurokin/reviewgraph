@@ -53,17 +53,15 @@
       "stage": "specialized_review",
       "items": [
         {
-          "type": "postable_finding",
+          "type": "finding",
           "id": "finding-test-mode-mfa",
           "title": "Test mode skips MFA",
           "body": "The new branch skips MFA when test mode is enabled.",
           "evidence": "Changed line 22 skips MFA when test mode is enabled.",
           "path": "src/auth/session.py",
           "line": 22,
-          "priority": 1,
           "severity": "critical",
-          "confidence": "high",
-          "fingerprint": "fixture-specialized-test-mode-mfa"
+          "confidence": "high"
         }
       ]
     }

@@ -14,14 +14,17 @@ from reviewgraph.fixtures import (
     load_reviewer_config,
     redact_for_error,
 )
+from reviewgraph.posting import canonical_json_hash
 from reviewgraph.models import (
     ClarificationRequest,
     ClassifiedFinding,
     Confidence,
     LocalNote,
     MemoryReference,
+    RawReviewerFinding,
     ReviewTarget,
     ReviewVerdict,
+    ReviewerTriggers,
     SelectedReviewer,
     Severity,
     SuggestedReply,
@@ -215,10 +218,9 @@ def _select_reviewers_for_stage(config: ReviewerConfig, fixture: FixturePR, stag
     selected: list[SelectedReviewer] = []
     for name in sorted(config.agents):
         agent = config.agents[name]
-        stages = agent.get("stages")
-        triggers = agent.get("triggers")
-        if isinstance(stages, list) and stage in stages and isinstance(triggers, dict):
-            reasons = _trigger_reasons(stage=stage, triggers=triggers, fixture=fixture)
+        stages = tuple(agent_stage.value for agent_stage in agent.stages)
+        if stage in stages:
+            reasons = _trigger_reasons(stage=stage, triggers=agent.triggers, fixture=fixture)
             if not reasons:
                 continue
             selected.append(
@@ -231,22 +233,105 @@ def _select_reviewers_for_stage(config: ReviewerConfig, fixture: FixturePR, stag
     return tuple(selected)
 
 
-def _trigger_reasons(*, stage: str, triggers: dict[str, Any], fixture: FixturePR) -> list[str]:
+def _trigger_reasons(*, stage: str, triggers: ReviewerTriggers, fixture: FixturePR) -> list[str]:
     reasons: list[str] = []
-    if triggers.get("always") is True:
-        reasons.append(f"{stage} triggers.always=true")
-    for pattern in triggers.get("paths", ()):
+    gate_failures: list[str] = []
+    changed_file_count = len(fixture.changed_files)
+    changed_line_count = _changed_line_count(fixture)
+    risk_level = _fixture_risk_level(fixture)
+
+    if triggers.max_files is not None:
+        if changed_file_count > triggers.max_files:
+            gate_failures.append(f"{stage} triggers.max_files>{triggers.max_files}")
+        else:
+            reasons.append(f"{stage} triggers.max_files<={triggers.max_files}")
+    if triggers.changed_files_min is not None:
+        if changed_file_count < triggers.changed_files_min:
+            gate_failures.append(f"{stage} triggers.changed_files_min<{triggers.changed_files_min}")
+        else:
+            reasons.append(f"{stage} triggers.changed_files_min={triggers.changed_files_min}")
+    if triggers.changed_lines_min is not None:
+        if changed_line_count < triggers.changed_lines_min:
+            gate_failures.append(f"{stage} triggers.changed_lines_min<{triggers.changed_lines_min}")
+        else:
+            reasons.append(f"{stage} triggers.changed_lines_min={triggers.changed_lines_min}")
+    if triggers.risk_min is not None:
+        if _risk_rank(risk_level) < _risk_rank(triggers.risk_min.value):
+            gate_failures.append(f"{stage} triggers.risk_min<{triggers.risk_min.value}")
+        else:
+            reasons.append(f"{stage} triggers.risk_min={triggers.risk_min.value}")
+    if gate_failures:
+        return []
+
+    selector_reasons: list[str] = []
+    if triggers.always is True:
+        selector_reasons.append(f"{stage} triggers.always=true")
+    for pattern in triggers.paths:
         if any(_path_matches(changed_file.path, pattern) for changed_file in fixture.changed_files):
-            reasons.append(f"{stage} triggers.paths={pattern}")
+            selector_reasons.append(f"{stage} triggers.paths={pattern}")
     patches = "\n".join(changed_file.patch for changed_file in fixture.changed_files).casefold()
-    for pattern in triggers.get("diff_patterns", ()):
-        if pattern.casefold() in patches:
-            reasons.append(f"{stage} triggers.diff_patterns={pattern}")
-    return reasons
+    for pattern in triggers.diff_patterns:
+        if _diff_pattern_matches(patches, pattern):
+            selector_reasons.append(f"{stage} triggers.diff_patterns={pattern}")
+    labels = {label.casefold() for label in fixture.labels}
+    for label in triggers.labels:
+        if label.casefold() in labels:
+            selector_reasons.append(f"{stage} triggers.labels={label}")
+    trusted_memory = "\n".join(
+        str(item.get("body", ""))
+        for item in fixture.memory
+        if item.get("trust_label") == "trusted" and item.get("resolved_status") == "unresolved"
+    ).casefold()
+    for pattern in triggers.conversation_patterns:
+        if pattern.casefold() in trusted_memory:
+            selector_reasons.append(f"{stage} triggers.conversation_patterns={pattern}")
+
+    has_explicit_selector = any(
+        (
+            triggers.always,
+            triggers.paths,
+            triggers.labels,
+            triggers.diff_patterns,
+            triggers.conversation_patterns,
+        )
+    )
+    if not has_explicit_selector and reasons:
+        return reasons
+    return selector_reasons + reasons if selector_reasons else []
 
 
 def _path_matches(path: str, pattern: str) -> bool:
     return path == pattern or fnmatch(path, pattern) or path.startswith(pattern.rstrip("/") + "/")
+
+
+def _diff_pattern_matches(casefolded_patch: str, pattern: str) -> bool:
+    try:
+        return re.search(pattern, casefolded_patch, flags=re.IGNORECASE) is not None
+    except re.error:
+        return pattern.casefold() in casefolded_patch
+
+
+def _changed_line_count(fixture: FixturePR) -> int:
+    return sum(
+        changed_range.end - changed_range.start + 1
+        for changed_file in fixture.changed_files
+        for changed_range in changed_file.changed_ranges
+    )
+
+
+def _fixture_risk_level(fixture: FixturePR) -> str:
+    changed_files = len(fixture.changed_files)
+    changed_lines = _changed_line_count(fixture)
+    patches = "\n".join(changed_file.patch for changed_file in fixture.changed_files).casefold()
+    if changed_files >= 10 or changed_lines >= 500 or any(term in patches for term in ("auth", "token", "password")):
+        return "high"
+    if changed_files >= 3 or changed_lines >= 50 or any(term in patches for term in ("billing", "product intent")):
+        return "medium"
+    return "low"
+
+
+def _risk_rank(risk_level: str) -> int:
+    return {"low": 0, "medium": 1, "high": 2}[risk_level]
 
 
 def _stage_transition_trace(
@@ -360,8 +445,16 @@ def _classify_reviewer_output(
         if not isinstance(item, dict):
             raise RunnerError("raw reviewer output items must be objects")
         item_type = _required_str(item, "type", "raw reviewer output item")
-        if item_type == "postable_finding":
-            finding = _classified_finding(fixture, reviewer=reviewer, stage=stage, item=item)
+        if item_type == "finding":
+            raw_finding = _raw_reviewer_finding_or_suppression(item, classified)
+            if raw_finding is None:
+                continue
+            finding = _classified_finding(
+                fixture,
+                reviewer=reviewer,
+                stage=stage,
+                raw_finding=raw_finding,
+            )
             if _is_postable_finding(finding):
                 classified["findings"].append(finding)
             else:
@@ -412,6 +505,32 @@ def _classify_reviewer_output(
             raise RunnerError(f"unsupported raw reviewer output type: {item_type}")
 
 
+def _raw_reviewer_finding_or_suppression(
+    item: dict[str, Any],
+    classified: dict[str, list[Any]],
+) -> RawReviewerFinding | None:
+    try:
+        return RawReviewerFinding.from_mapping(item)
+    except ValueError as exc:
+        message = str(exc)
+        if "graph-owned fields" not in message:
+            raise
+        classified["suppressed_outputs"].append(
+            SuppressedOutput(
+                id=_safe_suppressed_raw_id(item),
+                reason="Raw reviewer finding attempted to set graph-owned fields and was suppressed.",
+            )
+        )
+        return None
+
+
+def _safe_suppressed_raw_id(item: dict[str, Any]) -> str:
+    item_id = item.get("id")
+    if isinstance(item_id, str) and item_id:
+        return f"suppressed-{item_id}"
+    return "suppressed-invalid-raw-finding"
+
+
 def _validate_finding_fingerprints(findings: tuple[ClassifiedFinding, ...]) -> None:
     seen: set[str] = set()
     for finding in findings:
@@ -439,40 +558,42 @@ def _classified_finding(
     *,
     reviewer: str,
     stage: str,
-    item: dict[str, Any],
+    raw_finding: RawReviewerFinding,
 ) -> ClassifiedFinding:
-    _require_fields(
-        item,
-        (
-            "id",
-            "title",
-            "body",
-            "evidence",
-            "path",
-            "line",
-            "priority",
-            "severity",
-            "confidence",
-            "fingerprint",
-        ),
-        "postable_finding",
-    )
-    path = _required_str(item, "path", "postable_finding")
-    line = _required_int(item, "line", "postable_finding")
-    assert_changed_line(fixture, path=path, line=line)
+    assert_changed_line(fixture, path=raw_finding.path, line=raw_finding.line)
     return ClassifiedFinding(
-        id=_required_str(item, "id", "postable_finding"),
+        id=raw_finding.id,
         source_reviewer=reviewer,
         source_stage=stage,
-        title=_required_str(item, "title", "postable_finding"),
-        body=_required_str(item, "body", "postable_finding"),
-        evidence=_required_str(item, "evidence", "postable_finding"),
-        path=path,
-        line=line,
-        priority=_required_int(item, "priority", "postable_finding"),
-        severity=Severity(_required_str(item, "severity", "postable_finding")),
-        confidence=Confidence(_required_str(item, "confidence", "postable_finding")),
-        fingerprint=_required_str(item, "fingerprint", "postable_finding"),
+        title=raw_finding.title,
+        body=raw_finding.rationale,
+        evidence=raw_finding.evidence,
+        path=raw_finding.path,
+        line=raw_finding.line,
+        priority=_graph_priority(raw_finding),
+        severity=raw_finding.severity,
+        confidence=raw_finding.confidence,
+        fingerprint=_graph_fingerprint(raw_finding),
+    )
+
+
+def _graph_priority(raw_finding: RawReviewerFinding) -> int:
+    if raw_finding.severity in {Severity.CRITICAL, Severity.WARNING}:
+        return 1
+    if raw_finding.severity == Severity.SUGGESTION:
+        return 2
+    return 3
+
+
+def _graph_fingerprint(raw_finding: RawReviewerFinding) -> str:
+    return canonical_json_hash(
+        {
+            "domain": "reviewgraph.fixture_finding.v1",
+            "path": raw_finding.path,
+            "line": raw_finding.line,
+            "title": raw_finding.title,
+            "evidence": raw_finding.evidence,
+        }
     )
 
 
