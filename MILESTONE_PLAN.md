@@ -6,10 +6,10 @@ Active execution artifact for this milestone. Linear remains the durable source 
 
 - Milestone: `PRD 0004: Graph Orchestration`
 - Milestone ID: `c8f7e842-fed0-477c-8877-e9dfbcaf27f4`
-- Current status: 0% complete in Linear at plan time.
+- Current status: `AUR-194` complete; `AUR-195` active.
 - Implementation issues:
-  - `AUR-194` / `RG-005: Run Empty Dry-Run Graph On Fixture`
-  - `AUR-195` / `RG-006: Implement Stage Cursor Invariants`
+  - `AUR-194` / `RG-005: Run Empty Dry-Run Graph On Fixture` / `Done`
+  - `AUR-195` / `RG-006: Implement Stage Cursor Invariants` / `In Progress`
   - `AUR-196` / `RG-007: Select Always-On Reviewers`
   - `AUR-197` / `RG-008: Select Path Diff And Label Reviewers`
   - `AUR-235` / `RG-046: Classify Change Risk And Size`

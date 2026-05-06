@@ -1,40 +1,42 @@
-# ISSUE PLAN: AUR-194 Run Empty Dry-Run Graph On Fixture
+# ISSUE PLAN: AUR-195 Implement Stage Cursor Invariants
 
-Active issue plan for `AUR-194` / `RG-005: Run Empty Dry-Run Graph On Fixture`.
+Active issue plan for `AUR-195` / `RG-006: Implement Stage Cursor Invariants`.
 
 ## Linear Snapshot
 
-- Issue: `AUR-194`
+- Issue: `AUR-195`
 - Status at plan time: `In Progress`
 - Milestone: `PRD 0004: Graph Orchestration`
-- Blocks: `AUR-195`, `AUR-256`
-- Blocked by in Linear: `AUR-255`, `AUR-192`, `AUR-193`
-- Current repo reality: those prerequisites are represented in committed fixture parsing, target modeling, conversation memory, and the completed PRD 0010 gate.
+- Blocks: `AUR-196`, `AUR-256`
+- Blocked by: `AUR-194`, now `Done`
+- Comments at plan time: none
 
 ## Goal
 
-Add the smallest LangGraph-backed fixture dry-run initialization slice. This issue should prove that a fixture PR can become explicit `ReviewState` with `run_mode=dry_run`, `post_enabled=false`, review target metadata, empty review output, and no writer reachability before reviewer selection or reviewer execution exists in the graph path.
+Create the explicit stage cursor contract that later graph routing will use. The cursor should own `active_stage`, `stage_queue`, `suspended_stage`, and `completed_stages` transitions, produce traceable before/after records, and prevent completed normal stages from being run again.
 
-This is a graph initialization slice, not the current full fixture reviewer dry run. The existing `run_fixture_dry_run` tracer must keep working unchanged.
+This slice should stay focused on cursor state. It should not select reviewers, run reviewers, classify output, or implement clarification resume.
 
 ## Acceptance Mapping
 
-- Fixture PR can run through graph initialization:
-  - Add a minimal compiled LangGraph path that loads a fixture PR, builds conversation memory, resolves the review target, applies default context budget, and emits graph state/output without selecting or running reviewers.
-- `run_mode=dry_run` and `post_enabled=false` are explicit in state:
-  - `ReviewState` and graph output expose both fields directly.
-- Graph emits review target metadata and empty review output:
-  - Test target fields and empty findings/local notes/suggested replies/suppressed/clarifications/selected reviewers.
-- Writer branch is unreachable in dry-run mode:
-  - Test with a raising writer sentinel and assert zero calls.
+- Initial cursor state is `active_stage=None` and `stage_queue=["initial_triage","specialized_review","logic_review"]`:
+  - Reuse the AUR-194 empty graph state and add focused tests for the cursor fields.
+- `stage_queue` contains only future normal stages:
+  - Cursor helper validates that the active stage is not in the queue, completed stages are not in the queue, and `clarification_review` is not in the normal queue.
+- `advance_or_finish_stage` is the only code path that mutates stage cursor fields:
+  - Add `src/reviewgraph/state.py` with `advance_or_finish_stage` as the stage-cursor mutator and have graph code use exported initial-stage constants rather than duplicating queue literals.
+- Completed stages are never rerun:
+  - Tests should advance through all normal stages and assert completed stages are not reactivated; invalid queue state containing a completed stage should fail closed.
+- Cursor transition traces include before/after stage and queue fields:
+  - Add a `StageCursorTransition` trace model/dict with active stage, suspended stage, stage queue, completed stages, and transition reason before/after.
 
 ## Implementation Plan
 
-1. Add `src/reviewgraph/graph.py` with a narrow compiled LangGraph graph for empty dry-run initialization.
-2. Keep this slice independent from reviewer selection and raw fixture reviewer output. It may use existing fixture, memory, target, budget, render/posting models where they are already stable.
-3. Use `ReviewState` as the durable graph state artifact. Allow the `ReviewConfig` model to represent an empty in-memory graph config while keeping the external config parser strict for user-supplied configs.
-4. Add `tests/test_graph_empty.py` focused on the acceptance criteria.
-5. Run the focused harness and the existing tracer/CLI regressions to prove the new graph slice does not disturb the current runnable behavior.
+1. Add `src/reviewgraph/state.py` with normal stage constants, cursor validation, `StageCursorTransition`, and `advance_or_finish_stage`.
+2. Update `src/reviewgraph/graph.py` to use the shared initial normal stage queue constant for AUR-194 initialization.
+3. Add `tests/test_stage_cursor.py` covering initial state, future-only queue invariant, normal stage advancement, final completion, completed-stage rerun prevention, and transition trace fields.
+4. Keep `clarification_review` as a validation rule only in this issue: it is transient and not allowed in the normal queue, but resume behavior remains future PRD 0005/graph work.
+5. Run the focused harness and graph/tracer regressions.
 6. Use subagent review before implementation and again after code changes.
 7. Commit the plan before implementation, then commit the implementation separately.
 
@@ -42,17 +44,18 @@ This is a graph initialization slice, not the current full fixture reviewer dry 
 
 - No reviewer selection.
 - No reviewer run status.
+- No clarification resume implementation.
 - No fake reviewer adapter.
 - No quality classification.
-- No posting plan construction beyond proving no writable branch.
 - No live GitHub, live LLM, approval, finalization, or writer behavior.
-- No change to CLI behavior in this issue.
 
 ## Validation Plan
 
 ```bash
-python -m pytest tests/test_graph_empty.py
+python -m pytest tests/test_stage_cursor.py tests/test_graph_empty.py -q
 python -m pytest tests/test_tracer_fixture_run.py tests/test_cli.py -q
+python -m pytest -q
+python -m py_compile src/reviewgraph/*.py
 python scripts/check_docs.py
 git diff --check
 ```
@@ -60,8 +63,7 @@ git diff --check
 ## Completion Evidence To Collect
 
 - Focused harness output.
-- Regression harness output.
-- Confirmation that the existing full fixture dry-run still works.
+- Regression/full validation output.
 - Subagent review result with no material findings.
 - Commit SHA for the implementation.
 - Linear evidence comment mapping each acceptance criterion to code/tests.
