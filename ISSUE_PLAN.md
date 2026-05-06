@@ -36,6 +36,7 @@ This slice should move quality policy out of incidental runner helpers into a fo
 - Reviewer self-declared postability or blocking is ignored:
   - Graph-owned fields from raw reviewer findings remain suppressed by normalization.
   - Valid normalized findings should receive graph-owned priority/fingerprint/blocking values only from quality policy.
+  - Focused quality tests should prove normalized suppressed-output passthrough; raw graph-owned-field rejection remains covered in `tests/test_findings.py` and should not be reimplemented in quality.
 - Generic, speculative, pre-existing, unsupported findings are suppressed or downgraded:
   - Existing broad CLI behavior for generic coverage, generic refactor advice, speculative language, pre-existing issues, weak evidence, and vague scenarios must remain green.
   - Suppression reason should remain stable enough for current dry-run assertions unless the focused harness justifies a durable contract change.
@@ -56,7 +57,7 @@ This slice should move quality policy out of incidental runner helpers into a fo
   - Existing testing heuristics move with the extracted classifier as legacy compatibility so broad CLI behavior stays green.
   - `AUR-203` owns replacing or refining those rules with a focused testing-review harness.
 - Golden cases:
-  - Add focused `tests/test_quality.py` cases for postable finding, medium-confidence non-blocking postable finding, low-confidence suppression, `line_end` propagation, local note passthrough, clarification request passthrough, unsafe clarification provenance suppression, suggested reply passthrough, suppressed non-finding passthrough, generic/speculative/pre-existing/self-declared-blocking suppression, verbose/multi-issue/public-verdict-pressure suppression, testing compatibility, cross-file logic evidence, ambiguous invariant clarification, and generic architecture advice.
+  - Add focused `tests/test_quality.py` cases for postable finding, medium-confidence non-blocking postable finding, low-confidence suppression, `line_end` propagation, local note passthrough, clarification request passthrough, unsafe clarification provenance suppression, suggested reply passthrough, normalized suppressed-output passthrough, generic/speculative/pre-existing suppression, verbose/multi-issue/public-verdict-pressure suppression, testing compatibility, cross-file logic evidence, ambiguous invariant clarification, and generic architecture advice.
 
 ## Current Baseline
 
@@ -74,7 +75,8 @@ This slice should move quality policy out of incidental runner helpers into a fo
    - Include small changed-file/context helpers only for changed-line validation and omitted-context checks; do not make the public quality API depend on packaged `FixturePR`.
    - Prove graph-owned priority/fingerprint/blocking/classification decisions.
    - Prove passthrough for local notes, clarification requests, suggested replies, and normalized suppressed outputs.
-   - Prove suppression for low confidence, generic, speculative, pre-existing, weak evidence, self-declared graph-owned fields, unsafe memory provenance, omitted context, unsafe clarification provenance, verbose/multi-issue/public-verdict-pressure bodies, and generic architecture advice.
+   - Prove suppression for low confidence, generic, speculative, pre-existing, weak evidence, unsafe memory provenance, omitted context, unsafe clarification provenance, verbose/multi-issue/public-verdict-pressure bodies, and generic architecture advice.
+   - Prove normalized suppressed-output passthrough; keep raw self-declared graph-owned-field rejection in `tests/test_findings.py`.
    - Prove medium-confidence concrete findings can be postable only with `blocking=False`.
    - Prove `line_end` is preserved on classified findings.
    - Prove legacy testing heuristics still suppress generic coverage noise and allow concrete regression coverage findings until `AUR-203` refines them.
