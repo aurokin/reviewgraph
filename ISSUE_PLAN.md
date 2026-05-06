@@ -19,7 +19,7 @@ This issue should not implement the later live writer, approval gate, or posting
 ## Acceptance Mapping
 
 - Required reviewer failure records an error:
-  - Record a `GraphError` for required reviewer execution or classification failure, and preserve the failed `ReviewerResult` plus failed `ReviewerRunStatus`.
+  - Record a durable `GraphError` in graph-owned state/output for required reviewer execution or classification failure, and preserve the failed `ReviewerResult` plus failed `ReviewerRunStatus`.
 - Required reviewer failure sets `post_enabled=false`:
   - Thread a required-failure flag/error collection from reviewer execution into final dry-run synthesis and force posting eligibility off even if other postable findings exist.
 - Dry-run output includes the failure:
@@ -27,16 +27,16 @@ This issue should not implement the later live writer, approval gate, or posting
 - Later posting-plan construction must treat required reviewer failure as non-writable state:
   - Build the posting plan normally for classified output, then convert it to local-only when required failures exist. Candidate GitHub payload must be absent/disabled through the existing `post_enabled=false` path.
 - Optional reviewers remain unaffected:
-  - Keep optional reviewer failures as local notes, not graph errors, and preserve post eligibility when an optional failure is the only failure and postable findings remain.
+  - Keep optional reviewer failures as failed `ReviewerResult` errors plus local notes, not top-level `GraphError`s, and preserve post eligibility when an optional failure is the only failure and postable findings remain.
 
 ## Implementation Plan
 
-1. Add `tests/test_required_reviewer_failure.py` with a fixture mutation helper that can force required/optional fake reviewer failures and mixed success/failure runs.
-2. Extend the stage-run result with graph errors or a required-failure marker so `run_fixture_dry_run` can decide posting eligibility after all local output is collected.
+1. Add `tests/test_required_reviewer_failure.py` with a fixture mutation helper that can force required/optional fake reviewer failures, required classification failures, and mixed success/failure runs.
+2. Extend the stage-run result with durable `GraphError` values so `run_fixture_dry_run` can decide posting eligibility after all local output is collected and expose the fail-closed state in top-level JSON.
 3. Replace required reviewer failure raises in `_run_review_stages` with fail-closed state recording where the fixture and selection are otherwise valid. Keep malformed fixture/config errors as exceptions.
 4. Ensure required failures mark reviewer status `failed`, append the failed `ReviewerResult`, record a `GraphError`, and continue enough to produce dry-run JSON/markdown. Stop consuming later stages only if continuing would hide or duplicate raw output accounting.
 5. Force `post_enabled=false` when required reviewer errors exist, and pass the posting plan through the existing local-only conversion.
-6. Include top-level dry-run JSON `errors` so the fail-closed reason is machine-visible. Keep redaction on the existing envelope path.
+6. Include top-level dry-run JSON `errors` with stable codes so the fail-closed reason is machine-visible. Keep redaction on the existing envelope path.
 7. Preserve optional failure behavior and add regression coverage proving optional failure alone does not disable posting when a postable finding exists.
 8. Run the focused harness, tracer/CLI regressions, fake reviewer tests, full suite, docs check, py-compile, and diff check.
 9. Use a fresh subagent for plan review before code changes and fresh code-review subagents until no material issues remain.

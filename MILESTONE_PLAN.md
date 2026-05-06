@@ -93,7 +93,7 @@ For each issue:
 - Reviewer selection must record reviewer name, active stage, and trigger reasons in state.
 - Risk and size classification must be deterministic, fixture-testable, and recorded as graph-owned state before risk gates select reviewers.
 - `ReviewerRunKey` must bind target hash, config hash, stage, reviewer, attempt, retry metadata, and clarification ID. A selected key is not completed until execution records completion.
-- Required reviewer failures set `post_enabled=false`; optional reviewer failures record errors but do not by themselves stop local dry-run output.
+- Required reviewer failures record durable graph errors and set `post_enabled=false`; optional reviewer failures may carry `ReviewerResult` errors and local notes but do not create top-level graph errors or stop local dry-run output by themselves.
 - Fake reviewers receive only `ReviewerContextPackage`; no fake/live reviewer gets GitHub transports, approval state, finalization code, payload builders, writer clients, or ambient tool callables.
 - Raw reviewer output remains structured input to quality classification. Reviewer output cannot self-declare public destination, postability, approval, blocking verdict, or GitHub review event.
 
