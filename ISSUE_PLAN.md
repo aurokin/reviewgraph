@@ -19,7 +19,7 @@ This issue should not implement the later live writer, approval gate, or posting
 ## Acceptance Mapping
 
 - Required reviewer failure records an error:
-  - Record a durable `GraphError` in graph-owned state/output for required reviewer execution or classification failure, and preserve the failed `ReviewerResult` plus failed `ReviewerRunStatus`.
+  - Record a durable `GraphError` in graph-owned state/output for explicit required fake reviewer failure output, and preserve the failed `ReviewerResult` plus failed `ReviewerRunStatus`.
 - Required reviewer failure sets `post_enabled=false`:
   - Thread a required-failure flag/error collection from reviewer execution into final dry-run synthesis and force posting eligibility off even if other postable findings exist.
 - Dry-run output includes the failure:
@@ -31,7 +31,7 @@ This issue should not implement the later live writer, approval gate, or posting
 
 ## Implementation Plan
 
-1. Add `tests/test_required_reviewer_failure.py` with a fixture mutation helper that can force required/optional fake reviewer failures, required classification failures, and mixed success/failure runs.
+1. Add `tests/test_required_reviewer_failure.py` with a fixture mutation helper that can force required/optional fake reviewer failures and mixed success/failure runs.
 2. Extend the stage-run result with durable `GraphError` values so `run_fixture_dry_run` can decide posting eligibility after all local output is collected and expose the fail-closed state in top-level JSON.
 3. Replace required reviewer failure raises in `_run_review_stages` with fail-closed state recording where the fixture and selection are otherwise valid. Keep malformed fixture/config errors as exceptions.
 4. Ensure required failures mark reviewer status `failed`, append the failed `ReviewerResult`, record a `GraphError`, and continue enough to produce dry-run JSON/markdown. Stop consuming later stages only if continuing would hide or duplicate raw output accounting.
@@ -47,6 +47,7 @@ This issue should not implement the later live writer, approval gate, or posting
 - No live GitHub writer or approval flow.
 - No retry/repair changes beyond preserving existing retry status semantics.
 - No new quality classifier rules.
+- No conversion of malformed fixture or raw-output schema errors into successful dry-runs; existing CLI parse/error contracts remain nonzero.
 - No renderer redesign unless required for machine-visible failure evidence.
 - No broad graph refactor.
 

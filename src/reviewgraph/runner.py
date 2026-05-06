@@ -31,6 +31,7 @@ from reviewgraph.models import (
     ClassifiedFinding,
     Confidence,
     ContextBudget,
+    GraphError,
     LocalNote,
     MemoryReference,
     PRConversationMemory,
@@ -87,6 +88,7 @@ class _StageRunResult:
     reviewer_run_keys: tuple[ReviewerRunKey, ...]
     reviewer_run_status: dict[str, ReviewerRunStatus]
     reviewer_results: tuple[ReviewerResult, ...]
+    errors: tuple[GraphError, ...]
     graph_trace: list[dict[str, Any]]
     classified: dict[str, tuple[Any, ...]]
     context_budget: ContextBudget
@@ -140,7 +142,11 @@ def run_fixture_dry_run(
         findings=classified["findings"],
         clarification_requests=classified["clarification_requests"],
     )
-    post_enabled = local_verdict == ReviewVerdict.COMMENT and bool(classified["findings"])
+    post_enabled = (
+        not stage_run.errors
+        and local_verdict == ReviewVerdict.COMMENT
+        and bool(classified["findings"])
+    )
     posting_plan = build_posting_plan(
         findings=classified["findings"],
         local_notes=classified["local_notes"],
@@ -180,6 +186,7 @@ def run_fixture_dry_run(
         selected_reviewers=selected_reviewers,
         reviewer_run_status=stage_run.reviewer_run_status,
         reviewer_results=stage_run.reviewer_results,
+        errors=stage_run.errors,
         graph_trace=graph_trace,
         writer_call_count=writer_call_count,
         rendered=rendered,
@@ -213,6 +220,7 @@ def _run_review_stages(
     selected_reviewers: list[SelectedReviewer] = []
     graph_trace: list[dict[str, Any]] = []
     classified = _empty_classified_lists()
+    errors: list[GraphError] = []
     seen_raw_keys: set[tuple[str, str]] = set()
     deferred_raw_keys: set[tuple[str, str]] = set()
     stage_budgets: list[ContextBudget] = []
@@ -299,12 +307,13 @@ def _run_review_stages(
                             memory_references=memory_references,
                             omitted_file_paths=omitted_file_paths,
                         )
-                    except RunnerError:
+                    except RunnerError as exc:
+                        reason = str(exc)
                         _update_reviewer_status(
                             routing_state,
                             reviewer,
                             status=ReviewerRunStatusValue.FAILED,
-                            reason="deterministic fixture output execution failed",
+                            reason=reason,
                         )
                         if not _reviewer_is_required(config, reviewer):
                             classified["local_notes"].append(_optional_reviewer_failure_note(reviewer))
@@ -328,6 +337,10 @@ def _run_review_stages(
                 )
                 if not _reviewer_is_required(config, reviewer):
                     classified["local_notes"].append(_optional_reviewer_failure_note(reviewer))
+                    continue
+                if _reviewer_result_is_explicit_failure(reviewer_result):
+                    errors.append(_required_reviewer_failure_error(reviewer, reason=reason))
+                    classified["local_notes"].append(_required_reviewer_failure_note(reviewer, reason=reason))
                     continue
                 raise RunnerError(reason)
             if not isinstance(reviewer_result.raw_output, Mapping):
@@ -357,12 +370,18 @@ def _run_review_stages(
                     memory_references=memory_references,
                     omitted_file_paths=omitted_file_paths,
                 )
-            except RunnerError:
+            except RunnerError as exc:
+                reason = str(exc)
+                routing_state.reviewer_results[-1] = replace(
+                    reviewer_result,
+                    status=ReviewerRunStatusValue.FAILED,
+                    errors=(reason,),
+                )
                 _update_reviewer_status(
                     routing_state,
                     reviewer,
                     status=ReviewerRunStatusValue.FAILED,
-                    reason="deterministic fixture output execution failed",
+                    reason=reason,
                 )
                 if not _reviewer_is_required(config, reviewer):
                     classified["local_notes"].append(_optional_reviewer_failure_note(reviewer))
@@ -397,6 +416,7 @@ def _run_review_stages(
         reviewer_run_keys=tuple(routing_state.reviewer_run_keys),
         reviewer_run_status=dict(routing_state.reviewer_run_status),
         reviewer_results=tuple(routing_state.reviewer_results),
+        errors=tuple(errors),
         graph_trace=graph_trace,
         classified={key: tuple(value) for key, value in classified.items()},
         context_budget=merge_context_budgets(budget_limits, *stage_budgets),
@@ -504,6 +524,23 @@ def _optional_reviewer_failure_note(reviewer: SelectedReviewer) -> LocalNote:
     )
 
 
+def _required_reviewer_failure_note(reviewer: SelectedReviewer, *, reason: str) -> LocalNote:
+    return LocalNote(
+        id=f"note-required-reviewer-failure-{reviewer.stage}-{reviewer.name}",
+        title="Required reviewer failed",
+        body=f"{reviewer.name} was selected for {reviewer.stage} but failed: {reason}",
+        evidence=f"Trigger reasons: {', '.join(reviewer.reasons)}",
+    )
+
+
+def _required_reviewer_failure_error(reviewer: SelectedReviewer, *, reason: str) -> GraphError:
+    return GraphError(
+        code="required_reviewer_failed",
+        message=f"Required reviewer {reviewer.name} failed during {reviewer.stage}: {reason}",
+        retryable=False,
+    )
+
+
 def _reviewer_result_error(reviewer_result: ReviewerResult, *, default: str) -> str:
     return reviewer_result.errors[0] if reviewer_result.errors else default
 
@@ -513,6 +550,13 @@ def _reviewer_result_has_classifiable_raw_output(reviewer_result: ReviewerResult
         isinstance(reviewer_result.raw_output, Mapping)
         and "items" in reviewer_result.raw_output
         and reviewer_result.raw_output.get("failure") is not True
+    )
+
+
+def _reviewer_result_is_explicit_failure(reviewer_result: ReviewerResult) -> bool:
+    return (
+        isinstance(reviewer_result.raw_output, Mapping)
+        and reviewer_result.raw_output.get("failure") is True
     )
 
 
@@ -1195,6 +1239,7 @@ def _json_envelope(
     selected_reviewers: tuple[SelectedReviewer, ...],
     reviewer_run_status: dict[str, ReviewerRunStatus],
     reviewer_results: tuple[ReviewerResult, ...],
+    errors: tuple[GraphError, ...],
     graph_trace: list[dict[str, Any]],
     writer_call_count: int,
     rendered: RenderedReview,
@@ -1206,6 +1251,10 @@ def _json_envelope(
         "fixture_ref": fixture.pr_ref,
         "graph_trace": graph_trace,
         "local_verdict": local_verdict.value,
+        "errors": [
+            {"code": error.code, "message": error.message, "retryable": error.retryable}
+            for error in errors
+        ],
         "risk": risk_assessment_to_json(risk),
         "selected_reviewers": [
             {"name": reviewer.name, "stage": reviewer.stage, "reasons": list(reviewer.reasons)}

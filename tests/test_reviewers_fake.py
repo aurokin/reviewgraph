@@ -195,12 +195,12 @@ def test_dry_run_honors_failed_fake_reviewer_result_before_classification(tmp_pa
     fixture_path = tmp_path / "failed-reviewer.json"
     fixture_path.write_text(json.dumps(data))
 
-    try:
-        run_fixture_dry_run(fixture_ref=str(fixture_path))
-    except Exception as exc:
-        assert "required reviewer failed before classification" in str(exc)
-    else:
-        raise AssertionError("required fake reviewer failure should abort dry-run")
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path))
+
+    assert result.json_data["post_enabled"] is False
+    assert result.json_data["errors"][0]["code"] == "required_reviewer_failed"
+    assert "required reviewer failed before classification" in result.json_data["errors"][0]["message"]
+    assert result.json_data["reviewer_results"][0]["status"] == "failed"
 
 
 def test_dry_run_lets_legacy_classifier_handle_graph_owned_raw_fields(tmp_path) -> None:
