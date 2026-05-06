@@ -7,6 +7,8 @@ from typing import Protocol
 from reviewgraph.models import (
     MemoryReference,
     ReviewConfig,
+    RiskAssessment,
+    RiskLevel,
     ReviewerRunKey,
     ReviewerRunStatus,
     ReviewerRunStatusValue,
@@ -35,6 +37,7 @@ def select_reviewers_for_stage(
     stage: str | ReviewStage,
     *,
     memory_references: tuple[MemoryReference, ...] = (),
+    risk: RiskAssessment | None = None,
 ) -> tuple[SelectedReviewer, ...]:
     stage_value = _stage_value(stage)
     selected: list[SelectedReviewer] = []
@@ -47,6 +50,7 @@ def select_reviewers_for_stage(
                 triggers=agent.triggers,
                 pr=pr,
                 memory_references=memory_references,
+                risk=risk,
             )
             if not reasons:
                 continue
@@ -80,6 +84,7 @@ def select_reviewers_for_active_stage(
         review_state.pr,
         review_state.active_stage,
         memory_references=memory_references,
+        risk=review_state.risk,
     )
     runnable_selection: list[SelectedReviewer] = []
     for reviewer in selected:
@@ -115,12 +120,12 @@ def _trigger_reasons(
     triggers: ReviewerTriggers,
     pr: PRLike,
     memory_references: tuple[MemoryReference, ...],
+    risk: RiskAssessment | None,
 ) -> list[str]:
     reasons: list[str] = []
     gate_failures: list[str] = []
-    changed_file_count = len(pr.changed_files)
-    changed_line_count = _changed_line_count(pr)
-    risk_level = _pr_risk_level(pr)
+    changed_file_count = risk.changed_file_count if risk is not None else _changed_file_count(pr)
+    changed_line_count = risk.changed_line_count if risk is not None else _changed_line_count(pr)
 
     if triggers.max_files is not None:
         if changed_file_count > triggers.max_files:
@@ -131,17 +136,18 @@ def _trigger_reasons(
         if changed_file_count < triggers.changed_files_min:
             gate_failures.append(f"{stage} triggers.changed_files_min<{triggers.changed_files_min}")
         else:
-            reasons.append(f"{stage} triggers.changed_files_min={triggers.changed_files_min}")
+            reasons.append(f"{stage} triggers.changed_files_min>={triggers.changed_files_min}")
     if triggers.changed_lines_min is not None:
         if changed_line_count < triggers.changed_lines_min:
             gate_failures.append(f"{stage} triggers.changed_lines_min<{triggers.changed_lines_min}")
         else:
-            reasons.append(f"{stage} triggers.changed_lines_min={triggers.changed_lines_min}")
+            reasons.append(f"{stage} triggers.changed_lines_min>={triggers.changed_lines_min}")
     if triggers.risk_min is not None:
-        if _risk_rank(risk_level) < _risk_rank(triggers.risk_min.value):
+        risk_level = risk.risk_level if risk is not None else RiskLevel.LOW
+        if _risk_rank(risk_level) < _risk_rank(triggers.risk_min):
             gate_failures.append(f"{stage} triggers.risk_min<{triggers.risk_min.value}")
         else:
-            reasons.append(f"{stage} triggers.risk_min={triggers.risk_min.value}")
+            reasons.append(f"{stage} triggers.risk_min>={triggers.risk_min.value}")
     if gate_failures:
         return []
 
@@ -204,16 +210,9 @@ def _changed_line_count(pr: PRLike) -> int:
     return total
 
 
-def _pr_risk_level(pr: PRLike) -> str:
-    changed_files = len(pr.changed_files)
-    changed_lines = _changed_line_count(pr)
-    patches = "\n".join(changed_file.patch or "" for changed_file in pr.changed_files).casefold()
-    if changed_files >= 10 or changed_lines >= 500 or any(term in patches for term in ("auth", "token", "password")):
-        return "high"
-    if changed_files >= 3 or changed_lines >= 50 or any(term in patches for term in ("billing", "product intent")):
-        return "medium"
-    return "low"
+def _changed_file_count(pr: PRLike) -> int:
+    return len(pr.changed_files)
 
 
-def _risk_rank(risk_level: str) -> int:
-    return {"low": 0, "medium": 1, "high": 2}[risk_level]
+def _risk_rank(risk_level: RiskLevel) -> int:
+    return {RiskLevel.LOW: 0, RiskLevel.MEDIUM: 1, RiskLevel.HIGH: 2}[risk_level]
