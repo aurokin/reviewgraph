@@ -1,55 +1,58 @@
-# ISSUE PLAN: AUR-198 Select Gate-Based Risk And Size Reviewers
+# ISSUE PLAN: AUR-199 Track Reviewer Run Status And Retries
 
-Active issue plan for `AUR-198` / `RG-009: Select Gate-Based Risk And Size Reviewers`.
+Active issue plan for `AUR-199` / `RG-010: Track Reviewer Run Status And Retries`.
 
 ## Linear Snapshot
 
-- Issue: `AUR-198`
+- Issue: `AUR-199`
 - Status at plan time: `In Progress`
 - Milestone: `PRD 0004: Graph Orchestration`
 - Comments at plan time: none
-- Linear description: implement risk and size gates for staged reviewer selection, including reviewers that have only gates and no selector.
+- Linear description: track reviewer execution using `ReviewerRunKey` and run statuses so selection, retry, and resume behavior are idempotent.
 
 ## Goal
 
-Move risk and size gate evaluation onto the `AUR-235` `RiskAssessment` state so routing does not recompute risk policy from patches. Gate-only reviewers should be selectable when all configured gates pass, and selected reviewer reasons should show both selector matches and gate pass decisions.
+Consolidate reviewer run key/status behavior into an explicit policy module. Selection should register a durable run key, completed/skipped statuses should suppress rerun for the same target/config/stage/reviewer key, selected/running/failed should not be mistaken for completed, and retry exhaustion should record permanent failure.
+
+Some basic status transitions already exist from earlier routing work. This issue should make them intentional, tested, and reusable without introducing the later fake reviewer adapter.
 
 ## Acceptance Mapping
 
-- `risk_min` gates selection based on deterministic risk assessment:
-  - Add routing-risk tests that set `ReviewState.risk` from mixed-risk and oversized fixtures and assert `risk_min` pass/fail behavior.
-- `max_files`, `changed_lines_min`, and `changed_files_min` gates are applied:
-  - Add tests for pass/fail cases using `RiskAssessment.changed_file_count` and `changed_line_count`.
-- Gate pass/fail decisions are recorded in selection reasons:
-  - Assert selected reviewers include gate pass reasons. Non-selected gate failures remain non-selected because `SelectedReviewer` only persists selected reviewers.
-- Gate-only reviewers can be selected when their gates pass:
-  - Add a gate-only reviewer config with no selector fields and assert it is selected when all gates pass.
+- Reviewer run keys include target hash, config hash, stage, reviewer, attempt, retry metadata, and clarification ID:
+  - Add `tests/test_reviewer_runs.py` asserting key creation and stable serialization for initial and retry/clarification keys.
+- Run status distinguishes selected, running, completed, failed, and skipped:
+  - Add transition helpers and tests for all status values.
+- Selected-but-not-run reviewers are not treated as completed:
+  - Assert selected/running/failed statuses remain runnable unless retry policy exhausts them.
+- Completed reviewers are not rerun for the same target/config:
+  - Assert completed and skipped statuses suppress runnable selection for the same stable key.
+- Retry exhaustion records permanent failure:
+  - Add retry policy helpers with a configurable max attempt count; assert exhausted failures record a final `failed` status with a reason and do not schedule another runnable key.
 
 ## Implementation Plan
 
-1. Add `tests/test_routing_risk.py` focused on risk/size gate routing.
-2. Update `src/reviewgraph/routing.py` so active-stage routing passes `ReviewState.risk` into trigger evaluation.
-3. Remove the ad hoc routing risk heuristic and use `RiskAssessment.risk_level`, `changed_file_count`, and `changed_line_count` for gates.
-4. Preserve existing selector behavior for always/path/label/diff/conversation tests.
-5. Keep gate reasons stable and explicit: `triggers.risk_min>=...`, `triggers.max_files<=...`, `triggers.changed_lines_min>=...`, and `triggers.changed_files_min>=...`.
-6. Keep this slice to selection only; do not change reviewer execution, quality classification, retry, or posting behavior.
-7. Run routing-risk, routing, risk, tracer/CLI, and full validation.
-8. Use subagent review before implementation and after code changes.
-9. Commit the plan before implementation, then commit implementation separately.
+1. Add `src/reviewgraph/reviewer_runs.py` with helpers for making run keys, registering selection, recording status, deciding runnable suppression, and advancing retry attempts.
+2. Move routing key/status registration from `src/reviewgraph/routing.py` into the reviewer-run helper while preserving current selected/completed/skipped behavior.
+3. Update runner status transitions to use the same helper for selected/running/completed/failed/skipped updates.
+4. Add `tests/test_reviewer_runs.py` for key fields, stable keys, status transitions, selected-not-completed behavior, completed/skipped suppression, and retry exhaustion.
+5. Keep the actual reviewer adapter and retrying malformed reviewer output out of scope; this slice models and tests the policy boundary.
+6. Run reviewer-runs, routing, tracer/CLI, and full validation.
+7. Use subagent review before implementation and after code changes.
+8. Commit the plan before implementation, then commit implementation separately.
 
 ## Out Of Scope
 
-- No new risk classification policy.
 - No fake reviewer adapter.
-- No retry/exhaustion policy.
-- No required reviewer failure policy.
+- No live reviewer execution or malformed-output repair prompt.
+- No required reviewer failure posting policy.
+- No clarification resume implementation beyond key fields.
 - No live GitHub, live LLM, approval, finalization, or writer behavior.
 
 ## Validation Plan
 
 ```bash
-python -m pytest tests/test_routing_risk.py -q
-python -m pytest tests/test_routing.py tests/test_risk.py tests/test_tracer_fixture_run.py tests/test_cli.py -q
+python -m pytest tests/test_reviewer_runs.py -q
+python -m pytest tests/test_routing.py tests/test_routing_risk.py tests/test_tracer_fixture_run.py tests/test_cli.py -q
 python -m pytest -q
 python -m py_compile src/reviewgraph/*.py
 python scripts/check_docs.py
@@ -58,7 +61,7 @@ git diff --check
 
 ## Completion Evidence To Collect
 
-- Focused routing-risk harness output.
+- Focused reviewer-run harness output.
 - Regression/full validation output.
 - Subagent review result with no material findings.
 - Commit SHA for the implementation.
