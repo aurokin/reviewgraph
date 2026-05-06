@@ -61,6 +61,7 @@ from reviewgraph.redaction import redact_data
 from reviewgraph.render import RenderedReview, render_review
 from reviewgraph.risk import classify_change_risk, risk_assessment_to_json
 from reviewgraph.routing import select_reviewers_for_active_stage
+from reviewgraph.reviewer_runs import record_reviewer_run_status, reviewer_run_key_for_selection
 from reviewgraph.state import StageCursor, StageCursorTransition, advance_or_finish_stage, initial_stage_cursor
 
 
@@ -400,20 +401,13 @@ def _update_reviewer_status(
     status: ReviewerRunStatusValue,
     reason: str,
 ) -> None:
-    run_key = _reviewer_run_key_for_selection(review_state, reviewer)
-    stable_key = run_key.stable_key()
-    review_state.reviewer_run_status[stable_key] = ReviewerRunStatus(
+    run_key = reviewer_run_key_for_selection(review_state, reviewer)
+    record_reviewer_run_status(
+        review_state,
+        run_key,
         status=status,
-        run_key=run_key,
         reason=reason,
     )
-
-
-def _reviewer_run_key_for_selection(review_state: ReviewState, reviewer: SelectedReviewer) -> ReviewerRunKey:
-    for run_key in review_state.reviewer_run_keys:
-        if run_key.reviewer == reviewer.name and run_key.stage.value == reviewer.stage:
-            return run_key
-    raise RunnerError(f"reviewer run key missing for {reviewer_key(reviewer)}")
 
 
 def _reviewer_is_required(config: ReviewerConfig, reviewer: SelectedReviewer) -> bool:

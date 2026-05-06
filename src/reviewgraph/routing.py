@@ -9,14 +9,12 @@ from reviewgraph.models import (
     ReviewConfig,
     RiskAssessment,
     RiskLevel,
-    ReviewerRunKey,
-    ReviewerRunStatus,
-    ReviewerRunStatusValue,
     ReviewerTriggers,
     ReviewStage,
     ReviewState,
     SelectedReviewer,
 )
+from reviewgraph.reviewer_runs import register_selected_reviewer
 
 
 class ChangedFileLike(Protocol):
@@ -88,28 +86,9 @@ def select_reviewers_for_active_stage(
     )
     runnable_selection: list[SelectedReviewer] = []
     for reviewer in selected:
-        run_key = ReviewerRunKey(
-            target_hash=review_state.review_target.target_hash(),
-            config_hash=review_state.config_hash,
-            stage=review_state.active_stage,
-            reviewer=reviewer.name,
-        )
-        stable_key = run_key.stable_key()
-        existing_status = review_state.reviewer_run_status.get(stable_key)
-        if existing_status is not None:
-            if existing_status.status in {
-                ReviewerRunStatusValue.COMPLETED,
-                ReviewerRunStatusValue.SKIPPED,
-            }:
-                continue
-        else:
-            review_state.reviewer_run_keys.append(run_key)
-            review_state.reviewer_run_status[stable_key] = ReviewerRunStatus(
-                status=ReviewerRunStatusValue.SELECTED,
-                run_key=run_key,
-                reason="selected by active-stage routing",
-            )
-            review_state.selected_reviewers.append(reviewer)
+        run_key = register_selected_reviewer(review_state, reviewer)
+        if run_key is None:
+            continue
         runnable_selection.append(reviewer)
     return tuple(runnable_selection)
 
