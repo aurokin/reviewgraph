@@ -27,6 +27,20 @@ The PRD 0004 graph-orchestration slice now proves these contracts in fixtures an
 - required fake reviewer failure as graph-owned fail-closed state with dry-run output preserved;
 - optional fake reviewer failure as non-terminal reviewer-result error plus local note.
 
+## Implemented review-quality checkpoint
+
+The PRD 0005 review-quality slice now proves these contracts in fixtures and harnesses:
+
+- reviewer output normalizes into typed raw artifacts before quality policy runs;
+- malformed selected-reviewer output gets one deterministic fake repair attempt before required/optional failure policy;
+- quality classification separates postable findings, local notes, clarification requests, suggested replies, and suppressed non-findings;
+- postable findings require changed-code evidence, actionable scenarios, safe provenance, concise public shape, graph-owned priority/fingerprint/blocking decisions, and changed-code locations when available;
+- testing feedback uses the stricter changed-behavior, concrete-regression-scenario, and missing-coverage-target bar;
+- diff anchors are derived and validated for dry-run inline candidates without enabling inline posting;
+- blocking clarification requests stop posting and answered clarifications resume only affected reviewers through transient `clarification_review`;
+- optional reviewer failures produce partial-review metadata without blocking post eligibility, while required failures remain fail-closed;
+- local verdict policy is private state and does not imply GitHub review events or public request-changes wording.
+
 Remaining graph work is intentionally staged in later PRDs: live GitHub reads, live LLM reviewer execution, approval/finalization, and writer behavior.
 
 ## MVP constraints

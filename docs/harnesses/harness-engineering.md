@@ -125,6 +125,12 @@ Golden tests should protect product behavior without freezing incidental wording
 
 ### Review Quality
 
+Focused PRD 0005 harness bundle:
+
+```bash
+python -m pytest tests/test_findings.py tests/test_reviewer_json_repair.py tests/test_quality.py tests/test_diff_anchor.py tests/test_quality_testing.py tests/test_clarification.py tests/test_clarification_resume.py tests/test_optional_reviewer_failure.py tests/test_verdict.py -q
+```
+
 - Postable findings require changed-code evidence, an actionable scenario, graph-owned classification, and a precise changed-code location when available. `tests/test_quality.py` owns the classifier boundary from typed `ReviewerResult` plus changed files, memory references, and omitted-context IDs into postable findings, local notes, clarification requests, suggested replies, and suppressed outputs.
 - Diff-anchor harnesses should prove fixture-derived anchors bind to the current target head SHA, stay inside one changed range including `line_end`, preserve rename metadata, skip unavailable patches or unsupported statuses, render machine-visible anchor JSON, and keep explicit inline candidates dry-run-only/non-public.
 - Findings that cite `trusted_memory` must cite concrete actionable memory IDs; findings that cite unknown, passive, or untrusted memory are suppressed before rendering.
