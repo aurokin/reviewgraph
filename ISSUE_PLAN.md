@@ -1,62 +1,60 @@
-# ISSUE PLAN: AUR-200 Run Deterministic Fake Reviewers
+# ISSUE PLAN: AUR-225 Block Posting On Required Reviewer Failure
 
-Active issue plan for `AUR-200` / `RG-011: Run Deterministic Fake Reviewers`.
+Active issue plan for `AUR-225` / `RG-036: Block Posting On Required Reviewer Failure`.
 
 ## Linear Snapshot
 
-- Issue: `AUR-200`
+- Issue: `AUR-225`
 - Status at plan time: `In Progress`
 - Milestone: `PRD 0004: Graph Orchestration`
 - Comments at plan time: none
-- Linear description: add a fake reviewer adapter that returns deterministic raw outputs for selected reviewers.
+- Linear description: make required reviewer failure record a fail-closed review state while preserving local dry-run output.
 
 ## Goal
 
-Add a deterministic fake reviewer adapter boundary whose reviewer call consumes only `ReviewerContextPackage` and returns `ReviewerResult` records through graph execution metadata. This proves the live reviewer adapter shape without live LLM calls, GitHub transports, or prompt-owned control flow.
+Convert required reviewer failures from process-aborting exceptions into graph-owned failure state. The default dry-run should still render useful local output, expose the failed reviewer and error, force `post_enabled=false`, and make the generated posting plan local-only. Optional reviewer failures should keep the current non-terminal local-note behavior.
 
-Existing runner code reads `raw_reviewer_outputs` directly and immediately classifies them. This issue should route the deterministic runner through the fake adapter and record `ReviewerResult`s while keeping quality classification policy and required-failure posting policy in their existing/later slices.
+This issue should not implement the later live writer, approval gate, or posting-plan finalization policy. It should create the state/output contract those later slices must respect.
 
 ## Acceptance Mapping
 
-- Fake reviewers can return raw findings, local notes, clarification requests, suggested replies, non-findings, malformed JSON, and failures:
-  - Add deterministic fake output fixtures covering each output kind and adapter errors.
-- Fake outputs are keyed by fixture and reviewer:
-  - Key fake outputs by fixture ID, reviewer name, and stage in fake-adapter construction/harness configuration; assert missing keys return a failed result.
-- Fake reviewers receive the same scoped context package used by live reviewer adapters:
-  - Build the adapter call from `ReviewerContextPackage` only. Fixture ID, registry, and run key are execution/harness metadata outside the reviewer input.
-  - Assert the adapter never receives fixture PR objects, GitHub clients, writer clients, approval state, or posting payload builders.
-- Golden raw outputs cover postable findings, local notes, suppressed non-findings, clarification requests, suggested replies, malformed repair/failure, required reviewer failure, and optional reviewer failure:
-  - Add `tests/test_reviewers_fake.py` golden cases for successful outputs and deterministic failure variants. Required/optional distinction can be represented as reviewer config metadata on the context package; posting effects remain out of scope.
-- Reviewer results include run key, status, raw output, and errors:
-  - Extend `ReviewerResult` minimally with `status`, opaque `raw_output`, and `errors` fields, preserving existing typed output tuples and malformed raw strings.
-- No live LLM is used:
-  - Ensure fake adapter has no provider/network dependency and emits a local deterministic result.
+- Required reviewer failure records an error:
+  - Record a `GraphError` for required reviewer execution or classification failure, and preserve the failed `ReviewerResult` plus failed `ReviewerRunStatus`.
+- Required reviewer failure sets `post_enabled=false`:
+  - Thread a required-failure flag/error collection from reviewer execution into final dry-run synthesis and force posting eligibility off even if other postable findings exist.
+- Dry-run output includes the failure:
+  - Add JSON output assertions for `errors`, failed `reviewer_results`, failed `reviewer_run_status`, and local-only posting destinations. Add markdown coverage only if the current renderer has an appropriate section; otherwise keep the failure visible in machine output without inventing renderer copy.
+- Later posting-plan construction must treat required reviewer failure as non-writable state:
+  - Build the posting plan normally for classified output, then convert it to local-only when required failures exist. Candidate GitHub payload must be absent/disabled through the existing `post_enabled=false` path.
+- Optional reviewers remain unaffected:
+  - Keep optional reviewer failures as local notes, not graph errors, and preserve post eligibility when an optional failure is the only failure and postable findings remain.
 
 ## Implementation Plan
 
-1. Extend `ReviewerResult` with explicit `status`, `raw_output`, and `errors` fields.
-2. Add `src/reviewgraph/reviewers.py` with a pure fake adapter configured with fixture ID and a deterministic fake output registry. Its reviewer-facing `run` method accepts only `ReviewerContextPackage`; the graph/executor attaches `ReviewerRunKey` to the resulting `ReviewerResult`.
-3. Normalize fake output dicts into `ReviewerResult` typed tuples for findings, local notes, clarification requests, suggested replies, and suppressed non-findings.
-4. Represent malformed JSON strings and reviewer failures as `failed` reviewer results with raw output/errors, not as live repair prompts.
-5. Add `tests/test_reviewers_fake.py` with golden cases for success variants, malformed/failure variants, required/optional reviewer metadata, scoped context use, and no live LLM/provider behavior.
-6. Wire the deterministic runner through the fake adapter, record `ReviewerResult`s in graph state/output, and then feed completed raw output into the existing quality classification path. Do not change quality classification policy.
-7. Run fake reviewer, model, context-boundary, tracer/CLI, and full validation.
-8. Use subagent review before implementation and after code changes.
-9. Commit the plan before implementation, then commit implementation separately.
+1. Add `tests/test_required_reviewer_failure.py` with a fixture mutation helper that can force required/optional fake reviewer failures and mixed success/failure runs.
+2. Extend the stage-run result with graph errors or a required-failure marker so `run_fixture_dry_run` can decide posting eligibility after all local output is collected.
+3. Replace required reviewer failure raises in `_run_review_stages` with fail-closed state recording where the fixture and selection are otherwise valid. Keep malformed fixture/config errors as exceptions.
+4. Ensure required failures mark reviewer status `failed`, append the failed `ReviewerResult`, record a `GraphError`, and continue enough to produce dry-run JSON/markdown. Stop consuming later stages only if continuing would hide or duplicate raw output accounting.
+5. Force `post_enabled=false` when required reviewer errors exist, and pass the posting plan through the existing local-only conversion.
+6. Include top-level dry-run JSON `errors` so the fail-closed reason is machine-visible. Keep redaction on the existing envelope path.
+7. Preserve optional failure behavior and add regression coverage proving optional failure alone does not disable posting when a postable finding exists.
+8. Run the focused harness, tracer/CLI regressions, fake reviewer tests, full suite, docs check, py-compile, and diff check.
+9. Use a fresh subagent for plan review before code changes and fresh code-review subagents until no material issues remain.
+10. Commit the plan before implementation, then commit implementation and any review-fix batches separately.
 
 ## Out Of Scope
 
-- No live LLM adapter.
-- No provider repair prompt for malformed output.
-- No new quality classification policy.
-- No required reviewer failure posting gate; `AUR-225` owns fail-closed posting behavior.
-- No GitHub writer, approval, finalization, or side-effect behavior.
+- No live GitHub writer or approval flow.
+- No retry/repair changes beyond preserving existing retry status semantics.
+- No new quality classifier rules.
+- No renderer redesign unless required for machine-visible failure evidence.
+- No broad graph refactor.
 
 ## Validation Plan
 
 ```bash
-python -m pytest tests/test_reviewers_fake.py -q
-python -m pytest tests/test_models.py tests/test_reviewer_context.py tests/test_contract_boundaries.py -q
+python -m pytest tests/test_required_reviewer_failure.py -q
+python -m pytest tests/test_reviewers_fake.py tests/test_reviewer_runs.py -q
 python -m pytest tests/test_tracer_fixture_run.py tests/test_cli.py -q
 python -m pytest -q
 python -m py_compile src/reviewgraph/*.py
@@ -66,7 +64,7 @@ git diff --check
 
 ## Completion Evidence To Collect
 
-- Focused fake reviewer harness output.
+- Focused required-failure harness output.
 - Regression/full validation output.
 - Subagent review result with no material findings.
 - Commit SHA for the implementation.

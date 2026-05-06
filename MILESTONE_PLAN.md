@@ -6,7 +6,7 @@ Active execution artifact for this milestone. Linear remains the durable source 
 
 - Milestone: `PRD 0004: Graph Orchestration`
 - Milestone ID: `c8f7e842-fed0-477c-8877-e9dfbcaf27f4`
-- Current status: `AUR-194` complete; `AUR-195` complete; `AUR-196` complete; `AUR-197` complete; `AUR-235` complete; `AUR-198` complete; `AUR-199` complete; `AUR-200` active.
+- Current status: `AUR-194` complete; `AUR-195` complete; `AUR-196` complete; `AUR-197` complete; `AUR-235` complete; `AUR-198` complete; `AUR-199` complete; `AUR-200` complete; `AUR-225` active.
 - Implementation issues:
   - `AUR-194` / `RG-005: Run Empty Dry-Run Graph On Fixture` / `Done`
   - `AUR-195` / `RG-006: Implement Stage Cursor Invariants` / `Done`
@@ -15,8 +15,8 @@ Active execution artifact for this milestone. Linear remains the durable source 
   - `AUR-235` / `RG-046: Classify Change Risk And Size` / `Done`
   - `AUR-198` / `RG-009: Select Gate-Based Risk And Size Reviewers` / `Done`
   - `AUR-199` / `RG-010: Track Reviewer Run Status And Retries` / `Done`
-  - `AUR-200` / `RG-011: Run Deterministic Fake Reviewers` / `In Progress`
-  - `AUR-225` / `RG-036: Block Posting On Required Reviewer Failure`
+  - `AUR-200` / `RG-011: Run Deterministic Fake Reviewers` / `Done`
+  - `AUR-225` / `RG-036: Block Posting On Required Reviewer Failure` / `In Progress`
 - Gate issue:
   - `AUR-256` / `Complete PRD 0004: Graph Orchestration`
 
@@ -32,8 +32,8 @@ The product point is not to add live integrations. It is to demonstrate that Lan
 - Stage cursor behavior exists as local variables plus trace dictionaries. It needs explicit cursor helpers/state so `advance_or_finish_stage` is the sole cursor mutator.
 - Reviewer selection exists inside `runner.py` for always, path, diff pattern, label, conversation pattern, risk, and size triggers. It should be carved toward graph-owned routing with deterministic risk state instead of ad hoc fixture risk helpers.
 - `ReviewerRunKey`, `ReviewerRunStatus`, `RiskAssessment`, and `RiskThresholds` are modeled in `src/reviewgraph/models.py`, but reviewer run status and retry policy are not yet used by execution.
-- Fake reviewer behavior is represented as `raw_reviewer_outputs` embedded in PR fixtures. The milestone should introduce a fake reviewer adapter boundary that consumes `ReviewerContextPackage` and returns `ReviewerResult`/errors keyed by selected reviewers.
-- Required and optional reviewer failures are documented in PRD 0004 but not implemented as first-class fake reviewer outcomes.
+- Fake reviewer behavior now flows through a deterministic adapter boundary that consumes `ReviewerContextPackage`, returns `ReviewerResult`/errors keyed by selected reviewers, and records `reviewer_results` in dry-run JSON.
+- Required and optional reviewer failures are represented as first-class fake reviewer outcomes. `AUR-225` owns the remaining policy gap: required failures should fail closed without aborting local dry-run rendering, while optional failures remain non-terminal.
 - Dry-run writer reachability is already tested through the current runner and should remain default-safe through every slice.
 
 ## Execution Order
