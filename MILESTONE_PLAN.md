@@ -1,131 +1,121 @@
-# MILESTONE PLAN: PRD 0010 Agent Context And Adapter Boundaries
+# MILESTONE PLAN: PRD 0004 Graph Orchestration
 
 Active execution artifact for this milestone. Linear remains the durable source for issue status, milestone order, blockers, and handoff details; if this file conflicts with Linear, Linear wins. Re-fetch current Linear state before starting each issue.
 
 ## Linear Scope Snapshot
 
-- Milestone: `PRD 0010: Agent Context And Adapter Boundaries`
-- Milestone ID: `0dea2cdd-6433-41d8-b1a4-b91b07d3acc9`
-- Current status: `AUR-231` complete; `AUR-233` complete; `AUR-255` gate active.
+- Milestone: `PRD 0004: Graph Orchestration`
+- Milestone ID: `c8f7e842-fed0-477c-8877-e9dfbcaf27f4`
+- Current status: 0% complete in Linear at plan time.
 - Implementation issues:
-  - `AUR-231` / `RG-042: Define Reviewer Context Package`
-  - `AUR-233` / `RG-044: Add Prompt Injection Memory Harness`
+  - `AUR-194` / `RG-005: Run Empty Dry-Run Graph On Fixture`
+  - `AUR-195` / `RG-006: Implement Stage Cursor Invariants`
+  - `AUR-196` / `RG-007: Select Always-On Reviewers`
+  - `AUR-197` / `RG-008: Select Path Diff And Label Reviewers`
+  - `AUR-235` / `RG-046: Classify Change Risk And Size`
+  - `AUR-198` / `RG-009: Select Gate-Based Risk And Size Reviewers`
+  - `AUR-199` / `RG-010: Track Reviewer Run Status And Retries`
+  - `AUR-200` / `RG-011: Run Deterministic Fake Reviewers`
+  - `AUR-225` / `RG-036: Block Posting On Required Reviewer Failure`
 - Gate issue:
-  - `AUR-255` / `Complete PRD 0010: Agent Context And Adapter Boundaries`
-- Current issue statuses:
-  - `AUR-231`: `Done`
-  - `AUR-233`: `Done`
-  - `AUR-255`: `In Progress`
-- Known Linear note: `AUR-231` has a PRD 0003 gate comment explaining that the existing `src/reviewgraph/reviewer_context.py` is only the minimal context-budget stub from `AUR-211`. The fuller reviewer context package contract remains valid PRD 0010 work.
+  - `AUR-256` / `Complete PRD 0004: Graph Orchestration`
 
 ## Milestone Intent
 
-PRD 0010 makes reviewer agents explicit context boundaries. A reviewer should receive a scoped package of prompt inputs, bounded diff context, memory references, truncation state, selected-reviewer metadata, and capability policy. It should not receive GitHub transports, approval state, payload builders, finalization code, writer clients, or ambient process state.
+PRD 0004 turns the fixture tracer into explicit graph orchestration. The milestone should make staged reviewer introduction, stage cursor state, reviewer run status, deterministic risk/size routing, fake reviewer execution, reviewer failure policy, and dry-run side-effect bypass visible in graph-owned state and harnesses.
 
-The milestone also hardens the design point that PR conversation memory is shared data, not an instruction stream. Trusted actionable memory may help route reviewers when configured. Untrusted memory must remain passive in MVP: it cannot select reviewers, override prompts, satisfy evidence, influence verdicts, approve posting, or enter public payload text.
+The product point is not to add live integrations. It is to demonstrate that LangGraph-style orchestration owns routing and side-effect decisions while reviewer agents remain scoped prompt/context runners that return structured output.
 
 ## Current Code Snapshot
 
-- `src/reviewgraph/reviewer_context.py` now defines the post-`AUR-231` reviewer context package contract: review target, active stage, selected reviewer, changed files, trusted/passive memory references, truncation notices, omitted context, local notes, context budget, reviewer config metadata, read-only capability policy, trace metadata, prompt-input construction, and non-live provider request preview.
-- `src/reviewgraph/models.py` has `ReviewTarget`, `SelectedReviewer`, `MemoryReference`, `ContextBudget`, `ReviewerAgentConfig`, `ReviewerResult`, raw/classified reviewer contracts, and inert `future-*` tool metadata validation. Keep graph-owned decisions out of reviewer output.
-- `src/reviewgraph/config.py` validates optional `model`, inert `tools`, `context`, and `capabilities`. Tool names are recorded metadata only; they do not grant execution rights, live calls, GitHub access, repository access, or write capability.
-- `src/reviewgraph/memory.py` already computes trusted/passive/actionable memory from typed PR context and allowlists.
-- `src/reviewgraph/context_budget.py` already applies file, patch, memory, reviewer-count, and live-call budget decisions before reviewer execution and emits omitted-context markers/local notes.
-- `src/reviewgraph/runner.py` still executes fixture raw outputs directly after routing; reviewer adapters are not implemented yet. PRD 0010 should not build live adapter execution, but it should make the package that future fake/live adapters receive testable.
-- `tests/test_reviewer_context.py` and `tests/test_contract_boundaries.py` now carry the focused reviewer-context and adapter-boundary proof from `AUR-231`. `AUR-233` should add the missing named prompt-injection memory harness without redoing the AUR-231 contract.
+- `src/reviewgraph/runner.py` already runs fixture PRs through a deterministic dry-run path, but the orchestration is still a local Python loop rather than a dedicated graph/state boundary.
+- Stage cursor behavior exists as local variables plus trace dictionaries. It needs explicit cursor helpers/state so `advance_or_finish_stage` is the sole cursor mutator.
+- Reviewer selection exists inside `runner.py` for always, path, diff pattern, label, conversation pattern, risk, and size triggers. It should be carved toward graph-owned routing with deterministic risk state instead of ad hoc fixture risk helpers.
+- `ReviewerRunKey`, `ReviewerRunStatus`, `RiskAssessment`, and `RiskThresholds` are modeled in `src/reviewgraph/models.py`, but reviewer run status and retry policy are not yet used by execution.
+- Fake reviewer behavior is represented as `raw_reviewer_outputs` embedded in PR fixtures. The milestone should introduce a fake reviewer adapter boundary that consumes `ReviewerContextPackage` and returns `ReviewerResult`/errors keyed by selected reviewers.
+- Required and optional reviewer failures are documented in PRD 0004 but not implemented as first-class fake reviewer outcomes.
+- Dry-run writer reachability is already tested through the current runner and should remain default-safe through every slice.
 
 ## Execution Order
 
-1. `AUR-231` first: define the full reviewer context package contract and harness. This should include:
-   - review target
-   - active stage
-   - selected reviewer metadata
-   - reviewer config metadata: model, tools/tool policy, context policy, capabilities, required flag, and verdict power
-   - bounded diff context from the budgeted PR
-   - trusted actionable memory references
-   - passive memory references or explicit passive-memory exclusion metadata
-   - truncation notices and omitted-context markers
-   - capability policy that defaults to `diff_context` and disallows GitHub writes
-   - trace data showing included memory IDs, trust labels, resolved status, passive/actionable state, and truncation status
-   - prompt-input structure with separate instruction fields and data fields; trusted/actionable memory bodies may appear only in labeled data fields, and passive/untrusted memory bodies remain metadata-only in MVP
-   - golden prompt-input tests using `untrusted-comment-injection` to prove prompt-like untrusted PR text remains out of instructions and prompt data
-   - non-live provider request preview built from the context package, with minimized fields, redaction status, provider/model metadata, raw-provider submission disabled by default, and no network/client dependency
-   - provider-bound golden tests proving secret-like fixture text is redacted and omitted/passive context remains governed before any later live LLM adapter can submit it
-   - adapter-boundary tests proving reviewer context/prompt modules do not import or receive GitHub writer, approval, finalization, payload builder, live LLM, or transport clients
-   - field/signature tests proving `ReviewerContextPackage`, prompt-input models, and builders cannot accept writer/client/approval/payload/LLM objects or ambient side-effect handles
-2. `AUR-233` second: add the prompt-injection memory harness that proves untrusted PR comments remain shared data, not instructions. This should include:
-   - a focused `tests/test_prompt_injection_memory.py` harness using the `untrusted-comment-injection` fixture
-   - coverage proving untrusted comments cannot satisfy `conversation_patterns`
-   - coverage proving untrusted prompt-like text cannot override reviewer prompt instructions or capability policy
-   - coverage proving untrusted memory does not appear in reviewer instruction fields or satisfy reviewer evidence requirements
-   - coverage proving trusted actionable memory can still be cited as reviewer-visible data without bypassing quality classification
-   - harness output assertions showing included memory IDs, trust labels, passive/actionable state, roles, and truncation status through `ReviewerContextPackage.trace` and prompt-input data
-   - no verdict, approval, payload-destination, public-payload, live LLM, live GitHub, or general web-security scanning scope
-3. `AUR-255` third: close the milestone only after `AUR-231` and `AUR-233` are Done, focused and full validation pass, docs reflect the durable context boundary, a fresh milestone inventory proves no remaining PRD 0010 implementation issues are active, and fresh subagent review finds no material gaps.
+1. `AUR-194` first: establish the explicit empty dry-run graph path from fixture input to empty output. This can wrap the current runner behavior where useful, but the acceptance proof should be graph/state oriented: fixture target, `run_mode=dry_run`, `post_enabled=false`, empty review outputs, and writer branch unreachable.
+2. `AUR-195` second: implement stage cursor invariants. Create the minimal state/cursor module before broad routing refactors so every later stage uses one cursor contract.
+3. `AUR-196` third: select always-on reviewers for the active stage and persist selected reviewer state with trigger reasons.
+4. `AUR-197` fourth: add path, diff pattern, and label selectors on top of the active-stage routing contract.
+5. `AUR-235` fifth: extract deterministic risk and size classification before risk gates use it. Risk/size facts should be recorded separately from reviewer selection reasons.
+6. `AUR-198` sixth: implement risk and size gates using the `AUR-235` risk assessment. Gate-only reviewers should become selectable when their gates pass.
+7. `AUR-199` seventh: track reviewer run keys, statuses, idempotence, and retry exhaustion. This should happen before fake reviewer execution so execution can record selected/running/completed/failed/skipped instead of treating raw fixture output as implicit success.
+8. `AUR-200` eighth: add deterministic fake reviewer execution through the scoped reviewer context package. Cover raw findings, local notes, clarification requests, suggested replies, non-findings, malformed output, required failures, and optional failures without live LLM calls.
+9. `AUR-225` ninth: make required reviewer failure fail closed while optional reviewer failures remain non-terminal. Preserve local dry-run output and ensure posting-plan construction treats required failure as non-writable state.
+10. `AUR-256` last: close the milestone only after all implementation issues are `Done`, focused/full validation passes, docs reflect the orchestration contracts, Linear evidence is complete, and fresh subagent review finds no material gaps.
 
 ## Issue Workflow
 
 For each issue:
 
-1. Re-fetch the issue, its comments, and current related milestone state from Linear.
+1. Re-fetch the issue, comments, blockers, and current milestone state from Linear.
 2. Move the issue to `In Progress`.
 3. Replace `ISSUE_PLAN.md` with a narrow plan for that issue and commit it before implementation.
 4. Use fresh subagents to review the issue plan before code changes.
 5. Implement the smallest contract/harness slice that satisfies the issue and does not implement later milestone scope.
-6. Run the issue harness named by Linear, plus any broader tests that cover touched shared behavior.
+6. Run the issue harness named by Linear plus regression tests covering touched shared behavior.
 7. Use fresh subagents for code/docs review until no material findings remain.
 8. Commit the completed issue, and commit separately after every review-fix batch.
-9. Move the issue to `In Review`, add a Linear evidence comment with commands and artifact coverage, then move it to `Done` only when the issue acceptance criteria are mapped to concrete evidence.
+9. Move the issue to `In Review`, add a Linear evidence comment with commands and artifact coverage, then move it to `Done` only when acceptance criteria are mapped to concrete evidence.
 
 ## Harness Strategy
 
-- `AUR-231` focused harness: `python -m pytest tests/test_reviewer_context.py tests/test_config.py tests/test_contract_boundaries.py tests/test_cli.py`
-- `AUR-233` focused harness: `python -m pytest tests/test_prompt_injection_memory.py tests/test_reviewer_context.py tests/test_memory.py tests/test_cli.py`
-- Boundary regression harness: static AST tests proving context, prompt, and future reviewer-adapter boundary modules do not import forbidden side-effect modules.
-- Boundary shape harness: tests inspect dataclass fields and builder signatures so reviewer context and prompt-input contracts cannot accept writer/client/approval/payload/LLM objects or side-effect handles.
-- Prompt-input golden harness: tests prove system/developer instruction fields are separate from context data, trusted/actionable memory and passive memory are labeled, and untrusted prompt-like bodies from `untrusted-comment-injection` never appear as instructions.
-- Provider-bound preview harness: non-live tests build the would-be provider request from `ReviewerContextPackage`, assert context minimization, redaction status, provider/model trace metadata, no raw-provider opt-in by default, no network/client dependency, and no secret-like raw fixture content.
-- Trusted-memory routing harness: include the existing conversation-pattern tests, or move them into a focused routing test, so `conversation_patterns` are proven to match only trusted actionable memory as part of `AUR-231` evidence.
-- Tracer regression harness: `python -m pytest tests/test_context_budget.py tests/test_memory.py tests/test_tracer_fixture_run.py tests/test_render.py`
-- Full validation after shared contract changes:
-  - `python -m pytest`
+- `AUR-194` focused harness: `python -m pytest tests/test_graph_empty.py`
+- `AUR-195` focused harness: `python -m pytest tests/test_stage_cursor.py`
+- `AUR-196` focused harness: `python -m pytest tests/test_routing.py`
+- `AUR-197` focused harness: `python -m pytest tests/test_routing.py`
+- `AUR-235` focused harness: `python -m pytest tests/test_risk.py`
+- `AUR-198` focused harness: `python -m pytest tests/test_routing_risk.py`
+- `AUR-199` focused harness: `python -m pytest tests/test_reviewer_runs.py`
+- `AUR-200` focused harness: `python -m pytest tests/test_reviewers_fake.py`
+- `AUR-225` focused harness: `python -m pytest tests/test_required_reviewer_failure.py`
+- Tracer regression harness:
+  - `python -m pytest tests/test_tracer_fixture_run.py tests/test_cli.py tests/test_render.py`
+- Boundary regression harness:
+  - `python -m pytest tests/test_reviewer_context.py tests/test_contract_boundaries.py tests/test_context_budget.py tests/test_prompt_injection_memory.py`
+- Full validation after shared graph changes:
+  - `python -m pytest -q`
   - `python -m py_compile src/reviewgraph/*.py`
   - `python scripts/check_docs.py`
   - `git diff --check`
-- Gate validation for `AUR-255`: re-run the focused and full validation, create a fresh Linear-derived PRD 0010 backlog export, run `python scripts/check_docs.py --backlog-export <tmp-file>`, record the export hash in Linear evidence, audit Linear status/comments/blockers immediately before closing, remove the temporary export, and confirm no `.ws/` or temporary export files remain.
 
 ## Contract Guardrails
 
-- Preserve dry-run by default. No PRD 0010 work should introduce live GitHub reads, live LLM calls, approval prompts, or writer reachability.
-- A reviewer agent is a configured prompt/context boundary that returns structured output. It does not mutate graph state and does not create GitHub payloads.
-- Reviewer adapters receive only `ReviewerContextPackage` and return `ReviewerResult`.
-- Reviewer context and prompt modules must not import GitHub transports, writer clients, approval/finalization code, or posting payload builders.
-- Capabilities default to `diff_context`; MVP reviewer capabilities remain `none` and `diff_context`. GitHub writes are never a reviewer capability.
-- `tools` are inert metadata in this milestone. They may be validated and recorded for future policy, but they must not grant live tool execution, repository reads, GitHub reads, GitHub writes, process access, or provider calls.
-- `conversation_patterns` may match only trusted actionable memory. Untrusted memory cannot route reviewers or appear as instruction text.
-- Passive memory is represented as explicitly labeled metadata in reviewer prompt input; passive/untrusted bodies must not enter reviewer instruction fields, reviewer prompt data, verdict/evidence paths, approval input, or public payload text in MVP.
-- Context budget decisions remain graph-owned. Reviewers receive retained context plus explicit truncation/omitted-context markers, not silent omissions.
-- Redaction status and context minimization must be proven in a non-live provider request preview before any context package can be used for provider-bound requests in later milestones.
+- Dry-run remains the default. No PRD 0004 work should introduce live GitHub reads, live LLM calls, approval prompts, or writer reachability.
+- Prompts can reason, but graph/state modules decide stage transitions, reviewer selection, retries, clarification stops, posting eligibility, and side-effect reachability.
+- `advance_or_finish_stage` is the only code path that mutates `active_stage`, `suspended_stage`, `stage_queue`, or `completed_stages`.
+- `clarification_review` is transient and never belongs in the normal stage queue.
+- Reviewer selection must record reviewer name, active stage, and trigger reasons in state.
+- Risk and size classification must be deterministic, fixture-testable, and recorded as graph-owned state before risk gates select reviewers.
+- `ReviewerRunKey` must bind target hash, config hash, stage, reviewer, attempt, retry metadata, and clarification ID. A selected key is not completed until execution records completion.
+- Required reviewer failures set `post_enabled=false`; optional reviewer failures record errors but do not by themselves stop local dry-run output.
+- Fake reviewers receive only `ReviewerContextPackage`; no fake/live reviewer gets GitHub transports, approval state, finalization code, payload builders, writer clients, or ambient tool callables.
+- Raw reviewer output remains structured input to quality classification. Reviewer output cannot self-declare public destination, postability, approval, blocking verdict, or GitHub review event.
 
 ## Documentation Work
 
 Update the narrowest durable docs alongside behavior:
 
-- Reviewer context package fields and adapter-boundary rules belong in `docs/architecture/state-graph.md`, `docs/architecture/reviewer-config.md`, `docs/prds/0010-agent-context-and-adapter-boundaries.md`, and `docs/harnesses/harness-engineering.md`.
-- If the milestone settles a durable tradeoff around passive memory inclusion, tool metadata validation, or prompt-input shape, add or update an ADR in `docs/decisions/`.
-- Keep Linear as the executable backlog. Do not copy the issue tree into repository docs beyond this active execution plan.
+- Stage cursor, reviewer run status, clarification resume, and graph routing contracts belong in `docs/architecture/state-graph.md`.
+- Orchestration module boundaries belong in `docs/architecture/overview.md`.
+- Risk/size classification and routing proof belong in `docs/harnesses/harness-engineering.md` and, if durable enough, `docs/architecture/reviewer-config.md`.
+- Fake reviewer and graph tracer behavior belongs in `docs/plans/implementation-plan.md` only if sequencing changes materially.
+- Keep Linear as the executable backlog. Do not copy the issue tree into durable product docs beyond this active execution plan.
 
 ## Milestone Completion Criteria
 
-`AUR-255` can close only when:
+`AUR-256` can close only when:
 
-- `AUR-231` is `Done` in Linear with an evidence comment.
-- `AUR-233` is `Done` in Linear with an evidence comment.
-- A fresh Linear milestone inventory proves every active PRD 0010 non-gate issue is complete and every active blocker is resolved or has an explicit stale/canceled/not-applicable rationale in Linear.
-- A fresh Linear-derived backlog export for PRD 0010 passes `python scripts/check_docs.py --backlog-export <tmp-file>`; the temporary export is removed after validation and its hash is recorded in the `AUR-255` evidence comment.
-- `ReviewerContextPackage` has a focused contract and harness proving every `AUR-231` acceptance criterion.
-- Reviewer config metadata, inert tool metadata, capability policy, prompt-input instruction/data separation, non-live provider-bound minimization/redaction preview, passive/trusted memory separation, truncation traces, and adapter-boundary behavior are represented in code and tests.
-- Focused validation, tracer regression validation, full validation, docs check, py-compile, and diff check pass.
-- Durable docs have been audited and refactored for the agent context boundary an implementation agent needs when dropping into the repo.
-- Fresh subagent review of code, tests, docs, Linear issue evidence, and milestone gate plan reports no material issues.
+- Every implementation issue listed in this plan is `Done` in Linear with an evidence comment.
+- A fresh Linear milestone inventory proves every active PRD 0004 blocker is complete or has an explicit stale/canceled/not-applicable rationale in Linear.
+- Focused validation for all PRD 0004 harness families passes.
+- Tracer, boundary, full validation, docs check, py-compile, and diff check pass.
+- Durable docs explain the final graph orchestration design an implementation agent needs when dropping into the repo.
+- Fresh subagent review of code, tests, docs, Linear evidence, and the milestone gate reports no material issues.
 - No unapproved live API, live LLM, approval, or GitHub writer behavior has been introduced.
+- No `.ws/` or temporary export artifacts remain.

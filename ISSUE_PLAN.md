@@ -1,111 +1,67 @@
-# ISSUE PLAN: AUR-255 Complete PRD 0010 Agent Context And Adapter Boundaries
+# ISSUE PLAN: AUR-194 Run Empty Dry-Run Graph On Fixture
 
-Active issue plan for `AUR-255` / `Complete PRD 0010: Agent Context And Adapter Boundaries`.
+Active issue plan for `AUR-194` / `RG-005: Run Empty Dry-Run Graph On Fixture`.
 
 ## Linear Snapshot
 
-- Issue: `AUR-255`
+- Issue: `AUR-194`
 - Status at plan time: `In Progress`
-- Milestone: `PRD 0010: Agent Context And Adapter Boundaries`
-- Milestone ID: `0dea2cdd-6433-41d8-b1a4-b91b07d3acc9`
-- Gate condition: close only after all implementation issues in this PRD milestone are complete.
-- Current milestone inventory from Linear project issue list:
-  - `AUR-231` / `RG-042: Define Reviewer Context Package` / `Done` / completed `2026-05-06T05:18:07.212Z`
-  - `AUR-233` / `RG-044: Add Prompt Injection Memory Harness` / `Done` / completed `2026-05-06T15:19:01.862Z`
-  - `AUR-255` / `Complete PRD 0010: Agent Context And Adapter Boundaries` / `In Progress`
-- `AUR-231` evidence comment: `221f0721-6960-45ce-99dd-b6cb62811eda`
-- `AUR-233` evidence comment: `a299d649-6afe-4940-973d-c3d9335c64a2`
-- `.ws/` status at plan time: absent.
+- Milestone: `PRD 0004: Graph Orchestration`
+- Blocks: `AUR-195`, `AUR-256`
+- Blocked by in Linear: `AUR-255`, `AUR-192`, `AUR-193`
+- Current repo reality: those prerequisites are represented in committed fixture parsing, target modeling, conversation memory, and the completed PRD 0010 gate.
 
 ## Goal
 
-Close PRD 0010 only after proving the milestone is actually complete in Linear, code, tests, and docs.
+Add the smallest graph-facing fixture dry-run initialization slice. This issue should prove that a fixture PR can become explicit graph state with `run_mode=dry_run`, `post_enabled=false`, review target metadata, empty review output, and no writer reachability before reviewer selection or reviewer execution exists in the graph path.
 
-This gate should not add new product behavior. It should produce audit artifacts, durable documentation cleanup, validation evidence, and a Linear completion comment that maps every PRD 0010 requirement to concrete committed evidence.
+This is a graph initialization slice, not the current full fixture reviewer dry run. The existing `run_fixture_dry_run` tracer must keep working unchanged.
 
 ## Acceptance Mapping
 
-- All PRD 0010 implementation issues are complete in Linear.
-- Every implementation issue has an evidence comment mapping acceptance criteria to code/tests/docs.
-- No active non-gate PRD 0010 issue remains in the milestone inventory.
-- The repo contains the reviewer context package contract and harness from `AUR-231`.
-- The repo contains the prompt-injection memory harness and passive-memory body exclusion from `AUR-233`.
-- Durable docs explain the final PRD 0010 design: reviewer context package, adapter boundaries, inert tool metadata, prompt input instruction/data separation, passive memory metadata-only policy, evidence provenance, provider preview, and harness expectations.
-- Focused validation, full validation, docs check, py-compile, and diff check pass.
-- Fresh subagent review finds no material gate, docs, test, or implementation gaps.
-- Temporary exports or workspace artifacts are removed before closure.
+- Fixture PR can run through graph initialization:
+  - Add a graph initializer that loads a fixture PR, builds conversation memory, resolves the review target, applies default context budget, and emits graph state/output without selecting or running reviewers.
+- `run_mode=dry_run` and `post_enabled=false` are explicit in state:
+  - Graph state/result exposes both fields directly.
+- Graph emits review target metadata and empty review output:
+  - Test target fields and empty findings/local notes/suggested replies/suppressed/clarifications/selected reviewers.
+- Writer branch is unreachable in dry-run mode:
+  - Test with a raising writer sentinel and assert zero calls.
 
 ## Implementation Plan
 
-1. Re-read current Linear state for `AUR-231`, `AUR-233`, `AUR-255`, their comments, and the PRD 0010 milestone inventory.
-2. Update `MILESTONE_PLAN.md` to reflect `AUR-233` Done and `AUR-255` active.
-3. Commit this `ISSUE_PLAN.md` and milestone-plan refresh before executing the gate.
-4. Use fresh subagents to review this gate plan before changing docs or closing Linear.
-5. Build a temporary Linear-derived PRD 0010 backlog export from the current issue inventory and comments. Keep it outside durable docs or remove it before commit if it is only a validation artifact.
-6. Run `python scripts/check_docs.py --backlog-export <tmp-file>` if the script supports the export, otherwise record the unsupported shape explicitly and run `python scripts/check_docs.py`.
-7. Audit current docs against what an implementation agent needs when dropping into the repo:
-   - `README.md`
-   - `docs/product/vision.md`
-   - `docs/product/rules.md`
-   - `docs/architecture/overview.md`
-   - `docs/architecture/state-graph.md`
-   - `docs/architecture/reviewer-config.md`
-   - `docs/architecture/findings-contract.md`
-   - `docs/harnesses/harness-engineering.md`
-   - `docs/decisions/0005-inert-reviewer-tool-metadata.md`
-   - `docs/prds/0010-agent-context-and-adapter-boundaries.md`
-   - `docs/plans/implementation-plan.md`
-8. Refactor only durable docs that are stale, misleading, or insufficient for PRD 0010. Prefer progressive disclosure: README/product summary first, architecture contract next, harness detail deeper, ADRs for durable tradeoffs.
-9. Run focused PRD 0010 validation:
-   - `python -m pytest tests/test_reviewer_context.py tests/test_config.py tests/test_contract_boundaries.py tests/test_prompt_injection_memory.py tests/test_memory.py tests/test_cli.py -q`
-10. Run boundary/regression validation:
-    - `python -m pytest tests/test_context_budget.py tests/test_tracer_fixture_run.py tests/test_render.py tests/test_redaction.py -q`
-11. Run full validation:
-    - `python -m pytest -q`
-    - `python -m py_compile src/reviewgraph/*.py`
-    - `python scripts/check_docs.py`
-    - `git diff --check`
-12. Use fresh subagents for gate review of docs, Linear evidence, and validation. Iterate until no material findings remain.
-13. Commit docs/gate changes after each review-fix batch.
-14. Move `AUR-255` to `In Review`, add a Linear evidence comment with milestone inventory, validation output, docs changes, export hash if applicable, and subagent review result.
-15. Move `AUR-255` to `Done` only after final Linear fetch confirms `AUR-231` and `AUR-233` are still Done and no active non-gate PRD 0010 issue remains.
+1. Add `src/reviewgraph/graph.py` with a narrow empty dry-run initialization function.
+2. Keep this slice independent from reviewer selection and raw fixture reviewer output. It may use existing fixture, memory, target, budget, render/posting models where they are already stable.
+3. Avoid changing `ReviewConfig` validation. Existing user configs should still require at least one reviewer; this issue proves an empty graph path, not a production empty reviewer config format.
+4. Add `tests/test_graph_empty.py` focused on the acceptance criteria.
+5. Run the focused harness and the existing tracer/CLI regressions to prove the new graph slice does not disturb the current runnable behavior.
+6. Use subagent review before implementation and again after code changes.
+7. Commit the plan before implementation, then commit the implementation separately.
 
 ## Out Of Scope
 
-- No new reviewer adapter execution.
-- No live LLM calls.
-- No live GitHub reads or writes.
-- No approval, finalization, writer, or payload-destination implementation.
-- No `.ws/` recreation.
-- No broad rewrite of unrelated PRD milestones.
+- No reviewer selection.
+- No reviewer run status.
+- No fake reviewer adapter.
+- No quality classification.
+- No posting plan construction beyond proving no writable branch.
+- No live GitHub, live LLM, approval, finalization, or writer behavior.
+- No change to CLI behavior in this issue.
 
 ## Validation Plan
 
 ```bash
-python -m pytest tests/test_reviewer_context.py tests/test_config.py tests/test_contract_boundaries.py tests/test_prompt_injection_memory.py tests/test_memory.py tests/test_cli.py -q
-python -m pytest tests/test_context_budget.py tests/test_tracer_fixture_run.py tests/test_render.py tests/test_redaction.py -q
-python -m pytest -q
-python -m py_compile src/reviewgraph/*.py
+python -m pytest tests/test_graph_empty.py
+python -m pytest tests/test_tracer_fixture_run.py tests/test_cli.py -q
 python scripts/check_docs.py
 git diff --check
 ```
 
-If a temporary Linear export is created:
-
-```bash
-python scripts/check_docs.py --backlog-export <tmp-file>
-sha256sum <tmp-file> || shasum -a 256 <tmp-file>
-rm <tmp-file>
-```
-
 ## Completion Evidence To Collect
 
-- Current Linear milestone inventory.
-- `AUR-231` and `AUR-233` evidence comment IDs.
-- Focused validation output.
-- Boundary/regression validation output.
-- Full validation output.
-- Docs-check output, including backlog-export result if supported.
-- Subagent gate review result with no material findings.
-- Git status proving no `.ws/` or temporary export remains.
-- Commit SHA(s) for gate docs/refactor changes.
+- Focused harness output.
+- Regression harness output.
+- Confirmation that the existing full fixture dry-run still works.
+- Subagent review result with no material findings.
+- Commit SHA for the implementation.
+- Linear evidence comment mapping each acceptance criterion to code/tests.
