@@ -125,10 +125,11 @@ import json
 import sys
 import reviewgraph.models
 import reviewgraph.config
+import reviewgraph.reviewer_context
 forbidden = sorted(
     name for name in sys.modules
     if name.startswith(('reviewgraph.github', 'reviewgraph.llm', 'reviewgraph.writer', 'reviewgraph.approval', 'reviewgraph.finalization'))
-    or name.split('.', 1)[0] in {'github', 'langgraph', 'llm', 'openai', 'requests'}
+    or name.split('.', 1)[0] in {'github', 'httpx', 'langgraph', 'llm', 'openai', 'requests', 'socket', 'urllib'}
 )
 print(json.dumps(forbidden))
 """
