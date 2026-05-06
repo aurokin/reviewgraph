@@ -6,12 +6,12 @@ Active execution artifact for this milestone. Linear remains the durable source 
 
 - Milestone: `PRD 0005: Review Quality`
 - Milestone ID: `7c623166-927e-43d7-a14d-41af005a2587`
-- Current execution status: `AUR-201` and `AUR-227` are `Done`; `AUR-202` is `In Progress`; remaining implementation issues are pending in Linear.
+- Current execution status: `AUR-201`, `AUR-227`, and `AUR-202` are `Done`; `AUR-204` is `In Progress`; remaining implementation issues are pending in Linear.
 - Implementation issues:
   - `AUR-201` / `RG-012: Normalize Reviewer Output` / `Done`
-  - `AUR-202` / `RG-013: Classify Review Quality` / `In Progress`
+  - `AUR-202` / `RG-013: Classify Review Quality` / `Done`
   - `AUR-203` / `RG-014: Classify Testing Feedback Quality` / `Backlog`
-  - `AUR-204` / `RG-015: Validate Diff Anchors For Inline Candidates` / `Backlog`
+  - `AUR-204` / `RG-015: Validate Diff Anchors For Inline Candidates` / `In Progress`
   - `AUR-205` / `RG-016: Stop For Clarification Requests` / `Backlog`
   - `AUR-206` / `RG-017: Resume From Clarification Answers` / `Backlog`
   - `AUR-207` / `RG-018: Compute Local Verdict` / `Backlog`
@@ -29,18 +29,19 @@ The product point is restraint. ReviewGraph should prefer no finding over a plau
 ## Current Code Snapshot
 
 - `src/reviewgraph/models.py` already defines `RawReviewerFinding`, `ClassifiedFinding`, `DiffAnchor`, `LocalNote`, `SuggestedReply`, `SuppressedReviewerOutput`, `ClarificationRequest`, `ReviewVerdict`, and graph-owned-field rejection.
-- `src/reviewgraph/reviewers.py` now normalizes deterministic fake reviewer items into typed `ReviewerResult` fields. `AUR-201` made typed normalized artifacts the policy input and records reviewer attempts to set graph-owned fields as structured suppressed output/normalization errors instead of silently stripping them. `AUR-202` should classify those typed artifacts and must not re-open raw-output normalization.
-- `src/reviewgraph/runner.py` currently contains legacy in-run normalization/classification helpers such as `_classify_reviewer_output`, `_is_postable_finding`, `_local_verdict`, evidence-provenance checks, and optional/required failure wiring. General and testing quality rules are currently interleaved here.
+- `src/reviewgraph/reviewers.py` now normalizes deterministic fake reviewer items into typed `ReviewerResult` fields. `AUR-201` made typed normalized artifacts the policy input and records reviewer attempts to set graph-owned fields as structured suppressed output/normalization errors instead of silently stripping them.
+- `src/reviewgraph/quality.py` now owns general typed review-quality classification from normalized `ReviewerResult` artifacts into postable findings, local notes, clarification requests, suggested replies, and suppressed output. `AUR-202` also added neutral hashing and shared passive-memory provenance helpers.
+- `src/reviewgraph/runner.py` delegates normalized reviewer result classification to `classify_review_quality`; `_local_verdict` and optional/required failure wiring still live in runner pending later issues.
 - `src/reviewgraph/posting.py` already keeps suggested replies/local notes/suppressed output local-only, rejects public request-changes wording in candidate payloads, and validates inline candidates when explicitly requested.
-- `DiffAnchor` exists in models and posting validation, but runner-created findings do not yet attach anchors and the graph does not yet produce inline candidates.
+- `DiffAnchor` exists in models and posting validation, but runner-created findings do not yet attach anchors and the graph does not yet produce dry-run inline candidates.
 - Existing CLI/tracer tests cover many quality behaviors in broad integration form. PRD 0005 should add focused harnesses as each issue lands and extract policy into narrow modules without broad behavior drift.
 
 ## Execution Order
 
 1. `AUR-201` first: extract reviewer-output normalization into a focused contract. Valid reviewer output should become typed raw findings, local notes, clarification requests, suggested replies, and suppressible non-findings. Malformed raw strings or malformed mappings must flow to the explicit repair/error policy rather than being silently coerced. Graph-owned fields must not be stripped silently; they should be preserved as rejection/suppression evidence for policy.
 2. `AUR-227` second: add the deterministic fake repair/error path for malformed reviewer JSON. This should happen before broader quality classification so malformed inputs have one clear lifecycle: repair once, normalize on success, record required/optional failure on exhaustion.
-3. `AUR-202` third: extract and harden the general quality classifier. Linear marks `AUR-204`, `AUR-203`, `AUR-205`, `AUR-226`, and `AUR-207` as blocked by `AUR-202`, so this issue moves ahead of diff anchors even though the original local ordering placed `AUR-204` first. It should ignore reviewer self-declared postability/blocking, require changed-code evidence, safe evidence provenance, a validated changed-code location when available, an actionable scenario, concise/matter-of-fact comment shape, redaction-safe rendering/posting behavior, graph-owned priority/fingerprint/blocking decisions, and logic-review rules. Generic/speculative/pre-existing/locationless output should be suppressed or downgraded.
-4. `AUR-204` fourth: model and validate `DiffAnchor` for dry-run inline candidates, and define the local-only path for findings that cannot be precisely anchored. `AUR-202` keeps the existing changed-line fixture validation for top-level postable findings until this diff-anchor layer exists. Keep live inline posting out of scope.
+3. `AUR-202` third: extract and harden the general quality classifier. Linear marks `AUR-204`, `AUR-203`, `AUR-205`, `AUR-226`, and `AUR-207` as blocked by `AUR-202`, so this issue moved ahead of diff anchors even though the original local ordering placed `AUR-204` first. It ignores reviewer self-declared postability/blocking, requires changed-code evidence, safe evidence provenance, a changed-code location, an actionable scenario, concise/matter-of-fact public text, graph-owned priority/fingerprint/blocking decisions, and logic-review rules. Generic/speculative/pre-existing/locationless output is suppressed.
+4. `AUR-204` fourth: model and validate `DiffAnchor` for dry-run inline candidates, and define the local-only path for findings that cannot be precisely anchored. Build on AUR-202's classifier; do not re-open raw normalization, general quality heuristics, ranking, approval, or live inline posting.
 5. `AUR-203` fifth: layer testing-reviewer quality rules on the extracted classifier. Testing output is postable only with changed behavior, a concrete regression scenario, and identifiable missing coverage; generic "add tests" remains local-only or suppressed.
 6. `AUR-205` sixth: make clarification-stop behavior a focused graph contract. Pending blocking clarification requests set `post_enabled=false`, render the question and why it matters, and prevent the ambiguous issue from producing a local blocking verdict.
 7. `AUR-206` seventh: implement answered clarification resume. `ingest_clarification_answer` records answers without mutating cursor fields; `advance_or_finish_stage` activates transient `clarification_review`; only affected reviewers rerun.
