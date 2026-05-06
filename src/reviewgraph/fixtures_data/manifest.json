@@ -1,4 +1,216 @@
 {
+  "corpus_scenarios": [
+    {
+      "id": "frontend-state-change",
+      "behavior": "UI state change that should select frontend and logic reviewers without needing live services.",
+      "consumed_by": ["AUR-192", "AUR-235"],
+      "fixture_shape": {
+        "comments": "optional trusted top-level PR comments describing expected UI behavior",
+        "review_comments": "optional inline review comments on changed UI state lines",
+        "reviews": "optional prior review summaries",
+        "thread_state": "resolved/unresolved/unknown review-thread state for UI behavior discussion",
+        "labels": "frontend label or equivalent fixture metadata",
+        "changed_files": "frontend component and state-management files",
+        "patches": "patch snippets showing state transitions and rendered output impact",
+        "base_sha": "base commit SHA for stable ReviewTarget hashing",
+        "head_sha": "head commit SHA for stable ReviewTarget hashing",
+        "merge_base_sha": "merge-base SHA when diff basis is merge_base",
+        "diff_basis": "merge_base for fixture replay unless a scenario needs head-only comparison"
+      },
+      "requires_live_github": false,
+      "requires_live_llm": false,
+      "schema_valid_fixture_deferred_to": "AUR-192"
+    },
+    {
+      "id": "security-sensitive-change",
+      "behavior": "Auth or secret-adjacent change that should trigger specialized security review and redaction harnesses.",
+      "consumed_by": ["AUR-192", "AUR-233", "AUR-237"],
+      "fixture_shape": {
+        "comments": "trusted maintainer comments plus optional untrusted user prompt-injection content",
+        "review_comments": "inline comments around auth, token, or permission changes",
+        "reviews": "prior review state for security-sensitive files",
+        "thread_state": "resolved/unresolved/unknown thread state for security concerns",
+        "labels": "security or backend labels",
+        "changed_files": "auth, token, permission, or credential-handling files",
+        "patches": "patch snippets with security-sensitive branches and redactable strings",
+        "base_sha": "base commit SHA for stable ReviewTarget hashing",
+        "head_sha": "head commit SHA for stable ReviewTarget hashing",
+        "merge_base_sha": "merge-base SHA when diff basis is merge_base",
+        "diff_basis": "merge_base"
+      },
+      "requires_live_github": false,
+      "requires_live_llm": false,
+      "schema_valid_fixture_deferred_to": "AUR-192"
+    },
+    {
+      "id": "docs-only-change",
+      "behavior": "Documentation-only change that should stay low risk and avoid unnecessary specialized reviewers.",
+      "consumed_by": ["AUR-192", "AUR-235"],
+      "fixture_shape": {
+        "comments": "optional trusted documentation intent comments",
+        "review_comments": "optional inline docs comments",
+        "reviews": "optional prior review summary",
+        "thread_state": "resolved/unresolved/unknown thread state for documentation comments",
+        "labels": "docs label or equivalent fixture metadata",
+        "changed_files": "markdown or documentation-only files",
+        "patches": "patch snippets with prose-only changes",
+        "base_sha": "base commit SHA for stable ReviewTarget hashing",
+        "head_sha": "head commit SHA for stable ReviewTarget hashing",
+        "merge_base_sha": "merge-base SHA or null when not applicable",
+        "diff_basis": "merge_base"
+      },
+      "requires_live_github": false,
+      "requires_live_llm": false,
+      "schema_valid_fixture_deferred_to": "AUR-192"
+    },
+    {
+      "id": "mixed-risk-change",
+      "behavior": "Mixed docs, frontend, and backend change that should exercise explainable risk classification.",
+      "consumed_by": ["AUR-192", "AUR-235"],
+      "fixture_shape": {
+        "comments": "trusted PR comments explaining multi-surface intent",
+        "review_comments": "inline comments across multiple changed surfaces",
+        "reviews": "prior review summaries across surfaces",
+        "thread_state": "resolved/unresolved/unknown thread state for each surface",
+        "labels": "backend, frontend, or risk labels",
+        "changed_files": "multiple app surfaces and documentation files",
+        "patches": "patch snippets across low and high risk surfaces",
+        "base_sha": "base commit SHA for stable ReviewTarget hashing",
+        "head_sha": "head commit SHA for stable ReviewTarget hashing",
+        "merge_base_sha": "merge-base SHA when diff basis is merge_base",
+        "diff_basis": "merge_base"
+      },
+      "requires_live_github": false,
+      "requires_live_llm": false,
+      "schema_valid_fixture_deferred_to": "AUR-192"
+    },
+    {
+      "id": "ambiguous-logic-change",
+      "behavior": "Ambiguous product-logic change that should produce a clarification request instead of an unsupported verdict.",
+      "consumed_by": ["AUR-192", "AUR-211"],
+      "fixture_shape": {
+        "comments": "trusted comments with ambiguous product intent",
+        "review_comments": "inline comments on behavior-changing code",
+        "reviews": "prior reviews that do not resolve product intent",
+        "thread_state": "unresolved or unknown thread state for ambiguous logic",
+        "labels": "logic or product labels when present",
+        "changed_files": "business-logic files",
+        "patches": "patch snippets showing behavior changes without enough intent",
+        "base_sha": "base commit SHA for stable ReviewTarget hashing",
+        "head_sha": "head commit SHA for stable ReviewTarget hashing",
+        "merge_base_sha": "merge-base SHA when diff basis is merge_base",
+        "diff_basis": "merge_base"
+      },
+      "requires_live_github": false,
+      "requires_live_llm": false,
+      "schema_valid_fixture_deferred_to": "AUR-192"
+    },
+    {
+      "id": "breaking-api-change",
+      "behavior": "Public API contract change that should trigger high-confidence evidence requirements before request-changes output.",
+      "consumed_by": ["AUR-192", "AUR-235"],
+      "fixture_shape": {
+        "comments": "trusted maintainer comments about API migration or compatibility",
+        "review_comments": "inline comments on removed or changed API behavior",
+        "reviews": "prior review summaries about compatibility",
+        "thread_state": "resolved/unresolved/unknown compatibility threads",
+        "labels": "api, backend, or breaking-change labels",
+        "changed_files": "public API handlers, clients, schemas, or docs",
+        "patches": "patch snippets showing removed fields, changed status codes, or compatibility risk",
+        "base_sha": "base commit SHA for stable ReviewTarget hashing",
+        "head_sha": "head commit SHA for stable ReviewTarget hashing",
+        "merge_base_sha": "merge-base SHA when diff basis is merge_base",
+        "diff_basis": "merge_base"
+      },
+      "requires_live_github": false,
+      "requires_live_llm": false,
+      "schema_valid_fixture_deferred_to": "AUR-192"
+    },
+    {
+      "id": "oversized-change",
+      "behavior": "Large PR that should exercise context budgeting and truncation notices before reviewer fanout.",
+      "consumed_by": ["AUR-192", "AUR-211"],
+      "fixture_shape": {
+        "comments": "trusted summary comments for large change context",
+        "review_comments": "representative inline comments without requiring full live pagination",
+        "reviews": "prior review summaries for large changes",
+        "thread_state": "resolved/unresolved/unknown thread state across retained and truncated context",
+        "labels": "large-pr or risk labels",
+        "changed_files": "many changed files with explicit counts",
+        "patches": "patch snippets large enough to trigger deterministic budget behavior later",
+        "base_sha": "base commit SHA for stable ReviewTarget hashing",
+        "head_sha": "head commit SHA for stable ReviewTarget hashing",
+        "merge_base_sha": "merge-base SHA when diff basis is merge_base",
+        "diff_basis": "merge_base"
+      },
+      "requires_live_github": false,
+      "requires_live_llm": false,
+      "schema_valid_fixture_deferred_to": "AUR-192"
+    },
+    {
+      "id": "stale-approval-change",
+      "behavior": "Payload approval scenario where changed target metadata must invalidate stale approvals before writing.",
+      "consumed_by": ["AUR-192", "AUR-254"],
+      "fixture_shape": {
+        "comments": "trusted approval comments tied to an older target hash",
+        "review_comments": "optional inline comments associated with stale payload",
+        "reviews": "prior approval or review records",
+        "thread_state": "resolved/unresolved/unknown approval-related thread state",
+        "labels": "approval or release labels when present",
+        "changed_files": "files changed after approval was produced",
+        "patches": "patch snippets that change payload or target hashes",
+        "base_sha": "base commit SHA for stale approval comparison",
+        "head_sha": "new head commit SHA that invalidates old approval",
+        "merge_base_sha": "merge-base SHA used by approved target hash",
+        "diff_basis": "merge_base"
+      },
+      "requires_live_github": false,
+      "requires_live_llm": false,
+      "schema_valid_fixture_deferred_to": "AUR-192"
+    },
+    {
+      "id": "untrusted-comment-injection",
+      "behavior": "Untrusted PR comment tries to steer reviewer behavior and must be preserved as memory without becoming instructions.",
+      "consumed_by": ["AUR-192", "AUR-233"],
+      "fixture_shape": {
+        "comments": "trusted and untrusted comments including prompt-injection-like text",
+        "review_comments": "inline untrusted comments near changed code",
+        "reviews": "prior review context from trusted and untrusted actors",
+        "thread_state": "resolved/unresolved/unknown trust state for comment threads",
+        "labels": "security or review-memory labels when present",
+        "changed_files": "files adjacent to injected comments",
+        "patches": "patch snippets that the injection tries to influence",
+        "base_sha": "base commit SHA for stable ReviewTarget hashing",
+        "head_sha": "head commit SHA for stable ReviewTarget hashing",
+        "merge_base_sha": "merge-base SHA when diff basis is merge_base",
+        "diff_basis": "merge_base"
+      },
+      "requires_live_github": false,
+      "requires_live_llm": false,
+      "schema_valid_fixture_deferred_to": "AUR-192"
+    },
+    {
+      "id": "paginated-github-read",
+      "behavior": "Fake transport scenario for paginated PR metadata reads without touching live GitHub.",
+      "consumed_by": ["AUR-192", "AUR-213"],
+      "fixture_shape": {
+        "comments": "comments spread across deterministic fake pages",
+        "review_comments": "review comments spread across deterministic fake pages",
+        "reviews": "reviews spread across deterministic fake pages",
+        "thread_state": "resolved/unresolved/unknown thread state spread across fake pages",
+        "labels": "labels returned by fake paginated metadata read",
+        "changed_files": "changed files returned across fake pages",
+        "patches": "patch snippets returned by fake paginated changed-file pages",
+        "base_sha": "base commit SHA from fake PR metadata",
+        "head_sha": "head commit SHA from fake PR metadata",
+        "merge_base_sha": "merge-base SHA from fake compare metadata when relevant",
+        "diff_basis": "merge_base or explicit fake transport diff basis"
+      },
+      "requires_live_github": false,
+      "requires_live_llm": false,
+      "schema_valid_fixture_deferred_to": "AUR-192"
+    }
+  ],
   "fixtures": [
     {
       "id": "basic-pr",
