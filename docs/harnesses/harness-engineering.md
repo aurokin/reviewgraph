@@ -83,7 +83,7 @@ Golden tests should protect product behavior without freezing incidental wording
 - Compare selected markdown sections, not full prompt-shaped prose.
 - Never compare raw live LLM output in default tests.
 - Redaction tests should assert secrets are absent from logs, traces, JSON errors, markdown, candidate payloads, final payloads, and provider-bound requests.
-- Quality golden cases should include postable finding, local note, clarification request, suggested reply, suppressed non-finding, generic missing-test feedback, cross-file logic evidence, ambiguous logic intent, and generic architecture advice.
+- Quality golden cases should include postable finding, medium-confidence non-blocking finding, low-confidence suppression, local note, clarification request, unsafe clarification provenance suppression, suggested reply, suppressed non-finding, generic missing-test feedback, cross-file logic evidence, ambiguous logic intent, generic architecture advice, unsafe memory provenance suppression, omitted-context suppression, and multi-line finding preservation.
 - Logic-review findings may cite cross-file evidence, but public locations must anchor to changed code that introduced or exposed the risk.
 
 ## Required Harness Families
@@ -125,10 +125,10 @@ Golden tests should protect product behavior without freezing incidental wording
 
 ### Review Quality
 
-- Postable findings require changed-code evidence, an actionable scenario, graph-owned classification, and a precise changed-code location when available.
+- Postable findings require changed-code evidence, an actionable scenario, graph-owned classification, and a precise changed-code location when available. `tests/test_quality.py` owns the classifier boundary from typed `ReviewerResult` plus changed files, memory references, and omitted-context IDs into postable findings, local notes, clarification requests, suggested replies, and suppressed outputs.
 - Findings that cite `trusted_memory` must cite concrete actionable memory IDs; findings that cite unknown, passive, or untrusted memory are suppressed before rendering.
-- Low-confidence or intent-dependent mergeability concerns become clarification requests.
-- Generic, speculative, pre-existing, duplicate-without-new-analysis, or locationless issues are local notes or suppressed output.
+- Medium-confidence concrete findings may remain postable only when non-blocking; low-confidence or intent-dependent mergeability concerns become clarification requests or suppressed output.
+- Generic, speculative, pre-existing, reviewer-declared duplicate, omitted-context-dependent, or locationless issues are local notes or suppressed output.
 - Suggested replies are local-only in MVP.
 - Testing feedback is postable only with changed behavior, a concrete regression scenario, and identifiable missing coverage.
 

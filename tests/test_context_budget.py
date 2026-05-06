@@ -423,6 +423,73 @@ def test_runner_suppresses_findings_from_fully_omitted_files(tmp_path: Path) -> 
     ]
 
 
+def test_runner_suppresses_findings_that_cite_omitted_memory(tmp_path: Path) -> None:
+    fixture = json.loads(Path("src/reviewgraph/fixtures_data/prs/basic-pr.json").read_text())
+    fixture["id"] = "budget-omitted-memory-finding"
+    fixture["pr_ref"] = "fixture:budget-omitted-memory-finding"
+    fixture["comments"][0]["body"] = "Reviewer-provided cache invariant context " * 12
+    fixture["raw_reviewer_outputs"] = [
+        {
+            "reviewer": "alpha",
+            "stage": "initial_triage",
+            "items": [
+                {
+                    "type": "finding",
+                    "id": "finding-omitted-memory",
+                    "title": "Cache miss returns stale data",
+                    "rationale": "The new branch returns stale data when the cache misses.",
+                    "evidence": "Changed line 12 returns stale value and trusted memory explains the invariant.",
+                    "path": "src/cache.py",
+                    "line": 12,
+                    "severity": "warning",
+                    "confidence": "high",
+                    "evidence_sources": ["diff", "trusted_memory"],
+                    "evidence_memory_ids": ["comment-cache-intent"],
+                }
+            ],
+        }
+    ]
+    fixture_path = tmp_path / "budget-omitted-memory-finding.json"
+    fixture_path.write_text(json.dumps(fixture))
+    config_path = tmp_path / "reviewers.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "context_budget": {
+                    "max_changed_files": 10,
+                    "max_patch_bytes": 10_000,
+                    "max_memory_bytes": 8,
+                    "max_reviewers": 10,
+                    "max_live_calls": 0,
+                },
+                "agents": {
+                    "alpha": {
+                        "stages": ["initial_triage"],
+                        "triggers": {"always": True},
+                    }
+                },
+            }
+        )
+    )
+
+    result = run_fixture_dry_run(
+        fixture_ref=str(fixture_path),
+        reviewer_config_path=str(config_path),
+    )
+
+    classified = result.json_data["review"]["classified_output"]
+    assert result.json_data["post_enabled"] is False
+    assert classified["postable_findings"] == []
+    assert classified["suppressed"] == [
+        {
+            "id": "finding-omitted-memory",
+            "classification": "non_finding",
+            "reason": "Finding candidate referenced context omitted by context budget.",
+        }
+    ]
+    assert "comment-cache-intent" in result.json_data["review"]["context_budget"]["memory"]["omitted_ids"]
+
+
 def test_invalid_context_budget_config_fails_clearly() -> None:
     data = _valid_config()
     data["context_budget"] = {"max_reviewers": 0}

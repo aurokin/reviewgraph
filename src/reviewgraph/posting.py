@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import hashlib
-import json
 from inspect import Parameter, signature
 from typing import Iterable
 
+from reviewgraph.hashing import canonical_json_hash, sha256_text
 from reviewgraph.models import (
     ArtifactKind,
     CandidateIssueCommentPayload,
@@ -50,21 +49,12 @@ def canonical_full_body(text: str) -> str:
     return normalized.rstrip("\n") + "\n"
 
 
-def sha256_text(text: str) -> str:
-    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
 def visible_body_hash(text: str) -> str:
     return sha256_text(canonical_visible_body(text))
 
 
 def full_body_hash(full_body: str) -> str:
     return sha256_text(full_body)
-
-
-def canonical_json_hash(data: object) -> str:
-    encoded = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return sha256_text(encoded)
 
 
 def findings_hash(fingerprints: Iterable[str]) -> str:

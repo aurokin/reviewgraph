@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import Any
@@ -11,7 +10,6 @@ from reviewgraph.fixtures import (
     FixtureError,
     FixturePR,
     ReviewerConfig,
-    assert_changed_line,
     load_fixture_pr,
     load_reviewer_config,
     redact_for_error,
@@ -24,19 +22,16 @@ from reviewgraph.context_budget import (
     merge_context_budgets,
     reviewer_key,
 )
+from reviewgraph.hashing import canonical_json_hash
 from reviewgraph.memory import build_conversation_memory
-from reviewgraph.posting import canonical_json_hash
 from reviewgraph.models import (
-    ALLOWED_RAW_FINDING_EVIDENCE_SOURCES,
     ClarificationRequest,
     ClassifiedFinding,
-    Confidence,
     ContextBudget,
     GraphError,
     LocalNote,
     MemoryReference,
     PRConversationMemory,
-    RawReviewerFinding,
     ReviewConfig,
     ReviewerResult,
     RiskAssessment,
@@ -48,9 +43,6 @@ from reviewgraph.models import (
     ReviewState,
     RunMode,
     SelectedReviewer,
-    Severity,
-    SuggestedReply,
-    SuppressedOutput,
     TruncationNotice,
 )
 from reviewgraph.posting import (
@@ -61,6 +53,7 @@ from reviewgraph.posting import (
     build_candidate_issue_comment_payload,
     build_posting_plan,
 )
+from reviewgraph.quality import classify_review_quality
 from reviewgraph.redaction import redact_data
 from reviewgraph.render import RenderedReview, render_review
 from reviewgraph.risk import classify_change_risk, risk_assessment_to_json
@@ -127,6 +120,7 @@ def run_fixture_dry_run(
         budgeted_context=budgeted_context,
         risk=risk_assessment,
         omitted_file_paths=budgeted_context.context_budget.omitted_file_paths,
+        omitted_memory_ids=budgeted_context.context_budget.omitted_memory_ids,
     )
     selected_reviewers = stage_run.selected_reviewers
     graph_trace = stage_run.graph_trace
@@ -209,6 +203,7 @@ def _run_review_stages(
     budgeted_context: BudgetedInputContext,
     risk: RiskAssessment,
     omitted_file_paths: tuple[str, ...] = (),
+    omitted_memory_ids: tuple[str, ...] = (),
 ) -> _StageRunResult:
     raw_outputs_by_key = _raw_outputs_by_key(fixture)
     fake_adapter = FakeReviewerAdapter(
@@ -321,6 +316,7 @@ def _run_review_stages(
                     classified=classified,
                     memory_references=memory_references,
                     omitted_file_paths=omitted_file_paths,
+                    omitted_memory_ids=omitted_memory_ids,
                 )
             except RunnerError as exc:
                 reason = str(exc)
@@ -652,122 +648,6 @@ def _empty_classified_lists() -> dict[str, list[Any]]:
     }
 
 
-def _classify_reviewer_output(
-    fixture: FixturePR,
-    *,
-    reviewer_output: dict[str, Any],
-    classified: dict[str, list[Any]],
-    memory_references: tuple[MemoryReference, ...],
-    omitted_file_paths: tuple[str, ...] = (),
-) -> None:
-    reviewer = _required_str(reviewer_output, "reviewer", "raw_reviewer_outputs[]")
-    stage = _required_str(reviewer_output, "stage", "raw_reviewer_outputs[]")
-    items = reviewer_output.get("items")
-    if not isinstance(items, list):
-        raise RunnerError("raw reviewer output requires reviewer, stage, and items")
-    for item in items:
-        if not isinstance(item, dict):
-            raise RunnerError("raw reviewer output items must be objects")
-        item_type = _required_str(item, "type", "raw reviewer output item")
-        if item_type == "finding":
-            raw_finding = _raw_reviewer_finding_or_suppression(item, classified)
-            if raw_finding is None:
-                continue
-            if _finding_depends_on_omitted_context(
-                fixture,
-                raw_finding,
-                omitted_file_paths=omitted_file_paths,
-            ):
-                classified["suppressed_outputs"].append(
-                    SuppressedOutput(
-                        id=raw_finding.id,
-                        reason="Finding candidate referenced context omitted by context budget.",
-                    )
-                )
-                continue
-            finding = _classified_finding(
-                fixture,
-                reviewer=reviewer,
-                stage=stage,
-                raw_finding=raw_finding,
-            )
-            if _is_postable_finding(finding):
-                if _finding_has_unsafe_evidence_provenance(
-                    raw_finding,
-                    memory_references=memory_references,
-                ):
-                    classified["suppressed_outputs"].append(
-                        SuppressedOutput(
-                            id=raw_finding.id,
-                            reason="Finding candidate used passive or untrusted memory as evidence.",
-                        )
-                    )
-                else:
-                    classified["findings"].append(finding)
-            else:
-                classified["suppressed_outputs"].append(
-                    SuppressedOutput(
-                        id=finding.id,
-                        reason="Finding candidate did not meet postable quality policy.",
-                    )
-                )
-        elif item_type == "local_note":
-            _require_fields(item, ("id", "title", "body", "evidence"), "local_note")
-            classified["local_notes"].append(
-                LocalNote(
-                    id=_required_str(item, "id", "local_note"),
-                    title=_required_str(item, "title", "local_note"),
-                    body=_required_str(item, "body", "local_note"),
-                    evidence=_required_str(item, "evidence", "local_note"),
-                )
-            )
-        elif item_type == "clarification_request":
-            _require_fields(item, ("id", "question", "why_it_matters"), "clarification_request")
-            clarification_id = _required_str(item, "id", "clarification_request")
-            question = _required_str(item, "question", "clarification_request")
-            why_it_matters = _required_str(item, "why_it_matters", "clarification_request")
-            if _raw_output_has_unsafe_evidence_provenance(
-                item,
-                memory_references=memory_references,
-                text_values=(question, why_it_matters),
-                require_provenance_with_passive_memory=True,
-            ):
-                classified["suppressed_outputs"].append(
-                    SuppressedOutput(
-                        id=clarification_id,
-                        reason="Clarification request used passive or untrusted memory as evidence.",
-                    )
-                )
-            else:
-                classified["clarification_requests"].append(
-                    ClarificationRequest(
-                        id=clarification_id,
-                        reviewer=reviewer,
-                        question=question,
-                        why_it_matters=why_it_matters,
-                    )
-                )
-        elif item_type == "suggested_reply":
-            _require_fields(item, ("id", "source_comment_id", "proposed_body"), "suggested_reply")
-            classified["suggested_replies"].append(
-                SuggestedReply(
-                    id=_required_str(item, "id", "suggested_reply"),
-                    source_comment_id=_required_str(item, "source_comment_id", "suggested_reply"),
-                    proposed_body=_required_str(item, "proposed_body", "suggested_reply"),
-                )
-            )
-        elif item_type in {"suppressed", "non_finding"}:
-            _require_fields(item, ("id", "reason"), "suppressed")
-            classified["suppressed_outputs"].append(
-                SuppressedOutput(
-                    id=_required_str(item, "id", "suppressed"),
-                    reason=_required_str(item, "reason", "suppressed"),
-                )
-            )
-        else:
-            raise RunnerError(f"unsupported raw reviewer output type: {item_type}")
-
-
 def _classify_normalized_reviewer_output(
     fixture: FixturePR,
     *,
@@ -775,223 +655,20 @@ def _classify_normalized_reviewer_output(
     classified: dict[str, list[Any]],
     memory_references: tuple[MemoryReference, ...],
     omitted_file_paths: tuple[str, ...] = (),
+    omitted_memory_ids: tuple[str, ...] = (),
 ) -> None:
-    reviewer = reviewer_result.run_key.reviewer
-    stage = reviewer_result.run_key.stage.value
-    for raw_finding in reviewer_result.findings:
-        if _finding_depends_on_omitted_context(
-            fixture,
-            raw_finding,
-            omitted_file_paths=omitted_file_paths,
-        ):
-            classified["suppressed_outputs"].append(
-                SuppressedOutput(
-                    id=raw_finding.id,
-                    reason="Finding candidate referenced context omitted by context budget.",
-                )
-            )
-            continue
-        finding = _classified_finding(
-            fixture,
-            reviewer=reviewer,
-            stage=stage,
-            raw_finding=raw_finding,
-        )
-        if _is_postable_finding(finding):
-            if _finding_has_unsafe_evidence_provenance(
-                raw_finding,
-                memory_references=memory_references,
-            ):
-                classified["suppressed_outputs"].append(
-                    SuppressedOutput(
-                        id=raw_finding.id,
-                        reason="Finding candidate used passive or untrusted memory as evidence.",
-                    )
-                )
-            else:
-                classified["findings"].append(finding)
-        else:
-            classified["suppressed_outputs"].append(
-                SuppressedOutput(
-                    id=finding.id,
-                    reason="Finding candidate did not meet postable quality policy.",
-                )
-            )
-    classified["local_notes"].extend(reviewer_result.local_notes)
-    for request in reviewer_result.clarification_requests:
-        if _clarification_has_unsafe_evidence_provenance(
-            request,
-            memory_references=memory_references,
-        ):
-            classified["suppressed_outputs"].append(
-                SuppressedOutput(
-                    id=request.id,
-                    reason="Clarification request used passive or untrusted memory as evidence.",
-                )
-            )
-        else:
-            classified["clarification_requests"].append(request)
-    classified["suggested_replies"].extend(reviewer_result.suggested_replies)
-    classified["suppressed_outputs"].extend(reviewer_result.suppressed_outputs)
-
-
-def _finding_depends_on_omitted_context(
-    fixture: FixturePR,
-    raw_finding: RawReviewerFinding,
-    *,
-    omitted_file_paths: tuple[str, ...],
-) -> bool:
-    if raw_finding.path in omitted_file_paths:
-        return True
-    for changed_file in fixture.changed_files:
-        if changed_file.path == raw_finding.path and changed_file.contains_line(raw_finding.line):
-            return changed_file.patch_status != "available"
-    return False
-
-
-def _finding_has_unsafe_evidence_provenance(
-    raw_finding: RawReviewerFinding,
-    *,
-    memory_references: tuple[MemoryReference, ...],
-) -> bool:
-    return _unsafe_evidence_provenance(
-        evidence_sources=raw_finding.evidence_sources,
-        evidence_memory_ids=raw_finding.evidence_memory_ids,
+    result = classify_review_quality(
+        changed_files=fixture.changed_files,
+        reviewer_result=reviewer_result,
         memory_references=memory_references,
-        text_values=(raw_finding.evidence,),
-        require_provenance_with_passive_memory=False,
+        omitted_file_paths=omitted_file_paths,
+        omitted_memory_ids=omitted_memory_ids,
     )
-
-
-def _clarification_has_unsafe_evidence_provenance(
-    request: ClarificationRequest,
-    *,
-    memory_references: tuple[MemoryReference, ...],
-) -> bool:
-    return _unsafe_evidence_provenance(
-        evidence_sources=request.evidence_sources,
-        evidence_memory_ids=request.evidence_memory_ids,
-        memory_references=memory_references,
-        text_values=(request.question, request.why_it_matters),
-        require_provenance_with_passive_memory=True,
-    )
-
-
-def _raw_output_has_unsafe_evidence_provenance(
-    item: dict[str, Any],
-    *,
-    memory_references: tuple[MemoryReference, ...],
-    text_values: tuple[str, ...],
-    require_provenance_with_passive_memory: bool,
-) -> bool:
-    evidence_sources = _optional_str_tuple(item, "evidence_sources", "raw reviewer output")
-    _require_supported_evidence_sources(evidence_sources, "raw reviewer output evidence_sources")
-    evidence_memory_ids = _optional_str_tuple(item, "evidence_memory_ids", "raw reviewer output")
-    return _unsafe_evidence_provenance(
-        evidence_sources=evidence_sources,
-        evidence_memory_ids=evidence_memory_ids,
-        memory_references=memory_references,
-        text_values=text_values,
-        require_provenance_with_passive_memory=require_provenance_with_passive_memory,
-    )
-
-
-def _unsafe_evidence_provenance(
-    *,
-    evidence_sources: tuple[str, ...],
-    evidence_memory_ids: tuple[str, ...],
-    memory_references: tuple[MemoryReference, ...],
-    text_values: tuple[str, ...],
-    require_provenance_with_passive_memory: bool,
-) -> bool:
-    if require_provenance_with_passive_memory:
-        has_passive_memory = any(not memory.actionable for memory in memory_references)
-        if has_passive_memory and not evidence_sources and not evidence_memory_ids:
-            return True
-    if "trusted_memory" in evidence_sources and not evidence_memory_ids:
-        return True
-    if evidence_memory_ids and "trusted_memory" not in evidence_sources:
-        return True
-    memory_by_id = {memory.id: memory for memory in memory_references}
-    if any(
-        (memory := memory_by_id.get(memory_id)) is None or not memory.actionable
-        for memory_id in evidence_memory_ids
-    ):
-        return True
-    if _text_copies_passive_memory(text_values, memory_references=memory_references):
-        return True
-    if evidence_sources:
-        return False
-    return False
-
-
-def _text_copies_passive_memory(
-    text_values: tuple[str, ...],
-    *,
-    memory_references: tuple[MemoryReference, ...],
-) -> bool:
-    values = [
-        normalized
-        for value in text_values
-        if len(normalized := _normalized_provenance_text(value)) >= 30
-    ]
-    if not values:
-        return False
-    for memory in memory_references:
-        if memory.actionable:
-            continue
-        body = _normalized_provenance_text(memory.body)
-        if len(body) < 30:
-            continue
-        for value in values:
-            if value in body or body in value:
-                return True
-    return False
-
-
-def _normalized_provenance_text(value: str) -> str:
-    return " ".join(value.casefold().split())
-
-
-def _optional_str_tuple(data: dict[str, Any], field: str, label: str) -> tuple[str, ...]:
-    if field not in data:
-        return ()
-    value = data[field]
-    if not isinstance(value, list) or any(not isinstance(item, str) or not item for item in value):
-        raise RunnerError(f"{label}.{field} must be an array of non-empty strings")
-    return tuple(value)
-
-
-def _require_supported_evidence_sources(value: tuple[str, ...], field_name: str) -> None:
-    invalid = [item for item in value if item not in ALLOWED_RAW_FINDING_EVIDENCE_SOURCES]
-    if invalid:
-        raise RunnerError(f"{field_name} contains unsupported values: {', '.join(sorted(invalid))}")
-
-
-def _raw_reviewer_finding_or_suppression(
-    item: dict[str, Any],
-    classified: dict[str, list[Any]],
-) -> RawReviewerFinding | None:
-    try:
-        return RawReviewerFinding.from_mapping(item)
-    except ValueError as exc:
-        message = str(exc)
-        if "graph-owned fields" not in message:
-            raise
-        classified["suppressed_outputs"].append(
-            SuppressedOutput(
-                id=_safe_suppressed_raw_id(item),
-                reason="Raw reviewer finding attempted to set graph-owned fields and was suppressed.",
-            )
-        )
-        return None
-
-
-def _safe_suppressed_raw_id(item: dict[str, Any]) -> str:
-    item_id = item.get("id")
-    if isinstance(item_id, str) and item_id:
-        return f"suppressed-{item_id}"
-    return "suppressed-invalid-raw-finding"
+    classified["findings"].extend(result.findings)
+    classified["local_notes"].extend(result.local_notes)
+    classified["clarification_requests"].extend(result.clarification_requests)
+    classified["suggested_replies"].extend(result.suggested_replies)
+    classified["suppressed_outputs"].extend(result.suppressed_outputs)
 
 
 def _validate_finding_fingerprints(findings: tuple[ClassifiedFinding, ...]) -> None:
@@ -1014,188 +691,6 @@ def _validate_output_item_ids(classified: dict[str, tuple[Any, ...]]) -> None:
             if item_id in seen:
                 raise RunnerError("classified output item ids must be unique")
             seen.add(item_id)
-
-
-def _classified_finding(
-    fixture: FixturePR,
-    *,
-    reviewer: str,
-    stage: str,
-    raw_finding: RawReviewerFinding,
-) -> ClassifiedFinding:
-    assert_changed_line(fixture, path=raw_finding.path, line=raw_finding.line)
-    return ClassifiedFinding(
-        id=raw_finding.id,
-        source_reviewer=reviewer,
-        source_stage=stage,
-        title=raw_finding.title,
-        body=raw_finding.rationale,
-        evidence=raw_finding.evidence,
-        path=raw_finding.path,
-        line=raw_finding.line,
-        priority=_graph_priority(raw_finding),
-        severity=raw_finding.severity,
-        confidence=raw_finding.confidence,
-        fingerprint=_graph_fingerprint(raw_finding),
-    )
-
-
-def _graph_priority(raw_finding: RawReviewerFinding) -> int:
-    if raw_finding.severity in {Severity.CRITICAL, Severity.WARNING}:
-        return 1
-    if raw_finding.severity == Severity.SUGGESTION:
-        return 2
-    return 3
-
-
-def _graph_fingerprint(raw_finding: RawReviewerFinding) -> str:
-    return canonical_json_hash(
-        {
-            "domain": "reviewgraph.fixture_finding.v1",
-            "path": raw_finding.path,
-            "line": raw_finding.line,
-            "title": raw_finding.title,
-            "evidence": raw_finding.evidence,
-        }
-    )
-
-
-def _is_postable_finding(finding: ClassifiedFinding) -> bool:
-    if finding.confidence != Confidence.HIGH:
-        return False
-    if not _has_concrete_finding_evidence(finding.evidence):
-        return False
-    text = f"{finding.title}\n{finding.body}\n{finding.evidence}".casefold()
-    if _is_testing_advice(finding, text):
-        return _has_testing_finding_shape(text)
-    if _is_generic_speculative_advice(text):
-        return False
-    if not _has_non_testing_finding_shape(text):
-        return False
-    generic_refactor_advice = (
-        "clean this up",
-        "cleaner structure",
-        "could be refactored",
-        "easier maintenance",
-        "easier to maintain",
-        "easier to read",
-        "cleaner code",
-        "better organization",
-        "better structure",
-        "better modularity",
-        "decoupling",
-        "modularity",
-        "testability",
-        "improve maintainability",
-        "abstractions",
-        "future maintainer",
-        "future maintainers",
-        "improve readability",
-        "refactor this",
-        "simplify this code",
-        "when this grows",
-    )
-    return not any(phrase in text for phrase in generic_refactor_advice)
-
-
-def _has_concrete_finding_evidence(evidence: str) -> bool:
-    normalized = evidence.casefold().strip()
-    if not normalized:
-        return False
-    if re.fullmatch(
-        r"(?:n/?a|none|unknown|tbd|see (?:diff|above)|"
-        r"(?:changed\s+)?lines?\s+\d+(?:\s*[-,]\s*\d+)*\.?)",
-        normalized,
-    ):
-        return False
-    if not re.search(r"\b(changed lines?|new branch|introduced|now)\b", normalized):
-        return False
-    detail = re.sub(r"^changed\s+lines?\s+\d+(?:\s*[-,]\s*\d+)*\s*[:.-]?\s*", "", normalized)
-    if len(detail.split()) < 3:
-        return False
-    return bool(re.search(r"[a-z]{3,}", detail))
-
-
-def _is_testing_advice(finding: ClassifiedFinding, text: str) -> bool:
-    if finding.source_reviewer == "testing":
-        return True
-    testing_terms = (
-        "add tests",
-        "improve coverage",
-        "missing coverage",
-        "missing test",
-        "missing tests",
-        "no regression coverage",
-        "no test coverage",
-        "please add tests",
-        "regression test",
-        "test coverage",
-        "without tests",
-    )
-    return any(term in text for term in testing_terms)
-
-
-def _has_testing_finding_shape(text: str) -> bool:
-    missing_coverage = (
-        ("coverage" in text or "test" in text)
-        and any(term in text for term in ("missing", "no ", "without", "lacks", "not covered", "does not cover"))
-    )
-    return (
-        missing_coverage
-        and _has_concrete_testing_shape(text)
-        and not _has_only_vague_testing_scenario(text)
-    )
-
-
-def _has_only_vague_testing_scenario(text: str) -> bool:
-    has_vague = any(phrase in text for phrase in ("for this change", "when this changes", "this changes", "changed behavior"))
-    concrete_text = text
-    for phrase in ("for this change", "when this changes", "this changes", "changed behavior"):
-        concrete_text = concrete_text.replace(phrase, " ")
-    has_specific = bool(re.search(r"\b(whenever|when|if|after|before|with|without|on|in|to|via|from|while|where)\b", concrete_text))
-    return has_vague and not has_specific
-
-
-def _is_generic_speculative_advice(text: str) -> bool:
-    speculative_pattern = (
-        r"\b(could|may|might)\s+(?:cause|fail|break|regress|leak|expose)"
-        r"|potential issue|requires investigation|should investigate"
-        r"|still (?:fail|fails|failing|broken)"
-        r"|already (?:fail|fails|failing|broken|present|known)"
-        r"|was already (?:fail|failing|broken|present|known)"
-        r"|was previously (?:present|known|failing|broken)"
-        r"|pre[\s-]?existing"
-    )
-    return bool(re.search(speculative_pattern, text))
-
-
-def _has_non_testing_finding_shape(text: str) -> bool:
-    return _has_concrete_finding_shape(text)
-
-
-def _has_concrete_testing_shape(text: str) -> bool:
-    scenario = bool(re.search(r"\b(whenever|when|if|after|before|with|without|on|in|to|via|from|while|where)\b", text))
-    introduced = bool(re.search(r"\b(changed line|new branch|introduced|now)\b", text))
-    coverage_target = bool(re.search(r"\b(regression test|regression coverage|coverage|test)\b", text))
-    return scenario and introduced and coverage_target
-
-
-def _has_concrete_finding_shape(text: str) -> bool:
-    scenario = bool(re.search(r"\b(whenever|when|if|after|before|with|without|for|on|in|to|via|from|while|where)\b", text))
-    introduced = bool(re.search(r"\b(changed line|new branch|introduced|now)\b", text))
-    harmful_behavior = bool(
-        re.search(
-            r"\b(regress|overcharg\w*|double[- ]charg\w*|duplicate emails?|loops? forever|shifts?|breaks?|corrupts?|deletes?|drops?|exposes?|fails?|hangs?|ignores?|includes?|leaks?|logs?|misroutes?|omits?|persists?|raises?|rejects?|returns?|rounds?|sends?|skips?|bypasses?|cannot|stale|unauthorized|writes?|open redirect|path traversal|unauthenticated access)\b",
-            text,
-        )
-    )
-    harmful_broad_access = bool(
-        re.search(
-            r"\b(allows?|accepts?|permits?)\b.*\b(unauthenticated access|unauthorized|open redirect|path traversal|user-controlled|private|leak|expos|bypass|admin|token|session|email|charge|overcharg|double charg)\b",
-            text,
-        )
-    )
-    return scenario and introduced and (harmful_behavior or harmful_broad_access)
 
 
 def _require_fields(data: dict[str, Any], fields: tuple[str, ...], label: str) -> None:

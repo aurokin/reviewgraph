@@ -234,7 +234,7 @@ Repairable malformed selected-reviewer output gets one deterministic fake repair
 
 ## Filtering policy
 
-Suppress findings when they are generic, unsupported by the PR context, duplicate the existing PR conversation without adding new analysis, lack an actionable fix, cannot identify a scenario where the issue occurs, attempt to self-declare postability/blocking without evidence, or use passive/untrusted memory as evidence. Semantic deduplication across reviewer outputs is deferred until a deterministic policy is designed and tested.
+Suppress findings when they are generic, unsupported by the PR context, reviewer-declared duplicates, dependent on omitted context, lack an actionable fix, cannot identify a scenario where the issue occurs, attempt to self-declare postability/blocking without evidence, or use passive/untrusted memory as evidence. Semantic deduplication across reviewer outputs is deferred until a deterministic policy is designed and tested.
 
 ## Location policy
 

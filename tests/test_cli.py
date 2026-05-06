@@ -1394,15 +1394,21 @@ def test_no_finding_fixture_is_not_post_enabled(tmp_path: Path) -> None:
     assert result.json_data["review"]["candidate_payload_preview"] is None
 
 
-def test_postable_finding_must_overlap_changed_lines(tmp_path: Path) -> None:
+def test_postable_finding_without_changed_line_overlap_is_suppressed(tmp_path: Path) -> None:
     fixture_path = tmp_path / "bad-line.json"
     fixture = _basic_fixture()
     fixture["raw_reviewer_outputs"][0]["items"][0]["line"] = 99
     fixture_path.write_text(json.dumps(fixture))
 
-    exit_code = main(["--fixture-pr", str(fixture_path)])
+    result = run_fixture_dry_run(fixture_ref=str(fixture_path))
 
-    assert exit_code == 2
+    assert result.json_data["local_verdict"] == "no_findings"
+    assert result.json_data["review"]["classified_output"]["postable_findings"] == []
+    assert result.json_data["review"]["classified_output"]["suppressed"][0] == {
+        "id": "finding-cache-stale",
+        "classification": "non_finding",
+        "reason": "Finding candidate location did not overlap changed code.",
+    }
 
 
 def test_raw_output_reviewer_must_be_selected(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

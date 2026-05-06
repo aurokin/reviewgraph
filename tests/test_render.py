@@ -48,6 +48,7 @@ def finding(
     body: str = "Cache miss returns stale data.",
     fingerprint: str = "fp-1",
     title: str = "Cache miss returns stale data",
+    line_end: int | None = None,
 ) -> ClassifiedFinding:
     return ClassifiedFinding(
         id="finding-1",
@@ -58,6 +59,7 @@ def finding(
         evidence="changed line 12",
         path="src/cache.py",
         line=12,
+        line_end=line_end,
         priority=1,
         severity=Severity.WARNING,
         confidence=Confidence.HIGH,
@@ -166,6 +168,19 @@ def test_rendered_markdown_and_json_include_required_sections() -> None:
         "passive_reason": None,
     }
     assert data["truncation"][0]["truncated"] is True
+
+
+def test_rendered_json_includes_finding_line_end_when_supplied() -> None:
+    rendered = render_review(
+        review_target=target(),
+        selected_reviewers=selected_reviewers(),
+        findings=[finding(line_end=14)],
+        local_verdict=ReviewVerdict.COMMENT,
+    )
+
+    finding_json = rendered.json_data["classified_output"]["postable_findings"][0]
+    assert finding_json["line"] == 12
+    assert finding_json["line_end"] == 14
 
 
 def test_candidate_payload_preview_serializes_supplied_payload_without_recomputing() -> None:

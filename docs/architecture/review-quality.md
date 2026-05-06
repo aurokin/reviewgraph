@@ -12,7 +12,7 @@ Reviewer output should be normalized into one of these classes:
 - `local_note`: useful local advice that should not be posted as review feedback.
 - `clarification_request`: a question that must be answered before a high-confidence mergeability recommendation.
 - `suggested_reply`: a local-only draft response to a human PR comment; MVP never posts it automatically.
-- `non_finding`: generic, unsupported, duplicate-without-new-analysis, or speculative output that should be suppressed.
+- `non_finding`: generic, unsupported, reviewer-declared duplicate, or speculative output that should be suppressed.
 
 Only `postable_finding` items should be candidates for GitHub review payloads.
 
@@ -33,7 +33,7 @@ If any of these are uncertain and the issue affects mergeability, emit a clarifi
 
 ## Comment Shape
 
-Postable review comments should be short, matter-of-fact, and scoped to one issue.
+Postable review comments should be short, matter-of-fact, and scoped to one issue. Public titles and bodies should not tell GitHub to request changes or block merge; verdict pressure belongs in local verdict synthesis and approval, not in the finding text.
 
 - Use one comment per distinct issue.
 - Keep the body to one paragraph unless a tiny code fragment is necessary.
@@ -61,7 +61,7 @@ ReviewGraph should track priority separately from severity. Schemas store priori
 - `P2`: normal; should be fixed, but not an emergency.
 - `P3`: low; useful but non-blocking.
 
-Critical or request-changes recommendations require high confidence and concrete evidence. Low-confidence or ambiguous issues cannot be blocking.
+Critical or request-changes recommendations require high confidence and concrete evidence. Medium-confidence findings may be postable only when they are concrete and non-blocking. Low-confidence or ambiguous issues cannot be blocking.
 
 ## Testing Findings
 
