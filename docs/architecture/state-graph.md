@@ -227,9 +227,9 @@ Implemented fixture orchestration records:
 
 Selection may not treat a reviewer as complete just because it was selected. Completed and policy-approved skipped statuses suppress reruns. Failed statuses suppress reruns only after retry exhaustion.
 
-In the fixture/fake-reviewer path, an explicit required reviewer failure is fail-closed but still renderable: the graph records a durable `GraphError`, preserves the failed `ReviewerResult` and failed `ReviewerRunStatus`, sets `post_enabled=false`, omits candidate GitHub payloads, and converts the posting plan to local-only. Optional reviewer failures are recorded as failed `ReviewerResult`s and local notes, but they do not create top-level graph errors or block post eligibility by themselves.
+In the fixture/fake-reviewer path, an explicit required reviewer failure or unrepaired selected required-reviewer output is fail-closed but still renderable: the graph records a durable `GraphError`, preserves the failed `ReviewerResult` and failed `ReviewerRunStatus`, sets `post_enabled=false`, omits candidate GitHub payloads, and converts the posting plan to local-only. Optional reviewer failures are recorded as failed `ReviewerResult`s and local notes, but they do not create top-level graph errors or block post eligibility by themselves.
 
-Malformed fixture data or malformed raw-output schema is not a successful review. Those errors keep the existing parse/error behavior and should not be downgraded into fail-closed dry-run output.
+Selected reviewer output may get exactly one deterministic fake repair attempt when it is supplied through the strict fake repair envelope with exactly `reviewer`, `stage`, `raw_output`, and `repair_output`, the envelope reviewer/stage match the selected reviewer run, and the selected `raw_output` fails with a repairable malformed-output error. Valid JSON object strings normalize directly, and valid non-object JSON strings fail schema validation without consulting `repair_output`. Successful repair flows through normal normalization and quality classification. Failed repair is recorded on the `ReviewerResult` as machine-readable repair metadata. Direct legacy mapping output still follows existing fake reviewer normalization behavior and is not repaired. Malformed fixture data and malformed repair envelopes are not repairable; they keep nonzero input-error behavior.
 
 ## Final payload
 
@@ -241,7 +241,7 @@ The writer adapter receives a finalized top-level issue-comment payload plus a m
 
 - GitHub fetch failure -> terminal error with no review.
 - One reviewer failure -> record error and continue unless required reviewer failed.
-- Invalid reviewer JSON -> retry once with repair prompt, then record error.
+- Invalid selected reviewer JSON -> one deterministic repair attempt, then normalize repaired output or record repair failure.
 - Quality classification failure -> fall back to local notes, not postable findings.
 - Ranking failure -> fall back to quality-classified postable findings and mark the summary as lower confidence.
 - Clarification timeout/rejection -> no GitHub side effect and no high-confidence blocking verdict from the ambiguous issue.

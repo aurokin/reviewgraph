@@ -196,6 +196,27 @@ def _require_instance_tuple(value: object, field_name: str, item_type: type[obje
         raise ValueError(f"{field_name} must be a tuple of {item_type.__name__} values")
 
 
+def _require_optional_reviewer_output(value: object, field_name: str) -> None:
+    if value is not None and not isinstance(value, (Mapping, str)):
+        raise ValueError(f"{field_name} must be a mapping, string, or None")
+
+
+def _require_json_value(value: object, field_name: str) -> None:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise ValueError(f"{field_name} mapping keys must be strings")
+            _require_json_value(item, field_name)
+        return
+    if isinstance(value, list):
+        for item in value:
+            _require_json_value(item, field_name)
+        return
+    raise ValueError(f"{field_name} must be JSON-compatible")
+
+
 def _require_issue_comment_artifact(value: ArtifactKind, field_name: str) -> None:
     if not isinstance(value, ArtifactKind) or value != ArtifactKind.ISSUE_COMMENT:
         raise ValueError(f"{field_name} must be ArtifactKind.ISSUE_COMMENT")
@@ -624,6 +645,33 @@ class NormalizationError:
 
 
 @dataclass(frozen=True)
+class ReviewerRepairRecord:
+    attempt_count: int
+    status: str
+    original_output: Any = None
+    repaired_output: Any = None
+    errors: tuple[NormalizationError, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        if type(self.attempt_count) is not int or self.attempt_count < 0:
+            raise ValueError("reviewer repair record attempt_count must be a non-negative integer")
+        if self.status not in {"not_attempted", "succeeded", "failed"}:
+            raise ValueError("reviewer repair record status must be not_attempted, succeeded, or failed")
+        _require_json_value(self.original_output, "reviewer repair record original_output")
+        _require_json_value(self.repaired_output, "reviewer repair record repaired_output")
+        _require_instance_tuple(self.errors, "reviewer repair record errors", NormalizationError)
+
+    def to_ordered_dict(self) -> dict[str, Any]:
+        return {
+            "attempt_count": self.attempt_count,
+            "status": self.status,
+            "original_output": self.original_output,
+            "repaired_output": self.repaired_output,
+            "errors": [error.to_ordered_dict() for error in self.errors],
+        }
+
+
+@dataclass(frozen=True)
 class ClarificationAnswer:
     id: str
     request_id: str
@@ -661,14 +709,14 @@ class ReviewerResult:
     suggested_replies: tuple[SuggestedReply, ...] = field(default_factory=tuple)
     suppressed_outputs: tuple[SuppressedReviewerOutput, ...] = field(default_factory=tuple)
     normalization_errors: tuple[NormalizationError, ...] = field(default_factory=tuple)
+    repair_record: ReviewerRepairRecord | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.run_key, ReviewerRunKey):
             raise ValueError("reviewer result run_key must be a ReviewerRunKey")
         if not isinstance(self.status, ReviewerRunStatusValue):
             raise ValueError("reviewer result status must be a ReviewerRunStatusValue")
-        if self.raw_output is not None and not isinstance(self.raw_output, (Mapping, str)):
-            raise ValueError("reviewer result raw_output must be a mapping, string, or None")
+        _require_optional_reviewer_output(self.raw_output, "reviewer result raw_output")
         _require_string_tuple(self.errors, "reviewer result errors")
         _require_instance_tuple(self.findings, "reviewer result findings", RawReviewerFinding)
         _require_instance_tuple(
@@ -688,6 +736,8 @@ class ReviewerResult:
             "reviewer result normalization_errors",
             NormalizationError,
         )
+        if self.repair_record is not None and not isinstance(self.repair_record, ReviewerRepairRecord):
+            raise ValueError("reviewer result repair_record must be a ReviewerRepairRecord")
 
 
 @dataclass(frozen=True)

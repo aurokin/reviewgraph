@@ -25,6 +25,7 @@ from reviewgraph.models import (
     GraphError,
     MarkerReconciliationResult,
     MemoryReference,
+    NormalizationError,
     OutputClassification,
     PayloadValidationResult,
     PostingDestination,
@@ -36,6 +37,7 @@ from reviewgraph.models import (
     ReviewConfig,
     ReviewerResult,
     ReviewerAgentConfig,
+    ReviewerRepairRecord,
     ReviewerRunKey,
     ReviewerRunStatus,
     ReviewerRunStatusValue,
@@ -375,6 +377,67 @@ def test_reviewer_result_rejects_non_raw_output_contract_values(field_name: str,
 
     with pytest.raises(ValueError):
         ReviewerResult(**kwargs)  # type: ignore[arg-type]
+
+
+def test_reviewer_repair_record_serializes_machine_readable_audit_shape() -> None:
+    key = ReviewerRunKey(
+        target_hash="sha256:target",
+        config_hash="sha256:config",
+        stage=ReviewStage.LOGIC_REVIEW,
+        reviewer="logic",
+    )
+    error = NormalizationError(
+        code="invalid_json",
+        message="fake reviewer output is not valid JSON",
+        run_key=key,
+        repairable=True,
+    )
+
+    record = ReviewerRepairRecord(
+        attempt_count=1,
+        status="succeeded",
+        original_output='{"items": [',
+        repaired_output={"items": []},
+        errors=(error,),
+    )
+
+    assert record.to_ordered_dict() == {
+        "attempt_count": 1,
+        "status": "succeeded",
+        "original_output": '{"items": [',
+        "repaired_output": {"items": []},
+        "errors": [error.to_ordered_dict()],
+    }
+    result = ReviewerResult(run_key=key, repair_record=record)
+    assert result.repair_record == record
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda key: ReviewerRepairRecord(attempt_count=-1, status="failed"),
+        lambda key: ReviewerRepairRecord(attempt_count=1, status="unknown"),
+        lambda key: ReviewerRepairRecord(attempt_count=1, status="failed", original_output=object()),
+        lambda key: ReviewerRepairRecord(attempt_count=1, status="failed", repaired_output=object()),
+        lambda key: ReviewerRepairRecord(attempt_count=1, status="failed", original_output={1: "bad-key"}),
+        lambda key: ReviewerRepairRecord(
+            attempt_count=1,
+            status="failed",
+            errors=("invalid_json",),
+        ),
+        lambda key: ReviewerResult(run_key=key, repair_record=object()),
+    ],
+)
+def test_reviewer_repair_record_rejects_invalid_contract_values(build) -> None:
+    key = ReviewerRunKey(
+        target_hash="sha256:target",
+        config_hash="sha256:config",
+        stage=ReviewStage.LOGIC_REVIEW,
+        reviewer="logic",
+    )
+
+    with pytest.raises(ValueError):
+        build(key)
 
 
 @pytest.mark.parametrize(

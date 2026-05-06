@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
@@ -306,7 +307,9 @@ def _run_review_stages(
                 if not _reviewer_is_required(config, reviewer):
                     classified["local_notes"].append(_optional_reviewer_failure_note(reviewer))
                     continue
-                if _reviewer_result_is_explicit_failure(reviewer_result):
+                if _reviewer_result_is_explicit_failure(reviewer_result) or _reviewer_result_is_repair_exhausted(
+                    reviewer_result
+                ):
                     errors.append(_required_reviewer_failure_error(reviewer, reason=reason))
                     classified["local_notes"].append(_required_reviewer_failure_note(reviewer, reason=reason))
                     continue
@@ -503,9 +506,26 @@ def _reviewer_result_has_classifiable_raw_output(reviewer_result: ReviewerResult
 
 
 def _reviewer_result_is_explicit_failure(reviewer_result: ReviewerResult) -> bool:
+    raw_output = _reviewer_result_raw_output_mapping(reviewer_result)
+    return raw_output is not None and raw_output.get("failure") is True
+
+
+def _reviewer_result_raw_output_mapping(reviewer_result: ReviewerResult) -> Mapping[str, object] | None:
+    if isinstance(reviewer_result.raw_output, Mapping):
+        return reviewer_result.raw_output
+    if not isinstance(reviewer_result.raw_output, str):
+        return None
+    try:
+        parsed = json.loads(reviewer_result.raw_output)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, Mapping) else None
+
+
+def _reviewer_result_is_repair_exhausted(reviewer_result: ReviewerResult) -> bool:
     return (
-        isinstance(reviewer_result.raw_output, Mapping)
-        and reviewer_result.raw_output.get("failure") is True
+        reviewer_result.repair_record is not None
+        and reviewer_result.repair_record.status == "failed"
     )
 
 
@@ -1309,6 +1329,11 @@ def _json_envelope(
                 "normalization_errors": [
                     error.to_ordered_dict() for error in result.normalization_errors
                 ],
+                "repair_record": (
+                    result.repair_record.to_ordered_dict()
+                    if result.repair_record is not None
+                    else None
+                ),
                 "raw_output": result.raw_output,
             }
             for result in reviewer_results

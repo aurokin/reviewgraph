@@ -247,6 +247,7 @@ def test_fake_reviewer_malformed_json_shape_returns_failed_result_with_raw_outpu
     assert result.errors == ("fake reviewer output requires an items list",)
     assert result.normalization_errors[0].code == "invalid_items"
     assert result.normalization_errors[0].repairable is True
+    assert result.repair_record is None
 
 
 def test_fake_reviewer_has_no_live_llm_or_provider_behavior() -> None:
@@ -304,6 +305,7 @@ def test_fake_reviewer_preserves_malformed_raw_json_string() -> None:
     assert result.errors == ("fake reviewer output is not valid JSON",)
     assert result.normalization_errors[0].code == "invalid_json"
     assert result.normalization_errors[0].repairable is True
+    assert result.repair_record is None
 
 
 def test_fake_reviewer_records_structured_error_for_non_mapping_output() -> None:
@@ -321,6 +323,7 @@ def test_fake_reviewer_records_structured_error_for_non_mapping_output() -> None
     assert result.errors == ("fake reviewer output must be a mapping",)
     assert result.normalization_errors[0].code == "invalid_output_type"
     assert result.normalization_errors[0].repairable is True
+    assert result.repair_record is None
 
 
 def test_dry_run_does_not_classify_valid_sibling_items_from_failed_normalization(tmp_path) -> None:

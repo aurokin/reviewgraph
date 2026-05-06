@@ -21,17 +21,18 @@ The slice should make malformed reviewer output a controlled reviewer lifecycle,
 ## Acceptance Mapping
 
 - Invalid reviewer JSON triggers one repair attempt:
-  - Raw string outputs with invalid JSON and selected-output fatal repairable normalization failures should call a deterministic fake repair hook at most once.
+  - Strict repair-envelope `raw_output` values with invalid JSON and selected-output fatal repairable normalization failures should call a deterministic fake repair hook at most once.
   - Repair-triggering selected-output errors are limited to `invalid_json`, `invalid_output_type`, `invalid_items`, `invalid_item`, `invalid_type`, `unsupported_item_type`, `invalid_finding`, `invalid_local_note`, `invalid_clarification_request`, `invalid_suggested_reply`, `invalid_non_finding`, and `normalizer_exception`.
-  - `missing_output`, explicit reviewer failures, nonfatal graph-owned field rejections, duplicate/unselected raw-output envelopes, and fixture envelope errors do not trigger repair.
+  - `missing_output`, explicit reviewer failures, nonfatal graph-owned field rejections, direct legacy mapping output, duplicate/unselected raw-output envelopes, and fixture envelope errors do not trigger repair.
   - Explicit reviewer failures (`failure: true`) are already intentional failures and should not be repaired.
-  - Missing fixture/reviewer/stage keys and malformed fixture `raw_reviewer_outputs` entries remain fixture input errors, not repairable reviewer output.
+  - Missing fixture/reviewer/stage/raw_output/repair_output keys and malformed fixture `raw_reviewer_outputs` entries remain fixture input errors, not repairable reviewer output.
 - Successful repair proceeds to normalization:
   - A repaired mapping should enter `normalize_reviewer_output(...)`.
   - Valid repaired artifacts should become typed `ReviewerResult` artifacts and then flow through the existing runner safety/quality checks.
   - Repaired output must not bypass graph-owned field rejection, evidence provenance checks, changed-line assertions, or postability policy.
 - Failed repair records an error:
   - Preserve the original raw output.
+  - JSON-compatible non-mapping repair-envelope payloads should be preserved in the repair audit record; non-JSON Python objects may be represented with a deterministic `repr(...)` wrapper for test diagnostics.
   - Record structured `NormalizationError` entries for the original failure and the failed repair result.
   - Include enough machine-readable repair metadata in `ReviewerResult` JSON to prove a single repair attempt happened without parsing prose.
   - Successful and failed repair paths should both expose the same audit shape: attempt count, status, original output, repaired output when present, and structured errors.
@@ -68,10 +69,11 @@ The slice should make malformed reviewer output a controlled reviewer lifecycle,
    - Preserve the legacy shape `{reviewer, stage, items}` as the direct reviewer output.
    - Add a repair-script shape such as `{reviewer, stage, raw_output, repair_output}` where `raw_output` is the selected reviewer output to execute and `repair_output` is the deterministic one-shot repair candidate.
    - Keep the adapter boundary scoped to `ReviewerContextPackage`; do not introduce GitHub, LLM, provider, approval, or writer handles.
-   - `raw_output` and `repair_output` may be strings, mappings, non-mappings, or absent in focused tests, but their enclosing fixture envelope remains a mapping with valid `reviewer` and `stage`.
+   - `raw_output` and `repair_output` may be strings, mappings, or JSON-compatible non-mappings in focused tests, but the strict repair envelope requires exactly `reviewer`, `stage`, `raw_output`, and `repair_output`; the `reviewer`/`stage` values must match the selected reviewer run.
 3. Add a single repair-attempt helper around `execute_fake_reviewer`.
    - Initial raw/normalization failures that are fatal and repairable should call the repair hook once.
-   - Repaired mapping outputs should call `normalize_reviewer_output(...)`.
+   - Mapping outputs and valid JSON object strings should call `normalize_reviewer_output(...)`.
+   - Invalid raw strings should trigger repair; valid JSON object strings should normalize directly; valid non-object JSON strings should fail schema validation without consulting `repair_output`.
    - Repaired valid JSON strings should be parsed to mappings before normalization; invalid repair strings should produce a repair-scoped `invalid_json` error.
    - Repaired strings/non-mappings/malformed mappings should fail with structured errors.
    - Nonfatal graph-owned field rejections should not trigger repair.

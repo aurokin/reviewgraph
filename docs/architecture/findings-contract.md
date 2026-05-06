@@ -159,6 +159,8 @@ Suggested replies are local-only output for human-authored PR comments or review
 
 Reviewer results in the dry-run JSON include structured normalization errors for malformed or rejected raw output. Fatal errors fail the reviewer result atomically: valid sibling items from the same malformed output do not flow into classified output. Nonfatal errors record suppressed graph-owned item fields while allowing valid sibling items to continue.
 
+Repairable malformed selected-reviewer output gets one deterministic fake repair attempt only when it arrives through the strict fake repair envelope with exactly top-level `reviewer`, `stage`, `raw_output`, and `repair_output`, and the envelope reviewer/stage match the selected reviewer run. Direct legacy mapping output keeps the existing fake reviewer normalization behavior and is not repaired. Valid JSON object strings normalize directly, valid non-object JSON strings fail schema validation without repair, and invalid strings trigger repair. `repair_record` is present when repair was attempted, whether the repair succeeded or failed. It preserves JSON-compatible original and repaired payloads, attempt count, status, and structured errors. Successful repair still keeps `raw_output` as the original malformed output for auditability; repaired artifacts enter the normal typed normalization and quality-classification path.
+
 ```json
 {
   "reviewer": "security",
@@ -177,11 +179,43 @@ Reviewer results in the dry-run JSON include structured normalization errors for
       "rejected_fields": []
     }
   ],
+  "repair_record": null,
   "raw_output": {
     "reviewer": "security",
     "stage": "specialized_review",
     "items": "not-a-list"
   }
+}
+```
+
+```json
+{
+  "reviewer": "security",
+  "stage": "specialized_review",
+  "status": "completed",
+  "errors": [],
+  "normalization_errors": [],
+  "repair_record": {
+    "attempt_count": 1,
+    "status": "succeeded",
+    "original_output": "{\"items\": [",
+    "repaired_output": {
+      "items": []
+    },
+    "errors": [
+      {
+        "code": "invalid_json",
+        "message": "fake reviewer output is not valid JSON",
+        "run_key": "{\"attempt\":1,\"clarification_id\":null,\"config_hash\":\"sha256:...\",\"retry_of\":null,\"reviewer\":\"security\",\"stage\":\"specialized_review\",\"target_hash\":\"sha256:...\"}",
+        "repairable": true,
+        "fatal": true,
+        "item_id": null,
+        "item_index": null,
+        "rejected_fields": []
+      }
+    ]
+  },
+  "raw_output": "{\"items\": ["
 }
 ```
 
