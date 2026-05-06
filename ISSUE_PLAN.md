@@ -1,56 +1,58 @@
-# ISSUE PLAN: AUR-196 Select Always-On Reviewers
+# ISSUE PLAN: AUR-197 Select Path Diff And Label Reviewers
 
-Active issue plan for `AUR-196` / `RG-007: Select Always-On Reviewers`.
+Active issue plan for `AUR-197` / `RG-008: Select Path Diff And Label Reviewers`.
 
 ## Linear Snapshot
 
-- Issue: `AUR-196`
+- Issue: `AUR-197`
 - Status at plan time: `In Progress`
 - Milestone: `PRD 0004: Graph Orchestration`
-- Blocks: `AUR-197`, `AUR-199`, `AUR-236`, `AUR-256`
-- Blocked by: `AUR-231`, `AUR-195`, `AUR-191`; current repo/Linear state satisfies these prerequisites.
 - Comments at plan time: none
+- Linear description: select reviewers based on changed paths, diff patterns, and labels against fixture PRs.
 
 ## Goal
 
-Make always-on reviewer selection an explicit routing boundary for the active graph stage. Selected reviewers should include name, stage, and trigger reasons, and the selection should be persisted in `ReviewState.selected_reviewers`.
+Harden the active-stage routing boundary so path, diff pattern, and label selectors are covered by focused tests and persist the same selected-reviewer state shape introduced by `AUR-196`.
 
-This slice should not expand selector policy. Existing path, diff, label, conversation, risk, and size behavior may be moved out of `runner.py` if needed to remove duplicated routing code, but the focused AUR-196 harness should prove only always-on routing.
+The code extracted during `AUR-196` already contains the selector mechanics. This issue should prove that behavior at the routing boundary without adding risk/size gates, conversation-pattern routing, fake reviewer execution, retries, or posting behavior.
 
 ## Acceptance Mapping
 
-- Always-on reviewers are selected for eligible stages:
-  - Add routing tests where an `always: true` reviewer is selected only when its config includes the active stage.
-- Selected reviewers include reviewer name, stage, and reasons:
-  - Assert `SelectedReviewer(name, stage, reasons)` with reason `initial_triage triggers.always=true`.
-- Non-eligible stages do not select the reviewer:
-  - Assert a reviewer configured only for a different stage is not selected for the active stage.
-- Selection output is persisted in graph state:
-  - Add a graph-level select node/helper that appends selected reviewers to `ReviewState.selected_reviewers`, and assert state persistence.
+- Path triggers match changed files:
+  - Add a routing test where a path selector matches a changed fixture file path.
+- Diff pattern triggers match patch snippets case-insensitively:
+  - Add a routing test where a mixed-case regex or literal pattern matches the casefolded patch text.
+- Label triggers match PR labels:
+  - Add a routing test where label matching is case-insensitive against fixture labels.
+- Every matched selector appears in trigger reasons:
+  - Assert all matching path, diff, and label selector reasons are present on the selected reviewer.
+- Non-matching reviewers are not selected:
+  - Add tests for non-matching path, diff, and label selectors returning no reviewers and leaving state unchanged.
 
 ## Implementation Plan
 
-1. Add `src/reviewgraph/routing.py` with active-stage reviewer selection helpers.
-2. Move the existing runner selection logic into routing or have runner call the new routing boundary, so `runner.py` does not remain the hidden owner of reviewer selection.
-3. Add `tests/test_routing.py` focused on always-on selection and `ReviewState.selected_reviewers` persistence.
-4. Keep path/diff/label/risk/conversation behavior unchanged for existing tracer/CLI tests; do not claim AUR-197/AUR-198/AUR-236 acceptance here.
-5. Run the focused routing harness and tracer/CLI regressions.
-6. Use subagent review before implementation and again after code changes.
+1. Add focused `tests/test_routing.py` coverage for path, diff pattern, and label selector behavior.
+2. Adjust `src/reviewgraph/routing.py` only if the new tests expose a mismatch with the existing contract.
+3. Keep selector reasons explicit and stable: `{stage} triggers.paths=...`, `{stage} triggers.diff_patterns=...`, `{stage} triggers.labels=...`.
+4. Preserve existing state persistence behavior: selected reviewers, reviewer run keys, and selected run status are recorded only for runnable selected reviewers.
+5. Run the routing harness plus tracer/CLI regressions and full validation.
+6. Use subagent review before implementation and after code changes.
 7. Commit the plan before implementation, then commit implementation separately.
 
 ## Out Of Scope
 
-- No new path, diff, label, risk, size, or conversation selector behavior.
-- No reviewer run status.
+- No new risk or size classification.
+- No risk/size gate selector acceptance.
+- No conversation-pattern routing acceptance.
+- No retry/exhaustion policy.
 - No fake reviewer adapter.
-- No quality classification.
 - No live GitHub, live LLM, approval, finalization, or writer behavior.
 
 ## Validation Plan
 
 ```bash
 python -m pytest tests/test_routing.py -q
-python -m pytest tests/test_stage_cursor.py tests/test_graph_empty.py tests/test_tracer_fixture_run.py tests/test_cli.py -q
+python -m pytest tests/test_tracer_fixture_run.py tests/test_cli.py -q
 python -m pytest -q
 python -m py_compile src/reviewgraph/*.py
 python scripts/check_docs.py
@@ -59,7 +61,7 @@ git diff --check
 
 ## Completion Evidence To Collect
 
-- Focused harness output.
+- Focused routing harness output.
 - Regression/full validation output.
 - Subagent review result with no material findings.
 - Commit SHA for the implementation.
