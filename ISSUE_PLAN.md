@@ -1,77 +1,87 @@
-# ISSUE PLAN: AUR-203 Classify Testing Feedback Quality
+# ISSUE PLAN: AUR-205 Stop For Clarification Requests
 
-Active issue plan for `AUR-203` / `RG-014: Classify Testing Feedback Quality`.
+Active issue plan for `AUR-205` / `RG-016: Stop For Clarification Requests`.
 
 Linear remains the source of truth for issue state and relationships.
 
 ## Linear Snapshot
 
-- Issue: `AUR-203`
+- Issue: `AUR-205`
 - Status at plan time: `In Progress`
 - Milestone: `PRD 0005: Review Quality`
-- Title: `RG-014: Classify Testing Feedback Quality`
-- Harness: `python -m pytest tests/test_quality_testing.py`
-- Out of scope from Linear: general classifier rewrites outside testing rules.
+- Title: `RG-016: Stop For Clarification Requests`
+- Harness: `python -m pytest tests/test_clarification.py`
+- Out of scope from Linear: answer ingestion and resume behavior from `AUR-206`.
 
 ## Intent
 
-Make testing-reviewer output earn public space instead of letting generic coverage advice through.
+Make unanswered reviewer clarification an explicit graph stop state, not just a rendered request.
 
-Testing findings are postable only when they prove all three parts of the contract:
+If a reviewer says it cannot make a high-confidence mergeability or confidence judgment without human context, ReviewGraph should preserve the request as pending state, disable posting, render the question and why it matters, and avoid converting that ambiguity into a blocking local verdict. The graph may still show postable findings and local notes in dry-run output, but they must be local-only while any blocking clarification remains pending.
 
-1. the PR changed or introduced behavior;
-2. there is a concrete regression scenario, input, caller path, or environment where that behavior matters;
-3. the missing coverage is identifiable enough that the author knows what test gap to close.
-
-Generic "add tests", vague "coverage for this change", location-only evidence, and non-postable testing notes must remain local-only or suppressed. The issue is not asking for live ranking, verdict extraction, approval behavior, or broader correctness/security classifier changes.
+Clarification requests with `blocks_verdict=false` are still pending/rendered state, but they do not stop the graph, disable posting, or force the private verdict to `needs_clarification` by themselves.
 
 ## Current Baseline
 
-- `src/reviewgraph/quality.py` already detects testing advice when the reviewer is `testing` or when text uses testing/coverage terms.
-- `_has_testing_finding_shape` requires missing coverage language, `_has_concrete_testing_shape`, and rejects a small set of vague scenarios.
-- Existing broad tests in `tests/test_quality.py` and `tests/test_cli.py` cover several testing examples, but there is no focused `tests/test_quality_testing.py` harness.
-- Current policy may still treat weak "missing coverage" text as postable when it has scenario words and changed-code evidence but does not identify a concrete missing test target.
+- `ClarificationRequest` already carries graph-owned `status`, `source_stage`, `source_run_key`, `resume_target_stage`, and `resume_target_reviewers` during normalization.
+- `classify_review_quality` preserves safe clarification requests and suppresses unsafe or omitted-memory clarification requests.
+- `runner._run_review_stages` already breaks the stage loop when any classified clarification request exists and appends a `clarification_needed_end` trace.
+- `runner._local_verdict` currently returns `needs_clarification` when clarification requests exist, and `post_enabled` is false unless the verdict is `comment`.
+- `build_posting_plan` already renders clarification requests as local-only items, and `render_review` includes clarification question/why-it-matters in markdown and JSON.
+- Existing broad CLI tests prove clarification-only and finding-plus-clarification fixtures are not post enabled, but there is no focused `tests/test_clarification.py` harness and the top-level dry-run envelope does not expose `pending_clarification_ids` / `clarification_status` state.
 
 ## Decisions
 
-1. Add a focused testing-quality harness instead of expanding broad CLI coverage first.
-2. Keep testing-specific policy inside `quality.py` for this issue. Extracting a separate module is only justified if the implementation grows beyond a small helper-level refinement.
-3. Treat `reviewer == "testing"` as authoritative testing-reviewer context. Non-testing findings that merely mention "test mode" should remain eligible for normal correctness policy, as existing tests require.
-4. Require an identifiable missing coverage target, not just the words "coverage" or "test". Accept concrete targets such as a regression test for a named behavior/path, coverage that does not cover a named path, or no test covering a named scenario.
-5. Preserve generic testing feedback as suppressed `non_finding` through the existing suppression path. Local-note pass-through remains available when a reviewer emits `local_note` directly.
-6. Prove ranking/posting behavior through posting-plan output: suppressed testing findings should become local-only posting-plan items and must not appear in candidate payload previews.
-7. Do not modify severity-to-priority ranking for postable findings unless the focused tests expose a specific bug. The acceptance criterion about ranking is satisfied by proving non-postable testing notes do not enter the postable finding list.
+1. Add a small `src/reviewgraph/clarification.py` policy helper rather than continuing to scatter clarification state derivation across runner/rendering.
+2. The helper should only model unanswered pending state for AUR-205:
+   - stable pending IDs from request IDs;
+   - status map keyed by request ID;
+   - blocking pending IDs;
+   - whether any pending blocking request blocks posting/verdict confidence.
+3. Do not implement human answers, status transitions to answered/resolved, transient `clarification_review` execution, or affected-reviewer reruns; those belong to AUR-206.
+4. Preserve the current private verdict value `needs_clarification` for local dry-run output. The acceptance criterion means no `request_changes` / blocking verdict should be produced from ambiguous issues, not that the private verdict must be `None`.
+5. If any pending blocking clarification exists, every posting-plan item should be local-only and `candidate_payload_preview` should be absent, even when there are otherwise postable findings.
+6. Non-blocking pending clarifications remain visible and local-only in the posting plan, but they should not prevent otherwise eligible postable findings from producing a candidate payload.
+7. Keep existing provenance rules: unsafe or omitted-memory clarification requests are suppressed and should not create pending state.
 
 ## Implementation Plan
 
-1. Add `tests/test_quality_testing.py`.
-   - Cover a concrete testing finding with changed behavior, scenario, and missing coverage target.
-   - Cover generic "add tests" / "improve coverage" output.
-   - Cover changed behavior and scenario without identifiable missing coverage.
-   - Cover missing coverage language with a vague scenario such as "for this change".
-   - Cover a local-note testing output remaining local-only.
-   - Cover runner/posting-plan behavior for suppressed testing output.
+1. Add `src/reviewgraph/clarification.py`.
+   - Define a frozen result such as `ClarificationGateResult`.
+   - Provide `evaluate_clarification_gate(requests)` that returns pending IDs, status map, blocking IDs, and a `blocks_posting` flag based only on pending `blocks_verdict=true` requests.
+   - Keep the API pure and fixture-safe; no GitHub, no writer, no answer ingestion.
 
-2. Tighten testing quality policy only where focused tests fail.
-   - Add a helper for identifiable missing coverage target if needed.
-   - Keep the existing concrete behavior/scenario checks.
-   - Avoid changing non-testing harmful behavior allowlists.
+2. Wire the helper into `runner.py`.
+   - Derive clarification gate state after output IDs are validated and before local verdict/posting-plan construction.
+   - Use the gate result to keep `post_enabled=false` whenever a pending blocking clarification exists.
+   - Use the gate result for stage-loop stop behavior so non-blocking clarifications do not emit `clarification_needed_end`.
+   - Include top-level dry-run JSON fields for `pending_clarification_ids` and `clarification_status` so graph state is visible outside rendered review JSON.
+   - Preserve the existing `clarification_needed_end` trace behavior.
 
-3. Update durable docs narrowly.
-   - `docs/architecture/review-quality.md` should name the three-part testing bar.
-   - `docs/harnesses/harness-engineering.md` should identify the focused testing-quality harness.
+3. Add focused harness `tests/test_clarification.py`.
+   - Clarification-only fixture produces pending state with stable ID, `status=pending`, `post_enabled=false`, local verdict `needs_clarification`, no writer call, no candidate payload, and rendered question/why-it-matters.
+   - Finding plus clarification keeps all posting-plan items local-only and produces no candidate payload.
+   - Non-blocking clarification (`blocks_verdict=false`) becomes pending/rendered state but does not stop stage advancement, does not force `needs_clarification`, and does not suppress otherwise eligible candidate payloads.
+   - Unsafe or omitted-memory clarification requests are suppressed and do not create pending IDs.
+   - Graph trace stops at `clarification_needed_end` without advancing unrelated later stages.
+   - No local `request_changes` verdict is produced from clarification ambiguity.
+
+4. Update durable docs narrowly.
+   - `docs/architecture/state-graph.md` should identify the pending clarification gate state that stops before posting.
+   - `docs/harnesses/harness-engineering.md` should name `tests/test_clarification.py` as the focused stop-state harness.
 
 ## Verification
 
-- Focused: `python -m pytest tests/test_quality_testing.py`
-- Regression: `python -m pytest tests/test_quality.py tests/test_cli.py tests/test_posting.py tests/test_render.py`
+- Focused: `python -m pytest tests/test_clarification.py`
+- Regression: `python -m pytest tests/test_quality.py tests/test_cli.py tests/test_tracer_fixture_run.py tests/test_render.py tests/test_posting.py`
 - Full: `python -m pytest -q`
-- Hygiene: `python -m py_compile src/reviewgraph/*.py && git diff --check`
+- Hygiene: `python -m py_compile src/reviewgraph/*.py && python scripts/check_docs.py && git diff --check`
 
 ## Out Of Scope
 
-- General review-quality rewrites outside testing rules.
-- Local verdict extraction.
-- Live ranking or approval policy.
-- Inline GitHub comments.
-- Semantic dedupe.
+- Answer ingestion.
+- Resume from answered clarification.
+- `clarification_review` reviewer reruns.
+- GitHub posting of clarification questions.
+- Approval/finalization behavior.
+- Local verdict extraction beyond the existing private `needs_clarification` value.

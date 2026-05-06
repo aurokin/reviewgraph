@@ -6,13 +6,13 @@ Active execution artifact for this milestone. Linear remains the durable source 
 
 - Milestone: `PRD 0005: Review Quality`
 - Milestone ID: `7c623166-927e-43d7-a14d-41af005a2587`
-- Current execution status: `AUR-201`, `AUR-227`, `AUR-202`, and `AUR-204` are `Done`; `AUR-203` is `In Progress`; remaining implementation issues are pending in Linear.
+- Current execution status: `AUR-201`, `AUR-227`, `AUR-202`, `AUR-204`, and `AUR-203` are `Done`; `AUR-205` is `In Progress`; remaining implementation issues are pending in Linear.
 - Implementation issues:
   - `AUR-201` / `RG-012: Normalize Reviewer Output` / `Done`
   - `AUR-202` / `RG-013: Classify Review Quality` / `Done`
-  - `AUR-203` / `RG-014: Classify Testing Feedback Quality` / `In Progress`
+  - `AUR-203` / `RG-014: Classify Testing Feedback Quality` / `Done`
   - `AUR-204` / `RG-015: Validate Diff Anchors For Inline Candidates` / `Done`
-  - `AUR-205` / `RG-016: Stop For Clarification Requests` / `Backlog`
+  - `AUR-205` / `RG-016: Stop For Clarification Requests` / `In Progress`
   - `AUR-206` / `RG-017: Resume From Clarification Answers` / `Backlog`
   - `AUR-207` / `RG-018: Compute Local Verdict` / `Backlog`
   - `AUR-226` / `RG-037: Continue After Optional Reviewer Failure` / `Backlog`
@@ -30,7 +30,7 @@ The product point is restraint. ReviewGraph should prefer no finding over a plau
 
 - `src/reviewgraph/models.py` already defines `RawReviewerFinding`, `ClassifiedFinding`, `DiffAnchor`, `LocalNote`, `SuggestedReply`, `SuppressedReviewerOutput`, `ClarificationRequest`, `ReviewVerdict`, and graph-owned-field rejection.
 - `src/reviewgraph/reviewers.py` now normalizes deterministic fake reviewer items into typed `ReviewerResult` fields. `AUR-201` made typed normalized artifacts the policy input and records reviewer attempts to set graph-owned fields as structured suppressed output/normalization errors instead of silently stripping them.
-- `src/reviewgraph/quality.py` now owns general typed review-quality classification from normalized `ReviewerResult` artifacts into postable findings, local notes, clarification requests, suggested replies, and suppressed output. `AUR-202` also added neutral hashing and shared passive-memory provenance helpers.
+- `src/reviewgraph/quality.py` now owns general typed review-quality classification from normalized `ReviewerResult` artifacts into postable findings, local notes, clarification requests, suggested replies, and suppressed output. `AUR-202` also added neutral hashing and shared passive-memory provenance helpers, and `AUR-203` tightened the testing-reviewer quality bar with a focused harness.
 - `src/reviewgraph/runner.py` delegates normalized reviewer result classification to `classify_review_quality`; `_local_verdict` and optional/required failure wiring still live in runner pending later issues.
 - `src/reviewgraph/posting.py` already keeps suggested replies/local notes/suppressed output local-only, rejects public request-changes wording in candidate payloads, and validates inline candidates when explicitly requested.
 - `src/reviewgraph/diff_anchor.py` now derives fixture-safe `DiffAnchor` metadata from changed ranges. Runner-created findings render derived anchors in dry-run JSON, while inline candidates remain explicit, dry-run-only, and excluded from public payloads.
