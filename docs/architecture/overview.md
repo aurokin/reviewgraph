@@ -28,7 +28,7 @@ Fetches PR metadata, changed files, patches, labels, author, base/head SHAs, rev
 
 ### PR conversation memory builder
 
-Converts PR comments and review threads into structured shared memory for the graph. Memory should preserve author, author association, timestamp, thread status, referenced files or lines when available, whether an issue appears resolved, and whether the author is trusted for actionable review feedback. Reviewers may read this memory, but they should not mutate GitHub conversation state directly.
+Converts PR comments and review threads into structured shared memory for the graph. Memory should preserve author, author association, timestamp, thread status, referenced files or lines when available, whether an issue appears resolved, and whether the author is trusted for actionable review feedback. Reviewer contexts may receive trusted actionable memory body text; passive or untrusted memory is metadata-only in MVP. Reviewers should not mutate GitHub conversation state directly.
 
 ### LangGraph orchestration
 

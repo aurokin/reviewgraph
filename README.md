@@ -10,7 +10,7 @@ ReviewGraph reads GitHub pull requests, uses the PR conversation as shared revie
 
 ## Current runnable slice
 
-The current implementation is the PRD 0002 fixture tracer bullet. It does not perform live GitHub reads, live LLM calls, approval, or posting. It proves the dry-run product shape with packaged fixtures and deterministic fake reviewer output:
+The current implementation includes the PRD 0002 fixture tracer bullet plus the PRD 0010 reviewer-context boundary harness. It does not perform live GitHub reads, live LLM calls, approval, or posting. It proves the dry-run product shape with packaged fixtures, deterministic fake reviewer output, scoped reviewer context packages, passive/trusted PR memory labeling, and non-live provider request previews:
 
 ```bash
 PYTHONPATH=src python -m reviewgraph.cli --fixture-pr basic-pr --print-markdown
@@ -20,6 +20,7 @@ Useful validation commands:
 
 ```bash
 python -m pytest tests/test_tracer_fixture_run.py
+python -m pytest tests/test_reviewer_context.py tests/test_prompt_injection_memory.py
 python -m pytest
 python scripts/check_docs.py
 ```
@@ -70,4 +71,4 @@ Read in this order:
 
 ## Repository status
 
-Fixture dry-run tracer implemented. Live GitHub reads, live LLM reviewers, approval finalization, and GitHub writers are still future milestones.
+Fixture dry-run tracer, context budgeting, reviewer context package, inert reviewer tool metadata, passive-memory prompt boundaries, prompt-injection memory harness, provider preview redaction, and side-effect import boundaries are implemented. Live GitHub reads, live LLM reviewers, approval finalization, and GitHub writers are still future milestones.

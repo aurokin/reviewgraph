@@ -136,7 +136,7 @@ Oversized context should be retained as marker-only metadata when possible. Revi
 
 The package must not include the full reviewer config map, GitHub transports, approval state, finalization state, posting payload builders, writer clients, repository checkout handles, provider clients, process handles, or ambient tool callables. Tool names in reviewer config are inert metadata until a later explicit tool policy exists.
 
-Prompt input built from the package separates instructions from context data. PR conversation memory is labeled data; untrusted or passive memory cannot become instructions, routing evidence, verdict pressure, approval input, or public payload text. Provider-bound previews are non-live harness artifacts: they serialize minimized package data, apply redaction, record redaction status, and keep raw-provider and raw-trace opt-ins disabled by default.
+Prompt input built from the package separates instructions from context data. PR conversation memory is labeled data; trusted actionable memory may include body text, while passive or untrusted memory is metadata-only in MVP. Passive or untrusted memory cannot become instructions, reviewer prompt body data, routing evidence, verdict pressure, approval input, or public payload text. Provider-bound previews are non-live harness artifacts: they serialize minimized package data, apply redaction, record redaction status, and keep raw-provider and raw-trace opt-ins disabled by default.
 
 ## Staged reviewer introduction
 
