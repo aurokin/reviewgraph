@@ -90,8 +90,8 @@ START
   -> normalize_reviewer_output
   -> classify_review_quality
   -> clarification_gate
-      clarification needed -> END with human question or resume after answer
-      no clarification needed -> advance_or_finish_stage
+      pending blocking clarification -> END with human question or resume after answer
+      no pending blocking clarification -> advance_or_finish_stage
   -> advance_or_finish_stage
       next review stage -> select_reviewers
       final synthesis -> rank_findings
@@ -193,6 +193,14 @@ A reviewer is skipped when the key is already completed for the current review t
 
 `reviewer_run_status` is keyed by a stable serialization of `ReviewerRunKey` and must distinguish `selected`, `running`, `completed`, `failed`, and `skipped`. Selection may not skip a reviewer merely because a key was selected; only `completed` and policy-approved `skipped` statuses suppress execution.
 
+## Clarification stop state
+
+Clarification requests are graph state, not prose-only output. Each pending request is addressable by stable ID and appears in `pending_clarification_ids` plus `clarification_status`.
+
+Only pending requests with `blocks_verdict=true` stop the graph, force `post_enabled=false`, and produce the private local verdict `needs_clarification`. Non-blocking pending clarification requests remain visible in dry-run output and local-only posting-plan items, but they do not stop stage advancement or suppress otherwise eligible candidate payloads.
+
+When the graph stops for a pending blocking clarification, the trace records `clarification_needed_end`. Any otherwise postable findings remain rendered as dry-run state, but the posting plan is converted to local-only and no candidate GitHub payload is produced.
+
 ## Clarification resume
 
 Clarification requests are addressable state, not prose-only output. Each request has an ID, source reviewer, source stage, source run key, status, and resume target. A resumed run follows:
@@ -212,7 +220,7 @@ On resume, `ingest_clarification_answer` records the answer, changes the clarifi
 
 Graph traces should record `active_stage_before`, `active_stage_after`, `suspended_stage_before`, `suspended_stage_after`, `stage_queue_before`, `stage_queue_after`, and `transition_reason` for each cursor transition.
 
-Unanswered clarification requests keep `post_enabled` false. A timeout or rejected clarification can produce local notes, but cannot produce a high-confidence blocking verdict for the ambiguous issue.
+Unanswered blocking clarification requests keep `post_enabled` false. A timeout or rejected clarification can produce local notes, but cannot produce a high-confidence blocking verdict for the ambiguous issue.
 
 ## Reviewer execution state
 

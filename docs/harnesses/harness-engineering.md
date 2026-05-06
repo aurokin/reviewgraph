@@ -100,7 +100,7 @@ Golden tests should protect product behavior without freezing incidental wording
 - `advance_or_finish_stage` is the only node that mutates cursor fields.
 - `clarification_review` is transient and never lives in the normal queue.
 - Resume from clarification reruns only affected reviewers and does not pop unrelated stages.
-- PRD 0004 implements normal-stage cursor traces and keeps clarification resume as later graph work. Until resume exists, clarification fixtures must still prove that unanswered clarification disables posting eligibility and stops before side effects.
+- PRD 0004 implements normal-stage cursor traces and keeps clarification resume as later graph work. Until resume exists, clarification fixtures must still prove that unanswered blocking clarification disables posting eligibility and stops before side effects. `tests/test_clarification.py` is the focused stop-state harness for pending IDs, status, blocking IDs, local-only posting-plan conversion, non-blocking clarification behavior, and unsafe clarification suppression.
 
 ### Memory And Trust
 

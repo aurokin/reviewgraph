@@ -14,6 +14,7 @@ from reviewgraph.fixtures import (
     load_reviewer_config,
     redact_for_error,
 )
+from reviewgraph.clarification import ClarificationGateResult, evaluate_clarification_gate
 from reviewgraph.context_budget import (
     BudgetedInputContext,
     apply_input_context_budget,
@@ -87,6 +88,7 @@ class _StageRunResult:
     graph_trace: list[dict[str, Any]]
     classified: dict[str, tuple[Any, ...]]
     context_budget: ContextBudget
+    clarification_gate: ClarificationGateResult
 
 
 def run_fixture_dry_run(
@@ -139,12 +141,14 @@ def run_fixture_dry_run(
     )
     _validate_output_item_ids(classified)
     _validate_finding_fingerprints(classified["findings"])
+    clarification_gate = evaluate_clarification_gate(classified["clarification_requests"])
     local_verdict = _local_verdict(
         findings=classified["findings"],
-        clarification_requests=classified["clarification_requests"],
+        clarification_gate=clarification_gate,
     )
     post_enabled = (
         not stage_run.errors
+        and not clarification_gate.blocks_posting
         and local_verdict == ReviewVerdict.COMMENT
         and bool(classified["findings"])
     )
@@ -192,6 +196,7 @@ def run_fixture_dry_run(
         graph_trace=graph_trace,
         writer_call_count=writer_call_count,
         rendered=rendered,
+        clarification_gate=clarification_gate,
     )
     return DryRunResult(
         markdown=rendered.markdown,
@@ -348,7 +353,8 @@ def _run_review_stages(
                 status=ReviewerRunStatusValue.COMPLETED,
                 reason="deterministic fixture output execution completed",
             )
-        if classified["clarification_requests"]:
+        clarification_gate = evaluate_clarification_gate(classified["clarification_requests"])
+        if clarification_gate.blocks_posting:
             clarification_needed = True
             break
 
@@ -362,7 +368,12 @@ def _run_review_stages(
     else:
         graph_trace.append(advance_or_finish_stage(cursor).to_json())
 
-    extra_raw_keys = sorted(set(raw_outputs_by_key) - seen_raw_keys - deferred_raw_keys)
+    ignored_raw_stages = {stage.value for stage in cursor.stage_queue} if clarification_needed else set()
+    extra_raw_keys = sorted(
+        key
+        for key in set(raw_outputs_by_key) - seen_raw_keys - deferred_raw_keys
+        if key[1] not in ignored_raw_stages
+    )
     if extra_raw_keys:
         extra = ", ".join(f"{reviewer}/{stage}" for reviewer, stage in extra_raw_keys)
         raise RunnerError(f"raw reviewer output was not selected: {extra}")
@@ -375,6 +386,7 @@ def _run_review_stages(
         graph_trace=graph_trace,
         classified={key: tuple(value) for key, value in classified.items()},
         context_budget=merge_context_budgets(budget_limits, *stage_budgets),
+        clarification_gate=evaluate_clarification_gate(classified["clarification_requests"]),
     )
 
 
@@ -730,9 +742,9 @@ def _required_bool(data: dict[str, Any], field: str, label: str) -> bool:
 def _local_verdict(
     *,
     findings: tuple[ClassifiedFinding, ...],
-    clarification_requests: tuple[ClarificationRequest, ...],
+    clarification_gate: ClarificationGateResult,
 ) -> ReviewVerdict:
-    if clarification_requests:
+    if clarification_gate.blocks_posting:
         return ReviewVerdict.NEEDS_CLARIFICATION
     if findings:
         return ReviewVerdict.COMMENT
@@ -795,6 +807,7 @@ def _json_envelope(
     graph_trace: list[dict[str, Any]],
     writer_call_count: int,
     rendered: RenderedReview,
+    clarification_gate: ClarificationGateResult,
 ) -> dict[str, Any]:
     return _redact_json_value({
         "run_mode": "dry_run",
@@ -803,6 +816,16 @@ def _json_envelope(
         "fixture_ref": fixture.pr_ref,
         "graph_trace": graph_trace,
         "local_verdict": local_verdict.value,
+        "pending_clarification_ids": list(clarification_gate.pending_ids),
+        "blocking_clarification_ids": list(clarification_gate.blocking_pending_ids),
+        "clarification_status": {
+            request_id: {
+                "request_id": status.request_id,
+                "status": status.status.value,
+                "reason": status.reason,
+            }
+            for request_id, status in sorted(clarification_gate.status.items())
+        },
         "errors": [
             {"code": error.code, "message": error.message, "retryable": error.retryable}
             for error in errors
