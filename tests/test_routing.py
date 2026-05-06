@@ -158,6 +158,79 @@ def test_stage_selection_accepts_review_stage_values() -> None:
     assert [reviewer.name for reviewer in selected] == ["correctness"]
 
 
+def test_path_diff_and_label_selectors_record_every_matching_reason() -> None:
+    config = parse_reviewer_config(
+        {
+            "agents": {
+                "composite": {
+                    "stages": ["initial_triage"],
+                    "triggers": {
+                        "paths": ["src/cache.py"],
+                        "diff_patterns": ["RETURN\\s+STALE_VALUE"],
+                        "labels": ["BACKEND"],
+                    },
+                },
+                "nonmatching": {
+                    "stages": ["initial_triage"],
+                    "triggers": {
+                        "paths": ["src/auth/**"],
+                        "diff_patterns": ["requires\\s+product\\s+intent"],
+                        "labels": ["frontend"],
+                    },
+                }
+            }
+        }
+    )
+    state = run_empty_fixture_dry_run_graph(fixture_ref="basic-pr").review_state
+    state.config = config
+    state.config_hash = canonical_json_hash({"agents": ["composite", "nonmatching"]})
+    state.active_stage = ReviewStage.INITIAL_TRIAGE
+
+    selected = select_reviewers_for_active_stage(state)
+
+    assert [reviewer.name for reviewer in selected] == ["composite"]
+    assert selected[0].reasons == (
+        "initial_triage triggers.paths=src/cache.py",
+        "initial_triage triggers.diff_patterns=RETURN\\s+STALE_VALUE",
+        "initial_triage triggers.labels=BACKEND",
+    )
+    assert state.selected_reviewers == list(selected)
+    assert len(state.reviewer_run_keys) == 1
+    assert state.reviewer_run_status[state.reviewer_run_keys[0].stable_key()].status == (
+        ReviewerRunStatusValue.SELECTED
+    )
+
+
+def test_non_matching_path_diff_and_label_selectors_do_not_persist_selection() -> None:
+    config = parse_reviewer_config(
+        {
+            "agents": {
+                "diff": {
+                    "stages": ["initial_triage"],
+                    "triggers": {"diff_patterns": ["requires\\s+product\\s+intent"]},
+                },
+                "label": {
+                    "stages": ["initial_triage"],
+                    "triggers": {"labels": ["frontend"]},
+                },
+                "path": {
+                    "stages": ["initial_triage"],
+                    "triggers": {"paths": ["docs/**"]},
+                },
+            }
+        }
+    )
+    state = run_empty_fixture_dry_run_graph(fixture_ref="basic-pr").review_state
+    state.config = config
+    state.config_hash = canonical_json_hash({"agents": ["diff", "label", "path"]})
+    state.active_stage = ReviewStage.INITIAL_TRIAGE
+
+    assert select_reviewers_for_active_stage(state) == ()
+    assert state.selected_reviewers == []
+    assert state.reviewer_run_keys == []
+    assert state.reviewer_run_status == {}
+
+
 def test_active_stage_without_review_target_selects_nothing() -> None:
     state = run_empty_fixture_dry_run_graph(fixture_ref="basic-pr").review_state
     state.config = parse_reviewer_config(
