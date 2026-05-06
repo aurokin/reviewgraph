@@ -66,10 +66,12 @@ This issue should not add product behavior unless the gate audit finds a durable
    - Confirm contract/config/context modules still avoid importing writer, approval/finalization implementations, live LLM clients, or transport modules.
    - Confirm dry-run/no-writer behavior remains covered by tests.
 8. Audit durable docs against PRD 0003 and the full issue set. Patch only durable gaps.
-9. If step 8 changes any file, rerun the relevant focused checks plus the full final validation from step 6 after the last edit.
+9. If any file changes after step 6, rerun the relevant focused checks plus the full final validation from step 6 after the last edit.
 10. Use fresh subagent review of the fetched Linear proof, backlog export, final validation results, side-effect audit, and any doc changes. Iterate until material findings are gone.
-11. Commit any gate/doc proof changes.
-12. Comment on `AUR-254` with evidence, mark it `Done`, and update the milestone if Linear supports a completion status for milestones.
+11. If subagent review causes any file change, repeat steps 6, 9, and 10 until the final file state has green validation and no material review findings.
+12. Commit any gate/doc proof changes.
+13. Re-fetch the PRD 0003 milestone and all `AUR-254` blockers immediately before closing; fail closed if any blocker status or external-blocker rationale drifted.
+14. Comment on `AUR-254` with evidence, mark it `Done`, and update the milestone if Linear supports a completion status for milestones.
 
 ## Out Of Scope
 
