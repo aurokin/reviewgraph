@@ -41,7 +41,20 @@ The PRD 0005 review-quality slice now proves these contracts in fixtures and har
 - optional reviewer failures produce partial-review metadata without blocking post eligibility, while required failures remain fail-closed;
 - local verdict policy is private state and does not imply GitHub review events or public request-changes wording.
 
-Remaining graph work is intentionally staged in later PRDs: live GitHub reads, live LLM reviewer execution, approval/finalization, and writer behavior.
+## Implemented GitHub read and memory checkpoint
+
+The PRD 0006 GitHub read/memory slice now proves these contracts in fake adapters, dry-run paths, and opt-in smoke harnesses:
+
+- GitHub PR URLs and `owner/repo#number` refs parse into stable read targets;
+- fake GitHub reads return PR metadata, labels, base/head SHAs, merge-base metadata, changed files, patches, patch anchor metadata, and redacted read-result envelopes without write credentials;
+- files, issue comments, review comments, reviews, and thread state paginate before context truncation;
+- required read gaps, partial pagination, and unknown required thread state fail closed before review, routing, candidate payloads, approval input, or writer eligibility;
+- GitHub conversation memory preserves source IDs and thread IDs, applies trusted-human and allowlisted-bot policy, and treats untrusted, resolved, unknown-thread, and passive memory as non-routing, non-verdict, non-payload context;
+- trusted actionable GitHub memory can select reviewers through `conversation_patterns` with memory IDs and trust labels in state;
+- GitHub fake-read dry-run feeds the same renderer and graph contracts as fixture dry-run and proves no writer path is reachable;
+- live read smoke is opt-in, skipped by default, read-only, and separated from production review, approval, finalization, and writer paths.
+
+Remaining graph work is intentionally staged in later PRDs: production live GitHub review, live LLM reviewer execution, approval/finalization, and writer behavior.
 
 ## MVP constraints
 
