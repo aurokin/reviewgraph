@@ -8,13 +8,13 @@ from typing import Iterable
 
 HASH_PREFIX = "sha256:"
 HASH_RE = r"sha256:[0-9a-f]{64}"
-RUN_ID_RE = r"[A-Za-z0-9][A-Za-z0-9._:/#-]{0,127}"
+RUN_ID_RE = r"(?P<run_id>[A-Za-z0-9][A-Za-z0-9._:/#-]{0,127})"
 REVIEWGRAPH_MARKER_RE = re.compile(
     rf"^<!-- reviewgraph:v1 "
     rf"run_id={RUN_ID_RE} "
-    rf"target={HASH_RE} "
-    rf"payload={HASH_RE} "
-    rf"findings={HASH_RE} -->$"
+    rf"target=(?P<target>{HASH_RE}) "
+    rf"payload=(?P<payload>{HASH_RE}) "
+    rf"findings=(?P<findings>{HASH_RE}) -->$"
 )
 
 
@@ -39,6 +39,20 @@ def canonical_text_body(text: str) -> str:
 
 def is_exact_reviewgraph_v1_marker_line(line: str) -> bool:
     return REVIEWGRAPH_MARKER_RE.fullmatch(line) is not None
+
+
+def parse_reviewgraph_v1_marker_line(line: str) -> dict[str, str] | None:
+    if not isinstance(line, str):
+        return None
+    match = REVIEWGRAPH_MARKER_RE.fullmatch(line)
+    if match is None:
+        return None
+    return {
+        "run_id": match.group("run_id"),
+        "target": match.group("target"),
+        "payload": match.group("payload"),
+        "findings": match.group("findings"),
+    }
 
 
 def canonical_visible_body(text: str) -> str:

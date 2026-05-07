@@ -157,6 +157,7 @@ def test_final_payload_validation_passes_and_rejects_candidate_as_final() -> Non
 def test_final_payload_validation_rejects_marker_and_hash_mismatches() -> None:
     final_payload = _final_payload()
     not_final_line = replace(final_payload, body=f"{final_payload.marker_line}\nFinal body\n")
+    extra_trailing_blank = replace(final_payload, body=f"{final_payload.body}\n")
     marker_mismatch = replace(final_payload, marker_run_id="other-run")
     body_hash_mismatch = replace(final_payload, visible_body_hash="sha256:" + "0" * 64)
     final_hash_mismatch = replace(final_payload, final_payload_hash="sha256:" + "1" * 64)
@@ -165,6 +166,7 @@ def test_final_payload_validation_rejects_marker_and_hash_mismatches() -> None:
     duplicate_fingerprints = replace(final_payload, item_fingerprints=("fp-1", "fp-1"))
 
     assert validate_final_issue_comment_payload(not_final_line).reason_code == PayloadValidationReasonCode.MARKER_NOT_FINAL_LINE
+    assert validate_final_issue_comment_payload(extra_trailing_blank).reason_code == PayloadValidationReasonCode.MARKER_NOT_FINAL_LINE
     assert validate_final_issue_comment_payload(marker_mismatch).reason_code == PayloadValidationReasonCode.MARKER_FIELD_MISMATCH
     assert validate_final_issue_comment_payload(body_hash_mismatch).reason_code == PayloadValidationReasonCode.BODY_HASH_MISMATCH
     assert validate_final_issue_comment_payload(final_hash_mismatch).reason_code == PayloadValidationReasonCode.FINAL_PAYLOAD_HASH_MISMATCH

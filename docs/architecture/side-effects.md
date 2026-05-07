@@ -119,7 +119,7 @@ Freshness includes owner/repo, PR number, base SHA, head SHA, merge-base SHA whe
 
 Every postable finding must have a stable fingerprint, target SHA, and body hash. Duplicate postable or approved finding fingerprints are rejected before marker generation, approval final-hash validation, or writer reachability.
 
-The writer must fetch existing ReviewGraph artifacts before posting and create at most one top-level comment for the approved run/retry sequence while preserving per-finding fingerprints for reconciliation. If a network timeout occurs after GitHub accepted a write, retry must reconcile by payload hash and finding fingerprint/body hash instead of posting a duplicate.
+The writer must fetch existing ReviewGraph artifacts before posting and create at most one top-level comment for the approved run/retry sequence while preserving per-finding fingerprints for reconciliation. A no-post marker match requires target hash, findings hash, and payload hash equality. If a network timeout occurs after GitHub accepted a write, retry must reconcile by payload hash and finding fingerprint/body hash instead of posting a duplicate.
 
 This is not a global cross-process locking guarantee. Two independent approved runs can race if they both scan before either comment exists. Global duplicate prevention requires external storage or locking and is deferred. If a later scan observes multiple trusted identical markers, ReviewGraph treats the payload as reconciled, emits duplicate-marker metadata, and posts zero additional comments. Trusted marker conflicts fail closed.
 

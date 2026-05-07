@@ -9,6 +9,7 @@ from reviewgraph.hashing import (
     findings_hash,
     is_exact_reviewgraph_v1_marker_line,
     marker_payload_hash,
+    parse_reviewgraph_v1_marker_line,
     visible_body_hash,
 )
 from reviewgraph.models import (
@@ -25,15 +26,6 @@ from reviewgraph.models import (
     ReviewVerdict,
 )
 from reviewgraph.posting import PostingPlanError, build_candidate_issue_comment_payload
-
-
-_MARKER_RE = re.compile(
-    r"^<!-- reviewgraph:v1 "
-    r"run_id=(?P<run_id>[A-Za-z0-9][A-Za-z0-9._:/#-]{0,127}) "
-    r"target=(?P<target>sha256:[0-9a-f]{64}) "
-    r"payload=(?P<payload>sha256:[0-9a-f]{64}) "
-    r"findings=(?P<findings>sha256:[0-9a-f]{64}) -->$"
-)
 
 
 def validate_candidate_issue_comment_payload(
@@ -151,24 +143,24 @@ def reject_formal_review_payload(endpoint: str, body: Mapping[str, object]) -> P
 
 
 def _validate_marker(payload: FinalIssueCommentPayload) -> PayloadValidationResult | None:
-    canonical = canonical_text_body(payload.body)
-    lines = canonical.split("\n")
-    final_line = lines[-2] if len(lines) >= 2 else ""
+    normalized = _normalize_line_endings(payload.body)
+    final_line = _body_final_line(payload.body)
+    lines = normalized.split("\n")
     marker_lines = [line for line in lines if is_exact_reviewgraph_v1_marker_line(line)]
     if final_line != payload.marker_line or not is_exact_reviewgraph_v1_marker_line(payload.marker_line):
         return _fail(PayloadValidationReasonCode.MARKER_NOT_FINAL_LINE, "marker must be the final body line")
     if marker_lines != [payload.marker_line]:
         return _fail(PayloadValidationReasonCode.MARKER_NOT_FINAL_LINE, "marker must appear exactly once as final line")
-    marker = _MARKER_RE.fullmatch(payload.marker_line)
+    marker = parse_reviewgraph_v1_marker_line(payload.marker_line)
     if marker is None:
         return _fail(PayloadValidationReasonCode.MARKER_FIELD_MISMATCH, "marker line does not match v1 grammar")
-    if marker.group("run_id") != payload.marker_run_id:
+    if marker["run_id"] != payload.marker_run_id:
         return _fail(PayloadValidationReasonCode.MARKER_FIELD_MISMATCH, "marker run_id does not match payload")
-    if marker.group("target") != payload.marker_target_hash:
+    if marker["target"] != payload.marker_target_hash:
         return _fail(PayloadValidationReasonCode.MARKER_FIELD_MISMATCH, "marker target hash does not match payload")
-    if marker.group("payload") != payload.marker_payload_hash:
+    if marker["payload"] != payload.marker_payload_hash:
         return _fail(PayloadValidationReasonCode.MARKER_FIELD_MISMATCH, "marker payload hash does not match payload")
-    if marker.group("findings") != payload.marker_findings_hash:
+    if marker["findings"] != payload.marker_findings_hash:
         return _fail(PayloadValidationReasonCode.MARKER_FIELD_MISMATCH, "marker findings hash does not match payload")
     marker_payload = marker_payload_hash(payload.body)
     if payload.marker_payload_hash != marker_payload:
@@ -180,6 +172,19 @@ def _validate_marker(payload: FinalIssueCommentPayload) -> PayloadValidationResu
 
 def _contains_marker_line(body: str) -> bool:
     return any(is_exact_reviewgraph_v1_marker_line(line) for line in canonical_text_body(body).split("\n"))
+
+
+def _normalize_line_endings(body: str) -> str:
+    return body.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _body_final_line(body: str) -> str:
+    normalized = _normalize_line_endings(body)
+    if normalized.endswith("\n"):
+        normalized = normalized[:-1]
+    if not normalized:
+        return ""
+    return normalized.split("\n")[-1]
 
 
 def _issue_comment_endpoint(target: ReviewTarget) -> str:

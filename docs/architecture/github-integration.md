@@ -157,7 +157,7 @@ Fields:
 - `payload`: hash of the exact posted body excluding the marker.
 - `findings`: hash of sorted approved finding fingerprints. Duplicate postable or approved fingerprints are invalid input and fail closed; they are not deduplicated or hashed as a multiset.
 
-The writer fetches existing PR comments before posting and must paginate that scan or fail closed. It recognizes markers only when the final line exactly matches the ReviewGraph marker grammar. A copied marker in the middle of a trusted comment body is inert. If a matching `target` and `findings` marker already exists on a comment authored by the approved GitHub actor or a configured trusted ReviewGraph bot, it treats the write as reconciled and does not post again. Markers from other authors are ignored. If multiple trusted comments have identical matching markers, ReviewGraph records duplicate-marker metadata, treats the payload as reconciled, and posts zero additional comments. If a trusted marker exists with the same target and findings but a different payload hash, it fails closed and emits a local note rather than editing or duplicating the comment.
+The writer fetches existing PR comments before posting and must paginate that scan or fail closed. It recognizes markers only when the final line exactly matches the ReviewGraph marker grammar. A copied marker in the middle of a trusted comment body is inert. If a marker with matching `target`, `findings`, and `payload` hashes already exists on a comment authored by the approved GitHub actor or a configured trusted ReviewGraph bot, it treats the write as reconciled and does not post again. Markers from other authors are ignored. If multiple trusted comments have identical matching markers, ReviewGraph records duplicate-marker metadata, treats the payload as reconciled, and posts zero additional comments. If a trusted marker exists with the same target and findings but a different payload hash, it fails closed and emits a local note rather than editing or duplicating the comment.
 
 The marker `payload` field is the hash of the exact visible comment body excluding the marker line. The approval `final_payload_hash` is the hash of the full final issue-comment body including the marker line. Candidate payloads carry visible body and findings hash inputs only; they must not include the final marker line and must not be accepted by a writer.
 
@@ -178,4 +178,4 @@ The writer also records in-memory result metadata for the current run:
 }
 ```
 
-Before posting, the writer checks existing ReviewGraph markers for the same target and approved finding fingerprints.
+Before posting, the writer checks existing ReviewGraph markers for the same target, approved finding fingerprints, and payload hash.

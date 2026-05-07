@@ -9,6 +9,7 @@ from reviewgraph.hashing import (
     marker_payload_hash,
     visible_body_hash,
 )
+from reviewgraph.markers import build_reviewgraph_marker_line
 from reviewgraph.models import (
     ApprovalDecision,
     ApprovalDecisionBuildReasonCode,
@@ -124,12 +125,11 @@ def build_approval_proof(
     visible_body = redaction.text.rstrip("\n") + "\n"
     visible_hash = visible_body_hash(visible_body)
     selected_findings_hash = findings_hash(sorted_fingerprints)
-    marker_line = (
-        "<!-- reviewgraph:v1 "
-        f"run_id={run_id} "
-        f"target={review_target.target_hash()} "
-        f"payload={marker_payload_hash(visible_body)} "
-        f"findings={selected_findings_hash} -->"
+    marker_line = build_reviewgraph_marker_line(
+        run_id=run_id,
+        review_target=review_target,
+        visible_body=visible_body,
+        finding_fingerprints=sorted_fingerprints,
     )
     if not is_exact_reviewgraph_v1_marker_line(marker_line):
         return _fail(ApprovalProofReasonCode.INVALID_RUN_ID, "generated marker line is invalid")
