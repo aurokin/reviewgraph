@@ -3,7 +3,17 @@ from __future__ import annotations
 from inspect import Parameter, signature
 from typing import Iterable
 
-from reviewgraph.hashing import canonical_json_hash, sha256_text
+from reviewgraph.hashing import (
+    canonical_json_hash,
+    canonical_text_body,
+    canonical_visible_body as canonical_hash_visible_body,
+    final_payload_hash,
+    findings_hash as canonical_findings_hash,
+    is_exact_reviewgraph_v1_marker_line,
+    marker_payload_hash,
+    sha256_text,
+    visible_body_hash as canonical_visible_body_hash,
+)
 from reviewgraph.models import (
     ArtifactKind,
     CandidateIssueCommentPayload,
@@ -32,36 +42,30 @@ MARKER_SUFFIX = " -->"
 
 
 def canonical_visible_body(text: str) -> str:
-    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
-    canonical = canonical_full_body(normalized)
-    lines = canonical.split("\n")
-    if len(lines) >= 2 and _is_marker_line(lines[-2]):
-        canonical = "\n".join(lines[:-2]).rstrip("\n") + "\n"
-    return canonical
+    return canonical_hash_visible_body(text)
 
 
 def _is_marker_line(line: str) -> bool:
-    return line.startswith(MARKER_PREFIX) and line.endswith(MARKER_SUFFIX)
+    return is_exact_reviewgraph_v1_marker_line(line)
 
 
 def canonical_full_body(text: str) -> str:
-    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
-    return normalized.rstrip("\n") + "\n"
+    return canonical_text_body(text)
 
 
 def visible_body_hash(text: str) -> str:
-    return sha256_text(canonical_visible_body(text))
+    return canonical_visible_body_hash(text)
 
 
 def full_body_hash(full_body: str) -> str:
-    return sha256_text(full_body)
+    return final_payload_hash(full_body)
 
 
 def findings_hash(fingerprints: Iterable[str]) -> str:
-    ordered = sorted(fingerprints)
-    if len(set(ordered)) != len(ordered):
-        raise PostingPlanError("duplicate finding fingerprints are not allowed")
-    return canonical_json_hash(ordered)
+    try:
+        return canonical_findings_hash(fingerprints)
+    except ValueError as exc:
+        raise PostingPlanError(str(exc)) from exc
 
 
 def validate_mvp_artifact_kind(kind: str | ArtifactKind) -> ArtifactKind:

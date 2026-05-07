@@ -129,6 +129,7 @@ def _initialize_review_state(state: _EmptyDryRunRuntimeState) -> dict[str, Any]:
         local_verdict=None,
         rendered_markdown=None,
         posting_plan=None,
+        post_interaction_gate=None,
         actor_permission_gate=None,
         payload_validation=None,
         marker_reconciliation=None,

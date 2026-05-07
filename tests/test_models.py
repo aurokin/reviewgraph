@@ -28,6 +28,7 @@ from reviewgraph.models import (
     NormalizationError,
     OutputClassification,
     PayloadValidationResult,
+    PostInteractionGateResult,
     PostingDestination,
     PostingPlan,
     PostingPlanItem,
@@ -98,6 +99,7 @@ EXPECTED_STATE_FIELDS = (
     "local_verdict",
     "rendered_markdown",
     "posting_plan",
+    "post_interaction_gate",
     "actor_permission_gate",
     "payload_validation",
     "marker_reconciliation",
@@ -618,6 +620,7 @@ def test_side_effect_contracts_bind_approval_finalization_and_writer_metadata() 
         permission="write",
         checked_at="2026-05-06T01:00:00Z",
     )
+    interaction_gate = PostInteractionGateResult(status=GateStatus.PASS, interactive=True)
     validation = PayloadValidationResult(
         status=GateStatus.PASS,
         payload_hash=payload.full_body_hash,
@@ -644,6 +647,7 @@ def test_side_effect_contracts_bind_approval_finalization_and_writer_metadata() 
     assert approval.approved_review_target_hash == target.target_hash()
     assert posting_target.review_target == target
     assert plan.public_payload_items[0].id == "finding-1"
+    assert interaction_gate.interactive is True
     assert actor_gate.permission == "write"
     assert validation.payload_hash == payload.full_body_hash
     assert reconciliation.trusted_actor == "reviewgraph-bot"
@@ -853,6 +857,8 @@ def test_actionable_memory_requires_trusted_unresolved_supported_actor(kwargs: d
         lambda: ActorPermissionGateResult(GateStatus.PASS, None, "write", "2026-05-06T01:00:00Z"),
         lambda: ActorPermissionGateResult("pass", "reviewgraph-bot", "write", "2026-05-06T01:00:00Z"),
         lambda: ActorPermissionGateResult(GateStatus.FAIL, "", None, None),
+        lambda: PostInteractionGateResult(GateStatus.PASS, False),
+        lambda: PostInteractionGateResult("pass", True),
         lambda: PayloadValidationResult(GateStatus.PASS, None, "sha256:target"),
         lambda: PayloadValidationResult("pass", "sha256:payload", "sha256:target"),
         lambda: PayloadValidationResult(GateStatus.FAIL, "payload", None),
@@ -1141,6 +1147,7 @@ def _review_state() -> ReviewState:
         local_verdict=None,
         rendered_markdown=None,
         posting_plan=PostingPlan(items=()),
+        post_interaction_gate=None,
         actor_permission_gate=None,
         payload_validation=None,
         marker_reconciliation=None,

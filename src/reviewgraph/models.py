@@ -7,7 +7,6 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import Any, Mapping, TypeAlias
 
-
 class Severity(StrEnum):
     CRITICAL = "critical"
     WARNING = "warning"
@@ -1314,6 +1313,22 @@ CandidateIssueCommentPayload: TypeAlias = GitHubReviewPayload
 
 
 @dataclass(frozen=True)
+class PostInteractionGateResult:
+    status: GateStatus
+    interactive: bool
+    reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.status, GateStatus):
+            raise ValueError("post interaction gate status must be a GateStatus")
+        if not isinstance(self.interactive, bool):
+            raise ValueError("post interaction gate interactive must be a bool")
+        _require_optional_non_empty(self.reason, "post interaction gate reason")
+        if self.status == GateStatus.PASS and not self.interactive:
+            raise ValueError("post interaction gate pass requires interactive human approval surface")
+
+
+@dataclass(frozen=True)
 class ActorPermissionGateResult:
     status: GateStatus
     actor: str | None
@@ -1495,6 +1510,7 @@ class ReviewState:
     local_verdict: ReviewVerdict | None
     rendered_markdown: str | None
     posting_plan: PostingPlan | None
+    post_interaction_gate: PostInteractionGateResult | None
     actor_permission_gate: ActorPermissionGateResult | None
     payload_validation: PayloadValidationResult | None
     marker_reconciliation: MarkerReconciliationResult | None

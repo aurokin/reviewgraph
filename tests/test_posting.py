@@ -353,8 +353,15 @@ def test_candidate_payload_has_fingerprints_and_canonical_hashes() -> None:
     assert payload.visible_body_hash == visible_body_hash(payload.body)
     assert payload.full_body_hash == full_body_hash(payload.body)
     assert canonical_visible_body("a\r\nb\n\n") == "a\nb\n"
-    assert full_body_hash("a\r\nb\n\n") != full_body_hash("a\nb\n")
-    assert visible_body_hash("a\n<!-- reviewgraph:payload -->\n") == visible_body_hash("a\n")
+    assert full_body_hash("a\r\nb\n\n") == full_body_hash("a\nb\n")
+    valid_marker = (
+        "<!-- reviewgraph:v1 run_id=run-123 "
+        "target=sha256:b0b1700548a7afe8fda856a5128dd4dc3059e7b67bf19aa730bee6a5a9cf4376 "
+        "payload=sha256:106a40d32d329b5b429aec2b78e53b278cf66bda3815f53a1cc6d3a0ceb3239a "
+        "findings=sha256:49113a9c08f5fd7850b7e050966113aee6e623b9ae1677511710f926bc30d4d0 -->"
+    )
+    assert visible_body_hash(f"a\n{valid_marker}\n") == visible_body_hash("a\n")
+    assert visible_body_hash("a\n<!-- reviewgraph:payload -->\n") != visible_body_hash("a\n")
     assert visible_body_hash("a\n<!-- reviewgraph:payload -->\nb\n") != visible_body_hash("a\nb\n")
     assert visible_body_hash("a\n<!-- reviewgraph:payload") != visible_body_hash("a\n")
 
