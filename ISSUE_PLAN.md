@@ -33,6 +33,7 @@ This issue should create the first approved-post vertical slice, but it must sta
 - Only `FinalIssueCommentPayload` with top-level `issue_comment` artifact kind can reach the fake writer.
 - Candidate payloads, formal PR review payloads, inline comments, labels, statuses, approvals, request-changes writes, suggested replies, local notes, suppressed outputs, and clarification requests cannot reach the fake writer.
 - Marker reconciliation must complete before posting. `SAFE_TO_POST` may release writer input; `RECONCILED_EXISTING` is terminal no-post/reconciled; `FAILED_CLOSED` blocks writer calls.
+- `writer_result.status=RECONCILED` means the post path ended reconciled from marker state with no writer invocation. It is synthesized by `post_or_emit` from finalization/marker state, not returned by the fake writer.
 - Retry safety is scoped to one approved run/retry sequence. No cross-process locking or global dedupe claim.
 - Real GitHub writer transport, live post smoke, manual disposable PR allowlists, and production post CLI are out of scope.
 
@@ -48,18 +49,21 @@ This issue should create the first approved-post vertical slice, but it must sta
    - Validate final issue-comment payloads with `validate_final_issue_comment_payload(...)` immediately before recording a fake write.
    - Reject candidate payloads, formal PR review-like shapes, non-issue-comment artifact kinds, missing final marker lines, invalid hashes, and marker-field mismatches.
    - Return `GitHubWriterResult(status=POSTED, artifact_kind=issue_comment, target_hash=..., payload_hash=..., comment_id=...)` on fake posts.
-   - Return `GitHubWriterResult(status=RECONCILED, ..., comment_id=existing_id)` when marker reconciliation proves an existing trusted matching comment.
    - Return `GitHubWriterResult(status=FAILED, ..., error=stable_reason)` only for writer-local validation/transport failures after finalization released writer input.
+   - Never return `RECONCILED`; the fake writer is not invoked for marker-reconciled no-post paths.
    - Record no raw body text in result metadata; fake transport storage may keep body for marker retry simulation in test-only memory.
 3. Extend finalization for marker-aware writer release:
    - Keep existing approval preflight first.
    - Continue actor/permission and target freshness checks before body construction.
-   - Build the final issue-comment payload with the supplied builder only after preflight passes.
+   - Add a shared final-body/payload builder boundary used by both `build_approval_proof(...)` and finalization so approved final hashes cannot drift through duplicated body construction.
+   - Build the final issue-comment payload with the shared builder only after preflight passes.
    - Validate the final payload and ensure `payload.final_payload_hash == approval.approved_final_payload_hash`.
-   - Accept an explicit `MarkerReconciliationResult` or a narrow marker reconciliation callback/transport input.
+   - Invoke marker reconciliation after the final payload is built using the freshly computed target hash, final visible payload hash, and findings hash.
+   - Do not accept an unbound precomputed `MarkerReconciliationResult` unless it carries or is wrapped with the exact expected target/payload/findings hash inputs and finalization verifies those bindings.
    - If marker reconciliation is `SAFE_TO_POST`, set `finalization_status.state=FINALIZED`, set `final_payload`, set `final_payload_hash`, store `payload_validation`, store `marker_reconciliation`, and set `writer_input_released=true`.
-   - If marker reconciliation is `RECONCILED_EXISTING`, do not release writer input and do not post; expose enough state for `post_or_emit` to return a reconciled writer result with the existing comment ID.
-   - If marker reconciliation is `FAILED_CLOSED`, leave `final_payload`, `final_payload_hash`, and writer input unset and return dry-run error evidence.
+   - Add explicit finalization reason codes for marker terminal states, such as `MARKER_RECONCILED_EXISTING` and `MARKER_RECONCILIATION_FAILED`; do not reuse `MARKER_RECONCILIATION_DEFERRED` after marker reconciliation has actually run.
+   - If marker reconciliation is `RECONCILED_EXISTING`, set finalization to terminal no-post state with the reconciled-existing reason, do not release writer input, and expose enough state for `post_or_emit` to synthesize `GitHubWriterResult(status=RECONCILED, ..., comment_id=existing_id)` with writer call count zero.
+   - If marker reconciliation is `FAILED_CLOSED`, set `finalization_status.state=FAILED_CLOSED`, use the marker-failed finalization reason, include `marker_reconciliation.reason_code` in dry-run error evidence, and leave `final_payload`, `final_payload_hash`, and writer input unset.
    - Preserve the existing `MARKER_RECONCILIATION_DEFERRED` behavior only when the caller has not supplied marker reconciliation yet; that state must not reach the writer.
 4. Add a harness-only approved post route:
    - Prefer a small pure function such as `run_fixture_fake_post_attempt(...)` or `run_fake_post_harness(...)` over exposing production CLI posting.
@@ -84,7 +88,7 @@ This issue should create the first approved-post vertical slice, but it must sta
 6. Prove retry/idempotency behavior in fake storage:
    - First approved attempt with `SAFE_TO_POST` stores one fake comment.
    - Retrying the same approved payload scans the stored marker and returns reconciled existing with zero new fake posts.
-   - Simulated "server created comment, client timed out" stores the comment but returns a retryable/unknown writer-local outcome; retry must reconcile by marker and post zero additional comments.
+   - Ambiguous accepted-write timeout simulation is deferred to `AUR-241`; AUR-222 proves only deterministic fake retry after an already stored marker reconciles without another fake post.
    - Trusted duplicate matching markers return reconciled existing with duplicate metadata and post zero additional comments.
    - Trusted same target/findings but different payload hash fails closed before writer post.
 7. Update narrow durable docs:
@@ -101,16 +105,17 @@ Create or update tests covering:
 - Fake writer rejects candidate payloads and non-final/final-marker-invalid payloads.
 - Fake writer result includes stable status, target hash, payload hash, artifact kind, and fake comment ID without raw body text.
 - Finalization with `SAFE_TO_POST` releases writer input and sets finalized state/final payload hash.
-- Finalization with `RECONCILED_EXISTING` returns terminal no-post/reconciled evidence and writer call count remains zero.
-- Finalization with `FAILED_CLOSED` leaves final payload/hash/writer input unset.
+- Finalization with `RECONCILED_EXISTING` returns terminal no-post/reconciled evidence, and `post_or_emit` synthesizes `GitHubWriterResult(status=RECONCILED)` with writer call count zero.
+- Finalization with `FAILED_CLOSED` leaves final payload/hash/writer input unset and exposes marker failure reason evidence.
+- Finalization cannot consume stale marker reconciliation evidence computed for a different target hash, payload hash, or findings hash.
 - Harness approved post route calls fake writer exactly once.
 - Harness dry-run route calls fake writer zero times.
 - Non-interactive post mode calls approval/finalization/writer zero times.
 - Missing, rejected, failed-build, empty, unknown, or non-public approval calls writer zero times.
 - Stale target, unknown target freshness, actor mismatch, permission re-check failure, payload validation failure, redaction failure, and marker conflict call writer zero times.
-- Retry after an ambiguous fake write reconciles the existing marker and does not create a second fake comment.
+- Retry after a stored fake comment reconciles the existing marker and does not create a second fake comment.
 - Public CLI still does not expose production `--post`.
-- Import-boundary proof: reviewer, GitHub read, posting-plan, approval, and permission modules do not import the fake writer unless they are explicitly part of the harness boundary.
+- Import-boundary proof: reviewer, GitHub read, posting-plan, approval, permission, finalization, public CLI, and default runner modules do not import the fake writer unless they are explicitly part of the harness boundary.
 
 ## Validation
 
