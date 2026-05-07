@@ -155,6 +155,32 @@ def test_non_public_approved_ids_fail_before_finalization_or_writer_release(plan
     assert result.item_diagnostics[0].item_id == approved_id
 
 
+def test_writer_release_preflight_rejects_descriptor_drift_from_posting_plan() -> None:
+    plan = PostingPlan(
+        items=(PostingPlanItem("reply-1", "suggested_reply", PostingDestination.SUGGESTED_REPLY, False, "fp-1"),)
+    )
+    approval = replace(_approval(), approved_item_ids=("reply-1",))
+
+    result = evaluate_writer_release_preflight(
+        post_enabled=True,
+        approval_result=approval,
+        posting_plan=plan,
+        current_items_by_id={
+            "reply-1": ApprovedItemDescriptor(
+                item_id="reply-1",
+                source_classification=OutputClassification.POSTABLE_FINDING.value,
+                destination=PostingDestination.REVIEW_BODY_ITEM,
+                public_payload_eligible=True,
+                has_fingerprint=True,
+            )
+        },
+    )
+
+    assert result.status == GateStatus.FAIL
+    assert result.reason_code == WriterReleasePreflightReasonCode.NON_PUBLIC_APPROVED_ITEM
+    assert result.item_diagnostics[0].destination == PostingDestination.SUGGESTED_REPLY
+
+
 def test_finalization_rechecks_current_posting_plan_before_current_reads_or_payload_builder() -> None:
     calls = {"count": 0}
 
@@ -181,6 +207,46 @@ def test_finalization_rechecks_current_posting_plan_before_current_reads_or_payl
     assert result.final_payload_builder_calls == 0
     assert calls["count"] == 0
     assert result.final_payload is None
+    assert result.writer_input_released is False
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "malformed_object",
+        "fingerprint_drift",
+    ],
+)
+def test_finalization_rejects_malformed_or_drifted_current_finding_before_current_reads(
+    case: str,
+) -> None:
+    calls = {"count": 0}
+
+    def builder():
+        calls["count"] += 1
+        raise AssertionError("final payload builder must not be called")
+
+    approved_findings_by_id = (
+        {"finding-1": SimpleNamespace(fingerprint="fp-1", classification=OutputClassification.POSTABLE_FINDING)}
+        if case == "malformed_object"
+        else {"finding-1": replace(_finding(), fingerprint="fp-drift")}
+    )
+
+    result = finalize_github_payload(
+        approval=_approval(),
+        posting_plan=_plan(),
+        approved_findings_by_id=approved_findings_by_id,
+        current_actor_permission_probe=_actor_probe(actor=None),
+        current_target_probe=TargetFreshnessProbeResult(current_target=None),
+        evaluated_at=EVALUATED_AT,
+        final_payload_builder=builder,
+    )
+
+    assert result.finalization_status.reason_code.value == "approval_preflight_failed"
+    assert result.actor_permission_finalization_check is None
+    assert result.target_freshness_check is None
+    assert result.final_payload_builder_calls == 0
+    assert calls["count"] == 0
     assert result.writer_input_released is False
 
 

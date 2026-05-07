@@ -13,6 +13,7 @@ from reviewgraph.models import (
     ApprovalDecision,
     ApprovalDecisionBuildReasonCode,
     ApprovalDecisionBuildResult,
+    ClassifiedFinding,
     FinalIssueCommentPayload,
     FinalizationReasonCode,
     FinalizationState,
@@ -533,6 +534,9 @@ def _writer_preflight_for_approval(
                 )
             )
             continue
+        if not _descriptor_matches_plan_item(descriptor, plan_item):
+            diagnostics.append(_plan_item_diagnostic(plan_item))
+            continue
         diagnostic = _public_item_diagnostic(descriptor)
         if diagnostic is not None:
             diagnostics.append(diagnostic)
@@ -587,6 +591,28 @@ def _public_item_diagnostic(descriptor: ApprovedItemDescriptor) -> WriterRelease
     return None
 
 
+def _descriptor_matches_plan_item(descriptor: ApprovedItemDescriptor, item: object) -> bool:
+    return (
+        getattr(item, "id", None) == descriptor.item_id
+        and getattr(item, "source_classification", None) == descriptor.source_classification
+        and getattr(item, "destination", None) == descriptor.destination
+        and getattr(item, "public_payload_eligible", None) == descriptor.public_payload_eligible
+        and bool(getattr(item, "fingerprint", None)) == descriptor.has_fingerprint
+    )
+
+
+def _plan_item_diagnostic(item) -> WriterReleaseItemDiagnostic:
+    return WriterReleaseItemDiagnostic(
+        item_id=item.id,
+        reason_code=WriterReleaseItemReasonCode.NOT_PUBLIC_PAYLOAD_ELIGIBLE
+        if not item.public_payload_eligible
+        else WriterReleaseItemReasonCode.WRONG_DESTINATION,
+        destination=item.destination,
+        source_classification=item.source_classification,
+        public_payload_eligible=item.public_payload_eligible,
+    )
+
+
 def _diagnostic(
     descriptor: ApprovedItemDescriptor,
     reason_code: WriterReleaseItemReasonCode,
@@ -629,11 +655,15 @@ def _approval_preflight(
     fingerprints: list[str] = []
     for item_id in approval.approved_item_ids:
         finding = approved_findings_by_id[item_id]
-        if not hasattr(finding, "classification") or getattr(finding, "classification") != OutputClassification.POSTABLE_FINDING:
+        if not isinstance(finding, ClassifiedFinding):
+            return "approval references a non-public approved item"
+        if getattr(finding, "classification") != OutputClassification.POSTABLE_FINDING:
             return "approval references a non-public approved item"
         fingerprint = getattr(finding, "fingerprint", None)
         if not isinstance(fingerprint, str) or not fingerprint:
             return "approved finding is missing fingerprint"
+        if items_by_id[item_id].fingerprint != fingerprint:
+            return "approved finding fingerprint does not match posting plan"
         fingerprints.append(fingerprint)
     if len(set(fingerprints)) != len(fingerprints):
         return "approval has duplicate approved fingerprints"

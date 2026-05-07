@@ -78,8 +78,9 @@ class ReviewState(TypedDict):
 16. `ingest_clarification_answer`
 17. `post_mode_interaction_gate`
 18. `approval_gate`
-19. `finalize_github_payload`
-20. `post_or_emit`
+19. `writer_release_preflight`
+20. `finalize_github_payload`
+21. `post_or_emit`
 
 ## Routing
 
@@ -110,15 +111,20 @@ START
       interactive human approval available -> approval_gate
       CI/webhook/config-only/non-TTY -> END with dry-run output and error
   -> approval_gate
-      approved -> finalize_github_payload
+      approved -> writer_release_preflight
       rejected -> END with dry-run output
+  -> writer_release_preflight
+      eligible for finalization -> finalize_github_payload
+      missing/rejected/invalid/non-public approval -> END with dry-run output and no writer input
   -> finalize_github_payload
       hash/target/permission valid -> post_or_emit
       invalid -> END with dry-run output and error
   -> END
 ```
 
-`actor_permission_finalization_check` and `target_freshness_check` are preflight results inside `finalize_github_payload`, not proof that the full payload is finalized. They record whether current actor/permission and PR target probes still match the approved snapshot before later redaction, payload-hash, marker reconciliation, and writer-release checks can release writer input.
+`writer_release_preflight` is the first post-approval preflight. It rejects missing, rejected, failed-build, duplicate, unknown, or non-public approvals before current actor/permission reads, target freshness reads, final payload construction, marker reconciliation, or writer reachability.
+
+`actor_permission_finalization_check` and `target_freshness_check` are later preflight results inside `finalize_github_payload`, not proof that the full payload is finalized. They record whether current actor/permission and PR target probes still match the approved snapshot before later redaction, payload-hash, marker reconciliation, and writer-release checks can release writer input.
 
 ## Review target
 
