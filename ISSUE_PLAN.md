@@ -34,10 +34,11 @@ This is a harness-first marker slice. It should make marker generation/parsing r
   - sorted approved-fingerprint hash for marker `findings`
   - final full-body hash includes the exact marker line.
 - Scanner recognition is exact final-line only. A copied marker in the middle of a comment body is inert.
-- Existing matching marker prevents duplicate posting in the happy path by returning a reconciled marker result.
+- Existing matching marker prevents duplicate posting in the happy path only when target hash, findings hash, and payload hash all match.
 - Retry after an ambiguous timeout can reconcile by marker against a fake existing-comment list without posting again.
-- Author trust, pagination failure, malformed trusted markers, spoofed markers, same-target/different-payload conflicts, marker-count transport summaries, and duplicate-fingerprint hardening beyond existing hash primitive rejection are deferred to `AUR-245`.
-- The writer adapter remains unreachable in this issue. `AUR-221` produces reconciliation data that later finalization/writer work can consume.
+- Same-target/same-findings/different-payload markers must not return reconciled/no-post in AUR-221. They may return a trust-neutral non-reconciled/deferred-conflict result; `AUR-245` owns turning trusted conflicts into fail-closed policy.
+- Author trust, pagination failure, malformed trusted markers, spoofed markers, marker-count transport summaries, and duplicate-fingerprint hardening beyond existing hash primitive rejection are deferred to `AUR-245`.
+- The writer adapter remains unreachable in this issue. `AUR-221` produces trust-neutral marker scan data that later finalization/writer work can consume; it does not prove final marker reconciliation while author trust is deferred.
 
 ## Implementation Shape
 
@@ -49,7 +50,8 @@ This is a harness-first marker slice. It should make marker generation/parsing r
 2. Define marker data contracts in `src/reviewgraph/models.py` only as needed:
    - likely `ReviewGraphMarker` for parsed/generated marker fields
    - optional `ExistingComment`/scan input model if a typed fake comment helps tests
-   - expand `MarkerReconciliationResult` only if current fields cannot express match/no-match without ambiguity
+   - prefer a trust-neutral marker scan/match result for AUR-221
+   - reserve `MarkerReconciliationResult(PASS)` for later trusted reconciliation unless fake caller-supplied trust is explicit
 3. Reuse one canonical grammar surface:
    - import marker regex helpers or expose parser helpers from `reviewgraph.hashing`
    - avoid a third independent regex that can drift from `hashing.py` and `payload_validation.py`
@@ -63,8 +65,9 @@ This is a harness-first marker slice. It should make marker generation/parsing r
    - ignore body-middle marker copies
    - return structured no-match and match outcomes without throwing for ordinary no-marker comments
 6. Add happy-path reconciliation:
-   - matching target hash and findings hash means no new post is needed
-   - same payload hash can return existing comment ID and marker metadata
+   - matching target hash, findings hash, and payload hash means no new post is needed
+   - matching payload can return existing comment ID and marker metadata
+   - same target/findings with a different payload hash must return non-reconciled/deferred-conflict data, not a reconciled result
    - retry-after-timeout harness can feed existing fake comments and prove a matching marker reconciles
 7. Keep `payload_validation.validate_final_issue_comment_payload(...)` aligned:
    - final payload marker validation should continue to enforce final-line-only and exact hash fields
@@ -86,9 +89,11 @@ Create `tests/test_markers.py` covering:
 - Parser rejects malformed markers, reordered fields, extra fields, wrong version, bad run IDs, uppercase hash characters, missing hashes, and wrong whitespace.
 - Scanner recognizes only final-line markers.
 - Copied middle-of-body marker is inert when the final line is not a marker.
-- Existing matching marker returns reconciled/no-post result with existing comment ID.
+- Existing target/findings/payload marker returns reconciled/no-post result with existing comment ID.
+- Same-target/same-findings/different-payload marker returns a non-reconciled/deferred-conflict result, not no-post success.
 - No existing marker returns a no-match result that does not fail closed yet.
 - Retry-after-timeout fake comments can reconcile by marker without invoking any writer sentinel.
+- Returned scan/reconciliation data is not writer input and is not a finalization pass while author trust is deferred.
 - Import-boundary proof: `src/reviewgraph/markers.py` has no GitHub, writer, graph, subprocess, environment, or clock imports.
 
 Update existing tests as needed:
@@ -109,7 +114,7 @@ python -m pytest tests/test_markers.py -q
 Regression:
 
 ```bash
-python -m pytest tests/test_markers.py tests/test_payload_hashes.py tests/test_approval.py tests/test_models.py tests/test_target_freshness.py -q
+python -m pytest tests/test_markers.py tests/test_payload_hashes.py tests/test_payload_validation.py tests/test_approval.py tests/test_models.py tests/test_target_freshness.py -q
 python scripts/check_docs.py
 git diff --check
 python -m py_compile src/reviewgraph/*.py
