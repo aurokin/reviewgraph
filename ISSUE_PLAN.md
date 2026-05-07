@@ -19,7 +19,7 @@ Linear is the durable source for status, blockers, and issue handoff. Durable be
 
 Split candidate and finalized payload contracts enough that later approval, finalization, and writer slices cannot treat a candidate payload as a writer input.
 
-This issue validates the MVP GitHub artifact shape. It does not implement approval, finalization, marker reconciliation, fake writer, real writer, or live posting.
+This issue validates the MVP GitHub artifact contract without making the graph writer-ready. It does not implement approval, final payload construction, finalization, marker reconciliation, fake writer, real writer, or live posting.
 
 ## Contracts To Preserve
 
@@ -31,30 +31,53 @@ This issue validates the MVP GitHub artifact shape. It does not implement approv
 - Candidate dataclass and dry-run JSON/markdown must remove `full_body_hash`; a candidate preview hash, if needed later, must be a separate explicitly named field and is not part of this issue.
 - Remove `candidate_payload_hash` from `ReviewState`, `docs/architecture/state-graph.md`, and model contract tests. Candidate visible body hash stays on the candidate payload object only.
 - Candidate payloads are never accepted as writer input.
-- Final issue-comment payloads carry final body, exact marker line/components, visible body hash, final payload hash, findings hash, review target, item fingerprints, and redaction status.
-- Final payload validation checks the exact invariants: marker is the final line, marker fields match payload fields, marker `payload` equals visible-body hash excluding marker, final payload hash includes marker, target hash matches review target, and findings hash matches sorted unique selected fingerprints.
+- Final issue-comment payload contract models carry final body, exact marker line/components, visible body hash, final payload hash, findings hash, review target, item fingerprints, and redaction status. They are inert contracts in this issue, not graph-produced writer inputs.
+- Final payload self-consistency validation checks the exact invariants: marker is the final line, marker fields match payload fields, marker `payload` equals visible-body hash excluding marker, final payload hash includes marker, target hash matches payload review target, and findings hash matches sorted unique payload fingerprints.
+- Writer-readiness validation is deferred. This issue may define a pure request contract validator, but it must not connect it to the graph or writer adapters. If present, that validator must accept independent expected inputs (`ReviewTarget`, selected unique fingerprints, and final payload) so later approval/finalization cannot self-validate payload-owned fields.
 - Candidate and final payload validation require passing redaction status; failed or unknown redaction status fails validation with a stable reason code.
-- Writer-bound request validation includes `method=POST` and exact issue-comment endpoint `/repos/{owner}/{repo}/issues/{pr_number}/comments`, and the endpoint owner/repo/PR number must match the finalized payload `review_target`.
+- Pure request-shape validation, if included, includes `method=POST`, exact issue-comment endpoint `/repos/{owner}/{repo}/issues/{pr_number}/comments`, endpoint owner/repo/PR number matching the independently supplied expected `ReviewTarget`, and a body shape exactly equal to `{"body": final_payload.body}` with no formal-review fields.
 - Payload validation runs before any writer adapter can receive a payload.
 - `ReviewState` and `docs/architecture/state-graph.md` use distinct candidate/final payload type names.
-- `docs/architecture/side-effects.md`, `docs/architecture/github-integration.md`, and `docs/plans/implementation-plan.md` must be updated to stop describing candidate payloads as having generic/final payload hashes. They should distinguish candidate visible-body/findings hash inputs from final payload hash.
+- `docs/architecture/side-effects.md`, `docs/architecture/github-integration.md`, `docs/plans/implementation-plan.md`, and `docs/prds/0003-contracts.md` must be updated to stop describing candidate payloads as having generic/final payload hashes. They should distinguish candidate visible-body/findings hash inputs from final payload hash.
 - Validation failures return stable machine-readable reason codes so later finalization/writer slices can fail closed without parsing prose exceptions.
+- Candidate tamper validation is bound by `review_target`, `body`, `visible_body_hash`, `findings_hash`, sorted unique `item_fingerprints`, and passing `redaction_status`; removing candidate `full_body_hash` must not weaken those invariants.
+
+## Stable Reason Codes
+
+The initial stable code set is:
+
+- `wrong_artifact_kind`
+- `redaction_not_passed`
+- `candidate_contains_marker`
+- `body_hash_mismatch`
+- `findings_hash_mismatch`
+- `duplicate_fingerprints`
+- `target_hash_mismatch`
+- `marker_not_final_line`
+- `marker_field_mismatch`
+- `final_payload_hash_mismatch`
+- `wrong_method`
+- `wrong_endpoint`
+- `request_target_mismatch`
+- `wrong_request_body`
+- `formal_review_payload_rejected`
 
 ## Implementation Shape
 
 1. Replace the current `CandidateIssueCommentPayload = GitHubReviewPayload` alias with distinct dataclasses in `src/reviewgraph/models.py`.
 2. Remove `full_body_hash` from candidate payload model and candidate dry-run JSON/markdown. Candidate preview should expose body, visible body hash, findings hash, item fingerprints, review target, artifact kind, and redaction status only.
 3. Remove `candidate_payload_hash` state from code/docs/tests.
-4. Add final payload model fields for marker components and exact marker line, reusing `AUR-244` hash helpers.
-5. Add a small writer-request model or validator input for method/endpoint validation without implementing a writer transport.
+4. Add inert final payload model fields for marker components and exact marker line, reusing `AUR-244` hash helpers, without constructing final payloads in the graph.
+5. Add a small pure request contract model or validator input for method/endpoint/body-shape validation without implementing a writer transport.
 6. Add a payload validation module, likely `src/reviewgraph/payload_validation.py`, with explicit validators for:
    - candidate payload preview,
-   - finalized issue-comment payload,
-   - writer input accepts only finalized issue comments,
-   - writer-bound endpoint target matches final payload review target,
+   - finalized issue-comment payload self-consistency,
+   - optional writer request shape accepts only finalized issue comments and independently supplied expected target/fingerprint inputs,
+   - request endpoint target matches the independently supplied expected review target,
+   - request body is exactly `{"body": final_payload.body}`,
    - rejected formal review payload dictionaries/endpoints.
 7. Add `tests/test_payload_validation.py` covering every acceptance criterion, including stable failure reason codes.
-8. Update `docs/architecture/state-graph.md`, `docs/architecture/side-effects.md`, `docs/architecture/github-integration.md`, `docs/plans/implementation-plan.md`, and model contract tests so candidate/final payload fields and hash semantics are distinct.
+8. Update `docs/architecture/state-graph.md`, `docs/architecture/side-effects.md`, `docs/architecture/github-integration.md`, `docs/plans/implementation-plan.md`, `docs/prds/0003-contracts.md`, and model contract tests so candidate/final payload fields and hash semantics are distinct.
 9. Update existing tests/render serialization only where required by the candidate/final split.
 
 ## Validation
