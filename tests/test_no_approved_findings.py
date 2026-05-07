@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from reviewgraph.approval import build_approval_decision, build_approval_proof
+from reviewgraph.hashing import visible_body_hash
 from reviewgraph.finalization import (
     ApprovedItemDescriptor,
     TargetFreshnessProbeResult,
@@ -103,10 +104,27 @@ def test_writer_release_preflight_passes_public_findings_without_releasing_write
         findings=(_finding(),),
         suggested_replies=[SuggestedReply("reply-1", "comment-1", "Draft reply must stay local.")],
     )
+    candidate = build_candidate_issue_comment_payload(
+        review_target=_target(),
+        posting_plan=plan,
+        findings=(_finding(),),
+    )
+    proof = build_approval_proof(
+        approved_item_ids=("finding-1",),
+        review_target=_target(),
+        posting_plan=plan,
+        findings=(_finding(),),
+        candidate_payload=candidate,
+        run_id="run-123",
+        approved_by="local-user",
+        timestamp="2026-05-07T00:03:30Z",
+    )
+    decision = build_approval_decision(proof=proof, actor_permission_gate=_actor_gate())
+    assert decision.approval is not None
 
     result = evaluate_writer_release_preflight(
         post_enabled=True,
-        approval_result=_approval(),
+        approval_result=decision.approval,
         posting_plan=plan,
         current_items_by_id=_descriptors(plan),
     )
@@ -117,11 +135,16 @@ def test_writer_release_preflight_passes_public_findings_without_releasing_write
     assert result.approved_item_ids == ("finding-1",)
     assert result.reason_code is None
 
-    candidate = build_candidate_issue_comment_payload(
-        review_target=_target(),
-        posting_plan=plan,
-        findings=(_finding(),),
+    approved_visible_body = (
+        "ReviewGraph approved findings\n"
+        "Target: acme/widgets#42\n"
+        "Head: head456\n\n"
+        "Approved findings:\n"
+        "- P1 Cache miss returns stale data: The new branch returns stale data when the cache misses. (src/cache.py:12)\n"
     )
+    assert proof.status == GateStatus.PASS
+    assert proof.approved_item_ids == ("finding-1",)
+    assert proof.final_visible_body_hash == visible_body_hash(approved_visible_body)
     assert "Draft reply must stay local." not in candidate.body
 
 
@@ -171,8 +194,7 @@ def test_writer_release_preflight_rejects_duplicate_approved_item_ids() -> None:
     assert result.status == GateStatus.FAIL
     assert result.reason_code == WriterReleasePreflightReasonCode.DUPLICATE_APPROVED_ITEM
     assert result.writer_input_released is False
-    assert result.item_diagnostics
-    assert result.item_diagnostics[0].item_id == "finding-1"
+    assert result.item_diagnostics == ()
 
 
 def test_writer_release_preflight_rejects_duplicate_approved_fingerprints() -> None:
@@ -231,7 +253,7 @@ def test_writer_release_preflight_prioritizes_duplicate_fingerprints_over_item_d
 
     result = evaluate_writer_release_preflight(
         post_enabled=True,
-        approval_result=replace(_approval(), approved_item_ids=("finding-1", "finding-2", "note-1")),
+        approval_result=replace(_approval(), approved_item_ids=("finding-1", "finding-2", "missing-finding", "note-1")),
         posting_plan=plan,
         current_items_by_id=_descriptors(plan),
     )

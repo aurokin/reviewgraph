@@ -513,12 +513,6 @@ def _writer_preflight_for_approval(
     if duplicate is not None:
         return _writer_preflight_fail(
             WriterReleasePreflightReasonCode.DUPLICATE_APPROVED_ITEM,
-            item_diagnostics=(
-                WriterReleaseItemDiagnostic(
-                    item_id=duplicate,
-                    reason_code=WriterReleaseItemReasonCode.MISSING_CURRENT_ITEM,
-                ),
-            ),
         )
     items_by_id = {item.id: item for item in posting_plan.items}
     diagnostics: list[WriterReleaseItemDiagnostic] = []
