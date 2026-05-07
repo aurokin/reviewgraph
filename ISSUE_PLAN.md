@@ -49,16 +49,23 @@ Linear's handoff names `src/reviewgraph/finalize.py`; the repository module is `
    - suppressed-findings-only dry-run has no candidate payload preview, no writer call, and local-only posting-plan evidence.
    - clarification-only dry-run has no candidate payload preview, no writer call, and local-only posting-plan evidence.
    - mixed run with approved findings plus suggested reply keeps candidate payload/final approval proof restricted to the finding; suggested reply text must not enter candidate or final public payloads.
-2. Tighten finalization preflight evidence if needed:
-   - Preserve `_approval_preflight(...)` as the first finalization check.
+2. Add a named pure writer-release preflight helper for AUR-222 to consume before finalization:
+   - Prefer a small surface such as `evaluate_writer_release_preflight(post_enabled, approval, approval_build_result, posting_plan, findings_by_id)`.
+   - It accepts `approval=None`, rejected approval, failed approval-build results, `post_enabled=false`, the current `PostingPlan`, and current findings by ID.
+   - It returns stable no-release evidence with explicit reason codes: `post_disabled`, `missing_approval`, `rejected_approval`, `approval_build_failed`, `empty_approval`, `unknown_approved_id`, `non_public_approved_item`, and `no_public_approved_findings`.
+   - It does not call `finalize_github_payload(...)`, current actor/permission probes, target freshness probes, final payload builders, marker reconciliation, or writer code when it fails.
+3. Tighten finalization preflight evidence if needed:
+   - Preserve approval preflight as the first check inside `finalize_github_payload(...)`.
+   - Pass the current `PostingPlan` or a smaller typed approved-item resolver into finalization preflight so approved IDs are checked against current posting-plan public eligibility, not only object presence and `fingerprint`.
    - Return stable dry-run/preflight evidence for missing, empty, rejected, failed-proof, unknown, or non-public approval.
    - Keep `final_payload_builder_calls=0`, `writer_input_released=false`, `final_payload=None`, no final payload hash, no writer result, and a structured reason code for all preflight failures.
    - Do not import writer, GitHub transport, CLI, graph post-mode, marker scanning, or ambient process state.
-3. Improve render/dry-run explanation if needed:
+4. Improve render/dry-run explanation if needed:
    - When `candidate_payload_preview` is absent because all items are local-only or no public findings are eligible, markdown should say dry-run never attempts a GitHub write and no public GitHub payload was prepared because no public postable finding items are eligible.
    - Do not label other fail-closed states as "no public findings" when postable findings exist but are blocked by clarification, required reviewer failure, read gaps, or another graph error.
+   - Make the explanation cause-aware from posting-plan public eligibility plus graph errors/clarification/read-gap state, not merely `candidate_payload is None`.
    - Keep existing JSON shape stable unless a small first-class explanation is clearly needed for tests.
-4. Update narrow durable docs:
+5. Update narrow durable docs:
    - `docs/architecture/side-effects.md` for no-approved/local-only writer suppression.
    - Correct stale durable approval terminology from `approved_finding_ids` to the implemented item-level `approved_item_ids`; do not add an alias or compatibility field.
    - `docs/architecture/state-graph.md` if finalization preflight behavior changes.
@@ -72,6 +79,8 @@ Create `tests/test_no_approved_findings.py` covering:
 - Missing approval cannot enter finalization or release writer input.
 - Rejected approval cannot invoke payload builder or release writer input.
 - Failed approval proof cannot enter finalization or release writer input.
+- `post_enabled=false` cannot enter finalization or release writer input.
+- The named writer-release preflight helper returns specific machine reasons for `post_disabled`, `missing_approval`, `rejected_approval`, `approval_build_failed`, `empty_approval`, `unknown_approved_id`, `non_public_approved_item`, and `no_public_approved_findings`.
 - Non-public approved IDs for local notes, suggested replies, suppressed outputs, clarification requests, inline candidates, summary items, and malformed fingerprint-bearing objects fail finalization preflight before current reads, payload builder, or writer release.
 - Preflight-failed cases expose stable structured no-release evidence: no final payload, no final payload hash, no writer result, `writer_input_released=false`, and a no-public-approved-findings or approval-preflight reason code.
 - Local-notes-only dry-run calls no writer and produces no candidate payload.
