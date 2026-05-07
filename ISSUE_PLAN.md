@@ -124,3 +124,30 @@ python -m pytest -q
 - Manual live post smoke.
 - Adding a public CLI `--post` flag.
 - Finalizing payloads or releasing writer input.
+
+## Completion Evidence
+
+- Implemented pure post-mode interaction gate in `src/reviewgraph/post_interaction.py`.
+- Added harness-only `run_fixture_non_interactive_post_attempt(...)` in `src/reviewgraph/runner.py`.
+- Added `tests/test_non_interactive_posting.py` for dry-run bypass, absent public `--post`, CI/webhook/config-only/non-TTY fail-closed contexts, no prompt/final-payload-builder calls, no writer calls, graph trace ordering, unset approval/finalization/marker/writer fields, and side-effect import boundaries.
+- Updated `docs/architecture/side-effects.md`, `docs/architecture/state-graph.md`, and `docs/harnesses/harness-engineering.md` with the non-interactive post gate contract.
+- Implementation commit: `c12fdaf feat: block non-interactive post attempts`.
+- Code-review subagents `019e0467-86a8-7640-bf01-1022621e7f51` and `019e0467-86c6-73b3-bfad-def313c95e52` reported no material issues.
+
+Validation:
+
+```bash
+python -m pytest tests/test_non_interactive_posting.py -q
+python -m pytest tests/test_non_interactive_posting.py tests/test_cli.py tests/test_models.py tests/test_target_freshness.py -q
+python scripts/check_docs.py
+git diff --check
+python -m py_compile src/reviewgraph/*.py
+python -m pytest -q
+```
+
+Results:
+
+- `tests/test_non_interactive_posting.py`: 8 passed.
+- Regression bundle: 405 passed.
+- Docs, diff, and compile checks passed.
+- Full suite: 1077 passed, 1 skipped, 209 warnings.
