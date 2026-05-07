@@ -41,9 +41,11 @@ Extend the fake GitHub read adapter to prove complete pagination across files, i
 5. Partial pagination failure uses AUR-247 policy: produce read gaps with underlying failure reason/page metadata and fail-closed state. Do not silently return first-page-only context.
 6. A fully paginated read clears the metadata/files-only gaps for comments, reviews, review comments, and thread state; resource coverage becomes complete for all fetched resources.
 7. Thread state availability is explicit. Complete thread-state pagination with concrete thread statuses sets `available=True`; unknown or unavailable required thread state creates a required read gap.
-8. Review comments should be represented as `PullRequestComment` values inside `PullRequestReviewThread` where thread context exists. If a review comment page is read but matching thread state is unavailable, it must not become actionable memory later; this issue should mark that through read gaps/thread-state availability, not trust classification.
-9. Do not implement trust labels beyond deterministic passthrough/default values required to construct model objects. AUR-215 owns human/bot trust rules, resolved/unknown actionability, and conversation-memory policy.
-10. Do not wire CLI, runner, live read, approval, finalization, posting, or writer behavior.
+8. The paginated read API returns a typed union-like result: successful reads return `GitHubReadResult`; pagination failures return `FailClosedReadOutcome`. Later AUR-239 can branch on the type without catching adapter exceptions for expected page failures.
+9. Page/cursor diagnostics need a durable surface. Add a `page_gap_descriptors` field or equivalent on the failed paginated read outcome and its redacted serialization, carrying resource, failed page/cursor, underlying reason, and observed/omitted examples. Keep `ReadGap` minimal.
+10. Review comments should be represented as `PullRequestComment` values inside `PullRequestReviewThread` only where matching thread context exists. A fetched review comment whose matching thread is absent after complete thread-state pagination is a required `thread_state_unknown` gap and returns fail-closed state; it must not be dropped or emitted as actionable memory.
+11. Until AUR-215 classifies GitHub authors, paginated GitHub comment/review objects must use a safe default `trust_label="untrusted"` unless the payload explicitly provides a test-only trust label. Tests should prefer the safe default so fixture convenience does not pre-trust GitHub memory.
+12. Do not wire CLI, runner, live read, approval, finalization, posting, or writer behavior.
 
 ## Implementation Plan
 
@@ -55,15 +57,19 @@ Extend the fake GitHub read adapter to prove complete pagination across files, i
    - Resource coverage is complete and read gaps are empty after a successful full paginated read.
    - Thread-state availability is `available=True` when thread state pages complete.
    - Page 2 content includes text that would affect routing/trust/redaction later, proving first-page-only success would be observable.
-   - Pagination failure on a later page returns a required read gap/fail-closed outcome instead of partial context, preserving the underlying failure reason and page metadata.
+   - Pagination failure on a later page returns `FailClosedReadOutcome` instead of partial context, preserving the underlying failure reason and page/cursor diagnostics in a durable redacted surface.
+   - Orphan review comments whose matching thread state is missing after complete thread pagination return a required `thread_state_unknown` gap and cannot silently disappear.
+   - Tests assert exact fake transport call order, cursor/page propagation, and stop-on-`has_next_page=false` for files, issue comments, review comments, reviews, and thread state.
    - Tests prove pagination happens before truncation by asserting no adapter-level truncation is emitted while later-page items remain present.
 
 2. Extend `src/reviewgraph/github.py`.
    - Add resource coverage constructor for all resources complete.
    - Add paginated fake transport protocol and page payload validation helpers.
    - Add `read_github_pr_with_paginated_fake_transport()` or equivalent.
+   - Return `GitHubReadResult | FailClosedReadOutcome` for expected pagination outcomes.
    - Reuse existing PR metadata, file conversion, changed-line parsing, redaction, and read-result serialization.
    - Convert comment/review/thread payload dictionaries into existing model types.
+   - Add a redacted `page_gap_descriptors` serialization surface for failed paginated reads.
    - Keep adapter errors structured and redacted.
    - Keep dependencies limited to models, redaction, and read-gap policy; do not import runner, CLI, memory trust policy, approval, finalization, posting, writer, or network clients.
 
@@ -71,6 +77,7 @@ Extend the fake GitHub read adapter to prove complete pagination across files, i
    - Later-page failure should classify a `ReadGap` with the resource, required flag, specific reason, retryability, and page descriptor metadata where available.
    - Required pagination gaps should be usable by `build_fail_closed_read_outcome()`.
    - Successful full pagination should not carry stale metadata/files-only gaps.
+   - Failed pagination should not raise `GitHubReadError` for expected page failure cases; reserve exceptions for invalid fake payload shape/programmer errors.
 
 4. Update durable docs.
    - `docs/architecture/github-integration.md`: paginated fake-read contract, complete coverage, and thread-state availability.
