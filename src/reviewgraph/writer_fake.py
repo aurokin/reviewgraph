@@ -8,6 +8,7 @@ from reviewgraph.models import (
     ArtifactKind,
     FinalIssueCommentPayload,
     FinalizationState,
+    GateStatus,
     GitHubWriterResult,
     MarkerReconciliationStatus,
     WriterStatus,
@@ -61,12 +62,23 @@ def build_finalized_issue_comment_writer_input(
         raise ValueError("finalized writer input requires released writer input")
     if finalization.final_payload is None:
         raise ValueError("finalized writer input requires final payload")
+    if (
+        finalization.actor_permission_finalization_check is None
+        or finalization.actor_permission_finalization_check.status != GateStatus.PASS
+    ):
+        raise ValueError("finalized writer input requires passed actor permission finalization check")
+    if finalization.target_freshness_check is None or finalization.target_freshness_check.status != GateStatus.PASS:
+        raise ValueError("finalized writer input requires passed target freshness check")
+    if finalization.payload_validation is None or finalization.payload_validation.status != GateStatus.PASS:
+        raise ValueError("finalized writer input requires passed payload validation")
     if finalization.marker_reconciliation is None:
         raise ValueError("finalized writer input requires marker reconciliation")
     if finalization.marker_reconciliation.status != MarkerReconciliationStatus.SAFE_TO_POST:
         raise ValueError("finalized writer input requires safe marker reconciliation")
     if finalization.finalization_status.final_payload_hash != finalization.final_payload.final_payload_hash:
         raise ValueError("finalized writer input finalization hash mismatch")
+    if finalization.finalization_status.target_hash != finalization.final_payload.review_target.target_hash():
+        raise ValueError("finalized writer input target hash mismatch")
     return FinalizedIssueCommentWriterInput(
         final_payload=finalization.final_payload,
         final_payload_hash=finalization.final_payload.final_payload_hash,
