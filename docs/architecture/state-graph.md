@@ -283,7 +283,7 @@ Only after preflight passes does `finalize_github_payload` build the final issue
 
 The writer adapter receives only finalized top-level issue-comment writer input. It must not accept raw candidate payloads, raw final payloads, marker reconciliation plans, or non-finalized state, and it must not perform policy decisions beyond writer-local validation and transport errors.
 
-For the real writer, ambiguous accepted-write timeout handling is a writer-local recovery subroutine, not a pre-write graph policy decision. It runs only after a POST attempt might have been accepted by GitHub. The recovery subroutine may rescan markers with the finalized input's expected hashes and shared marker reconciliation primitives before allowing any retry; incomplete or failed recovery scans keep the graph fail-closed or retryable-unknown with no second POST.
+For the real writer, ambiguous accepted-write timeout handling is a writer-local recovery subroutine, not a pre-write graph policy decision. It runs only after a POST attempt might have been accepted by GitHub. The recovery subroutine may rescan markers with the finalized input's expected hashes and shared marker reconciliation primitives to classify the ambiguous outcome, but it must not issue a second POST in the same approved run/retry sequence. Incomplete, empty, or failed recovery scans keep the graph fail-closed or retryable-unknown with no second POST.
 
 ## Error handling
 
