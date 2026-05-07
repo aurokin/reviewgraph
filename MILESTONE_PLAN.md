@@ -6,7 +6,7 @@ Active execution artifact for this milestone. Linear remains the durable source 
 
 - Milestone: `PRD 0006: GitHub Read And Memory`
 - Milestone ID: `d5570b49-93a7-453b-af77-9e8a5396d21b`
-- Current execution status as of 2026-05-07: `AUR-213`, `AUR-247`, `AUR-214`, `AUR-215`, `AUR-236`, and `AUR-239` are `Done`; `AUR-216` is `In Progress`; `AUR-259` remains the milestone gate.
+- Current execution status as of 2026-05-07: `AUR-213`, `AUR-247`, `AUR-214`, `AUR-215`, `AUR-236`, `AUR-239`, and `AUR-216` are `Done`; `AUR-259` is the active milestone gate.
 - Active implementation issues:
   - `AUR-213` / `RG-024: Read GitHub PR Metadata With Fake Transport` / `Done`
   - `AUR-247` / `RG-058: Fail Closed On GitHub Read Gaps` / `Done`
@@ -14,12 +14,12 @@ Active execution artifact for this milestone. Linear remains the durable source 
   - `AUR-215` / `RG-026: Apply GitHub Trust Rules To Memory` / `Done`
   - `AUR-236` / `RG-047: Select Conversation Pattern Reviewers` / `Done`
   - `AUR-239` / `RG-050: Add GitHub PR Dry-Run Adapter Path` / `Done`
-  - `AUR-216` / `RG-027: Add Opt-In Live Read Smoke` / `In Progress`
+  - `AUR-216` / `RG-027: Add Opt-In Live Read Smoke` / `Done`
 - Gate issue:
-  - `AUR-259` / `Complete PRD 0006: GitHub Read And Memory` / `Backlog`
+  - `AUR-259` / `Complete PRD 0006: GitHub Read And Memory` / `In Progress`
 - Canceled duplicate:
   - `AUR-252` / `RG-058: Fail Closed On GitHub Read Gaps` / `Duplicate`
-- Linear comments: `AUR-214`, `AUR-215`, `AUR-236`, and `AUR-239` have implementation evidence; `AUR-216` had no comments when fetched on 2026-05-07.
+- Linear comments: `AUR-213`, `AUR-247`, `AUR-214`, `AUR-215`, `AUR-236`, `AUR-239`, and `AUR-216` have implementation evidence comments. `AUR-259` had no comments when gate planning began on 2026-05-07.
 
 ## Milestone Intent
 
@@ -47,8 +47,8 @@ The product point is safe memory. PR discussion is shared context across reviewe
 4. `AUR-215` fourth: apply GitHub-derived trust, allowlisted bots, seen-state, and resolved/unknown thread-state behavior to conversation memory. Reuse and harden `memory.py`; do not move trust policy into prompts.
 5. `AUR-236` fifth: allow trusted actionable GitHub memory to select reviewers through `conversation_patterns`, with selection reasons that name matching memory IDs and trust status. Untrusted, unlisted bot, resolved, and unknown-state memory must not route reviewers.
 6. `AUR-239` sixth: wire GitHub PR refs/URLs into the CLI and graph dry-run path using fake transport by default. The GitHub read result must feed the same target, memory, context budget, reviewer, quality, render, and dry-run path as fixtures; no writer path should be reachable.
-7. `AUR-216` seventh: add opt-in live-read smoke coverage. It must be skipped by default, read-only, clear when `gh` or token is missing, and separate from any write or approval behavior.
-8. `AUR-259` last: close the milestone only after every active implementation issue is `Done`, focused/full validation passes, durable docs explain the final read/memory contracts, Linear evidence is complete, and fresh subagent review reports no material gaps.
+7. `AUR-216` seventh: add opt-in live-read smoke coverage. It must be skipped by default, read-only, clear when `gh` or token is missing, and separate from any write or approval behavior. This is complete.
+8. `AUR-259` last: close the milestone only after every active implementation issue is `Done`, focused/full validation passes, durable docs explain the final read/memory contracts, Linear evidence is complete, and fresh subagent review reports no material gaps. This is active.
 
 ## Issue Workflow
 
