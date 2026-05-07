@@ -51,7 +51,8 @@ Linear was reconciled on 2026-05-07 to use `approved_item_ids=[]` and `src/revie
    - mixed run with approved findings plus suggested reply keeps candidate payload/final approval proof restricted to the finding; suggested reply text must not enter candidate or final public payloads.
 2. Add a named pure writer-release preflight helper for AUR-222 to consume before finalization:
    - Prefer a small surface such as `evaluate_writer_release_preflight(post_enabled, approval_result, posting_plan, current_items_by_id)`, where `approval_result` is the single canonical input: an `ApprovalDecisionBuildResult`, an `ApprovalDecision`, or `None`.
-   - `current_items_by_id` is a body-free resolver map keyed by posting-plan item ID. It may contain current typed source objects (`ClassifiedFinding`, `LocalNote`, `SuggestedReply`, `ClarificationRequest`, or suppressed-output records) or a small typed descriptor, but the posting plan is authoritative for unknown IDs, destination, source classification, and public eligibility.
+   - Add `approval_proof_reason_code: ApprovalProofReasonCode | None` to `ApprovalDecisionBuildResult`, populate it from `proof.reason_code` when `reason_code=APPROVAL_PROOF_FAILED`, and validate that it is absent on pass. This is how empty approval remains visible without invalid `ApprovalDecision` objects.
+   - `current_items_by_id` is a body-free descriptor map keyed by posting-plan item ID. Do not pass full `LocalNote`, `SuggestedReply`, clarification, finding, or suppressed-output objects into this helper. The descriptor may include item ID, source type/classification, destination, `public_payload_eligible`, fingerprint presence, and body-free type metadata.
    - It returns a typed `WriterReleasePreflightResult` recorded on `ReviewState.writer_release_preflight`.
    - Result shape: `status`, `reason_code`, `approved_item_ids`, `approved_finding_ids` absent, `nested_reason_code`, `nested_approval_proof_reason_code`, `nested_actor_permission_reason_code`, `item_diagnostics`, `eligible_for_finalization`, `writer_input_released`, `final_payload_hash=None`, `writer_result=None`, and no body text.
    - Pass shape: `status=pass`, `eligible_for_finalization=true`, `writer_input_released=false` in AUR-223, no `reason_code`, `approved_item_ids` contains only approved public `review_body_item` postable finding IDs, `item_diagnostics` is empty, and local-only suggested replies remain excluded.
@@ -63,6 +64,7 @@ Linear was reconciled on 2026-05-07 to use `approved_item_ids=[]` and `src/revie
    - It does not call `finalize_github_payload(...)`, current actor/permission probes, target freshness probes, final payload builders, marker reconciliation, or writer code when it fails.
 3. Tighten finalization preflight evidence if needed:
    - Preserve approval preflight as the first check inside `finalize_github_payload(...)`.
+   - Do not widen `finalize_github_payload(...)` to accept `approval=None` or failed approval-build results. Missing approval, failed approval build, and rejected approval are owned by `evaluate_writer_release_preflight(...)` before finalization.
    - Mandatory: pass the current `PostingPlan` or a smaller typed approved-item resolver into finalization preflight so approved IDs are checked against current posting-plan public eligibility, not only object presence and `fingerprint`.
    - Return stable dry-run/preflight evidence for missing, empty, rejected, failed-proof, unknown, or non-public approval.
    - Keep `final_payload_builder_calls=0`, `writer_input_released=false`, `final_payload=None`, no final payload hash, no writer result, and a structured reason code for all preflight failures.
@@ -73,6 +75,7 @@ Linear was reconciled on 2026-05-07 to use `approved_item_ids=[]` and `src/revie
    - Make the explanation cause-aware from posting-plan public eligibility plus graph errors/clarification/read-gap state, not merely `candidate_payload is None`.
    - Expose the machine-readable reason under top-level `writer_release_preflight` in dry-run/post-attempt JSON when the helper is evaluated; render metadata can mirror it, but AUR-222 should consume the top-level key.
    - Normal dry-run runs with public candidate findings do not evaluate `writer_release_preflight`; local-only dry-run runs expose a separate top-level `public_payload_preparation` reason, such as `no_public_postable_items`, so no-public-payload evidence is not collapsed into `missing_approval` or `post_disabled`.
+   - `public_payload_preparation` JSON schema: `{"status": "not_prepared" | "prepared", "reason_code": "no_public_postable_items" | "blocked_by_clarification" | "blocked_by_graph_error" | "dry_run_candidate_prepared" | null, "public_payload_item_count": int, "candidate_payload_present": bool}`.
    - Direct writer-release preflight tests use `post_enabled=true` when exercising no-public-approved-item reasons; `post_enabled=false` tests assert the separate `post_disabled` precedence.
 5. Update narrow durable docs:
    - `docs/architecture/side-effects.md` for no-approved/local-only writer suppression.
@@ -92,6 +95,7 @@ Create `tests/test_no_approved_findings.py` covering:
 - A positive writer-release preflight case passes only approved public finding IDs and excludes local-only suggested replies.
 - The named writer-release preflight helper returns specific machine reasons for `post_disabled`, `approval_build_failed`, `missing_approval`, `rejected_approval`, `duplicate_approved_item`, `duplicate_approved_fingerprint`, `unknown_approved_id`, and `non_public_approved_item`.
 - Failed approval-build preflight preserves nested build, approval-proof, and actor-permission reason metadata without reinterpreting it. Empty approval is proven as nested `ApprovalProofReasonCode.EMPTY_APPROVAL`, not as a top-level writer-release reason.
+- Rejected approval is represented as an `ApprovalDecision` with `approved=false` and is handled by `evaluate_writer_release_preflight(...)`; finalization continues to receive only valid approved decisions.
 - Non-public approved IDs for local notes, suggested replies, suppressed outputs, clarification requests, inline candidates, summary items, and malformed fingerprint-bearing objects fail finalization preflight before current reads, payload builder, or writer release.
 - Preflight-failed cases expose stable structured no-release evidence: no final payload, no final payload hash, no writer result, `writer_input_released=false`, and a specific writer-release or approval-build reason code.
 - Passing writer-release preflight in AUR-223 means eligible for finalization only; it still has `writer_input_released=false`.
