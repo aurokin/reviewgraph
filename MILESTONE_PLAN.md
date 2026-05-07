@@ -1,6 +1,6 @@
 # MILESTONE PLAN: PRD 0007 Side Effects
 
-Active execution artifact for this milestone. Linear remains the durable source for issue status, milestone order, blockers, relationships, and handoff details; if this file conflicts with Linear, Linear wins. Re-fetch current Linear state before starting each issue.
+Active execution artifact for this milestone. Linear remains the durable source for current issue status, milestone order, blockers, relationships, and handoff details. Repository docs remain the durable product, architecture, harness, and decision contracts. If Linear and durable docs disagree on behavior, stop and reconcile both before implementation. Re-fetch current Linear state before starting each issue.
 
 ## Linear Scope Snapshot
 
@@ -47,12 +47,12 @@ The product point is controlled side effects. Reviewers do not write to GitHub, 
 
 ## Execution Order
 
-1. `AUR-244` first: define canonical payload hash domains and golden tests for visible body, full final body, marker payload hash, findings hash, newline normalization, marker whitespace, target ordering, and duplicate fingerprints. Duplicate postable or approved finding fingerprints are fail-closed input errors, not deduplicated lists or multisets. Later approval, finalization, marker, and writer code must reuse these primitives.
+1. `AUR-244` first: define canonical payload hash domains and golden tests for visible body, full final body, marker payload hash, findings hash, newline normalization, marker whitespace, target ordering, and duplicate fingerprints. `marker.payload` equals `visible_body_hash(final_body_without_marker)`, while `final_payload_hash` equals the hash of the full final body including the exact marker line. Duplicate postable or approved finding fingerprints are fail-closed input errors, not deduplicated lists or multisets. Later approval, finalization, marker, and writer code must reuse these primitives.
 2. `AUR-217` second: model item-level approval and final hash binding using the `AUR-244` hash primitives. Approval records approved item IDs, review target binding, final full payload hash, actor metadata placeholders, and rejects stale candidate hashes before any writer exists.
-3. `AUR-218` third: validate top-level issue-comment payloads and reject formal PR review payloads/endpoints. Candidate and final payload schemas should include marker fields and remain redacted before any side-effect adapter sees them.
+3. `AUR-218` third: validate top-level issue-comment payloads and reject formal PR review payloads/endpoints. Final payload schema includes explicit marker components and marker line. Candidate payload schema carries candidate visible body and findings hash inputs only; it must not contain a final marker line and must not be accepted as writer input.
 4. `AUR-219` fourth: add actor and permission discovery/gate state for write mode. `ActorPermissionGateResult` is endpoint-specific for top-level issue-comment posting: authenticated actor, credential principal/source, repo or installation permission, ability to call `POST /repos/{owner}/{repo}/issues/{pr_number}/comments`, check method, checked target, checked-at time, and stable failure code. Unknown actor, unknown credential source, unknown permission, insufficient endpoint permission, missing check timestamp, timeout, rate limit, forbidden, not found, unavailable, malformed response, or stale cached data blocks approval/posting with a redacted transport summary. Fake cases must include repo-role-write but token/app lacks issue-comment write ability.
 5. `AUR-243` fifth: bind approval to the actor/permission snapshot from `AUR-219` and require finalization to verify the current actor/permission still matches before writer reachability. Re-check failures use the same fail-closed transport taxonomy as `AUR-219`; cached success cannot substitute for an unknown or failed current check.
-6. `AUR-220` sixth: implement target freshness finalization gates. Head, base, merge-base, owner/repo, PR number, and diff-basis drift all fail closed with dry-run output before writer invocation. Target refetch timeout, rate limit, forbidden, not found, unavailable, malformed response, or stale cached data also fail closed with stable machine reason, retryability, request ID when available, and zero final payload construction or writer reachability.
+6. `AUR-220` sixth: implement target freshness finalization gates. Head, base, merge-base, owner/repo, PR number, and diff-basis drift all fail closed with dry-run output before writer invocation. Target refetch timeout, rate limit, forbidden, not found, unavailable, malformed response, or stale cached data also fail closed with stable machine reason, retryability, request ID when available, and zero final payload construction or writer reachability. Finalization order is preflight first: validate approval shape, approved IDs, non-empty approved findings, and duplicate fingerprints; re-read actor, permission, and target freshness; then, only if those checks pass, build the final body/hash, validate redaction, reconcile markers, and release writer input.
 7. `AUR-221` seventh: implement embedded ReviewGraph marker grammar, generation, parsing, and happy-path duplicate detection. Marker recognition must be exact final-line only.
 8. `AUR-245` eighth: harden marker reconciliation for pagination, author trust, spoofed markers, malformed trusted markers, conflicting payload hashes, and duplicate fingerprints.
 9. `AUR-246` ninth: block non-interactive posting mode before any graph/CLI post path is introduced. CI, webhook, config-only, or non-TTY mode must hit a pre-approval fail-closed routing gate that returns structured output instead of blocking for input, inferring approval, or reaching final payload construction.
@@ -75,6 +75,8 @@ For each issue:
 7. Use fresh subagents for code/docs review until no material findings remain.
 8. Commit the completed issue, and commit separately after every review-fix batch.
 9. Move the issue to `In Review`, add a Linear evidence comment with commands and artifact coverage, then move it to `Done` only when acceptance criteria are mapped to concrete evidence.
+
+For milestone gates and any issue that changes blockers/order, also run `python scripts/check_docs.py --backlog-export path/to/linear-backlog-export.json` against a canonical Linear export as described in `docs/implementation/README.md`.
 
 ## Harness Strategy
 
@@ -102,10 +104,13 @@ For each issue:
 - Dry-run remains the default behavior.
 - GitHub writes require explicit human approval.
 - Candidate payloads are not final payloads and are not writer inputs.
+- Candidate payloads carry candidate visible body and findings hash inputs only. They must not contain a final marker line.
+- Final payloads carry explicit marker components and the exact marker line.
 - Approval is item-level and binds to the final full issue-comment body hash after approved item selection.
 - Approval is also bound to the review target, actor, permission, and checked-at time shown to the human.
 - Actor and permission are endpoint-specific for top-level issue-comment posting, not a vague repository role string. Unknown credential source, missing endpoint write ability, failed transport, stale cached proof, or mismatched actor/permission blocks approval/posting.
-- `finalize_github_payload` owns the last pre-writer gate: final hash, actor, permission, target freshness, redaction, non-empty approved findings, and marker reconciliation.
+- `finalize_github_payload` owns the last pre-writer gate: approval shape, approved IDs, non-empty approved findings, duplicate fingerprints, current actor, current permission, target freshness, final hash, redaction, and marker reconciliation.
+- Final payload construction happens only after approval shape, approved IDs, non-empty/duplicate checks, current actor/permission, and current target freshness pass.
 - External read failures during finalization fail closed. Timeout, rate limit, forbidden, not found, unavailable, malformed response, or stale cached data cannot fall back to an earlier success.
 - The writer receives only finalized payloads plus marker reconciliation plan; it must not own approval/freshness/policy decisions.
 - MVP writer supports only top-level `issue_comment` payloads to `POST /repos/{owner}/{repo}/issues/{pr_number}/comments`.

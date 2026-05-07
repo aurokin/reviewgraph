@@ -63,11 +63,13 @@ It returns:
 }
 ```
 
-The final GitHub payload is built deterministically from `approved_finding_ids` and the candidate payload. `approved_final_payload_hash` binds to the full final issue-comment body after item selection, including the hidden ReviewGraph marker line. The marker's own `payload` field stores a separate visible-body hash that excludes the marker, avoiding a self-referential hash. Before the writer is invoked, ReviewGraph must either show the final payload or prove that its hash equals `approved_final_payload_hash`. If approving a subset changes the body hash, the old candidate hash must be rejected.
+The final GitHub payload is built deterministically from `approved_finding_ids` and the candidate payload only after preflight passes. `approved_final_payload_hash` binds to the full final issue-comment body after item selection, including the hidden ReviewGraph marker line. The marker's own `payload` field stores a separate visible-body hash that excludes the marker, avoiding a self-referential hash. Before the writer is invoked, ReviewGraph must either show the final payload or prove that its hash equals `approved_final_payload_hash`. If approving a subset changes the body hash, the old candidate hash must be rejected.
 
 The actor and permission summary is endpoint-specific. It must identify the authenticated actor, credential principal/source, repo or installation permission, ability to call `POST /repos/{owner}/{repo}/issues/{pr_number}/comments`, check method, checked target, checked-at time, and stable failure code when blocked. A broad repository role is not enough if the token or app cannot create the top-level issue comment.
 
-`finalize_github_payload` owns the last pre-writer gate. It verifies approved hash, approved actor, current actor, current endpoint permission, full target freshness, redaction status, non-empty approved findings, duplicate approved fingerprints, and marker reconciliation plan. If any check fails, the writer adapter is unreachable and ReviewGraph emits dry-run output with the fail-closed reason.
+`finalize_github_payload` owns the last pre-writer gate. It first validates approval shape, approved IDs, non-empty approved findings, and duplicate approved fingerprints. It then re-reads current actor, endpoint permission, and target freshness. If any current read or preflight check fails, finalization records failure without setting `final_github_payload` or `final_payload_hash`; the writer adapter is unreachable and ReviewGraph emits dry-run output with the fail-closed reason.
+
+Only after preflight passes may finalization build the final issue-comment body, compute the final hash, validate redaction status, reconcile markers, and release writer input.
 
 External read failures during approval or finalization fail closed. Timeout, rate limit, forbidden, not found, unavailable service, malformed response, unknown credential source, stale cached data, or missing checked-at timestamp cannot be treated as approval or freshness proof. These failures must emit redacted transport summaries with endpoint kind, retryability, stable failure code, and request ID when available.
 
