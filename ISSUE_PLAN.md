@@ -30,20 +30,24 @@ This issue is pure hash/marker primitive work plus tests. It must not split cand
 - Duplicate postable or approved fingerprints are invalid and fail closed; they are not deduplicated or treated as a multiset.
 - Hash bytes are canonical UTF-8, LF line endings, deterministic review-target field order, deterministic sorted fingerprints, one trailing newline, and exact marker whitespace.
 - Candidate/final payload schema debt remains for `AUR-218`; do not preserve or expand the current `CandidateIssueCommentPayload = GitHubReviewPayload` alias as part of this issue.
+- Keep legacy candidate compatibility explicit: `posting.full_body_hash()` can remain a candidate compatibility wrapper until `AUR-218`, but it must not be the final writer/approval hash primitive.
+- Add distinct canonical primitives for PRD 0007 final side effects, such as `marker_payload_hash(final_body_without_marker)` and `final_payload_hash(full_final_body)`.
+- Add a strict ReviewGraph v1 marker-line recognizer for hash-domain use. It should accept only the documented exact final-line grammar: `<!-- reviewgraph:v1 run_id=... target=sha256:... payload=sha256:... findings=sha256:... -->`, with required field order and exact single-space separators.
 
 ## Implementation Shape
 
 1. Add canonical helper functions in the existing hash/posting boundary, likely `src/reviewgraph/hashing.py` plus thin compatibility wrappers in `src/reviewgraph/posting.py`.
-2. Keep existing public behavior compatible where current tests rely on candidate payload hashes.
+2. Keep existing public behavior compatible where current tests rely on candidate payload hashes, while adding separate final-side-effect hash helpers.
 3. Add `tests/test_payload_hashes.py` covering:
-   - LF/CRLF/CR normalization and one trailing newline.
-   - Visible body hash excluding only an exact final-line ReviewGraph marker.
+   - Fixed expected `sha256:` digest constants for visible body hash, marker payload hash, final full-body hash including a literal final marker line, sorted findings hash, and review-target hash.
+   - LF/CRLF/CR normalization and one trailing newline for canonical final-side-effect hashes.
+   - Visible body hash excluding only an exact final-line ReviewGraph v1 marker.
    - Marker payload hash equal to visible body hash of the body without the marker.
-   - Full final body hash changing when the exact marker line changes.
-   - Deterministic target hash field order.
-   - Findings hash sorting.
-   - Duplicate finding fingerprint rejection.
-   - Marker whitespace grammar sensitivity.
+   - Final payload hash equal to the canonical full body including the exact marker line.
+   - Deterministic target hash field order, including a test that `ReviewTarget.target_hash()` matches the canonical target hash primitive or pinned fixture.
+   - Findings hash sorting from caller-supplied selected fingerprints.
+   - Duplicate selected-fingerprint rejection in the shared helper downstream approval/finalization must reuse.
+   - Strict marker grammar sensitivity: malformed prefix-only markers, wrong version, missing fields, extra fields, reordered fields, changed whitespace, and marker-in-middle must not be treated as the exact final marker.
 4. Run focused and regression checks.
 
 ## Validation
