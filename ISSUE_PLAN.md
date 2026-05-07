@@ -1,110 +1,90 @@
-# ISSUE PLAN: AUR-218 Validate Top-Level Issue Comment Payloads
+# ISSUE PLAN: AUR-217 Model Item-Level Approval And Final Hash
 
-Active issue plan for `AUR-218` / `RG-029: Validate Top-Level Issue Comment Payloads`.
+Active issue plan for `AUR-217` / `RG-028: Model Item-Level Approval And Final Hash`.
 
-Linear is the durable source for status, blockers, and issue handoff. Durable behavior comes from `docs/architecture/github-integration.md`, `docs/architecture/side-effects.md`, `docs/architecture/state-graph.md`, and `docs/harnesses/harness-engineering.md`.
+Linear is the durable source for status, blockers, and handoff. Durable behavior comes from `docs/architecture/side-effects.md`, `docs/architecture/state-graph.md`, `docs/architecture/github-integration.md`, and `docs/prds/0007-side-effects.md`.
 
 ## Linear Snapshot
 
 - Project: `ReviewGraph`
 - Team: `Aurokin`
 - Milestone: `PRD 0007: Side Effects`
-- Issue: `AUR-218`
-- Title: `RG-029: Validate Top-Level Issue Comment Payloads`
+- Issue: `AUR-217`
+- Title: `RG-028: Model Item-Level Approval And Final Hash`
 - Status when planned: `In Progress`
 - Linear comments fetched on 2026-05-07: none
-- Upstream blocker: `AUR-244` complete with canonical hash primitives and golden tests.
+- Upstream blockers complete: `AUR-244` hash domains and `AUR-218` candidate/final payload validation.
 
 ## Objective
 
-Split candidate and finalized payload contracts enough that later approval, finalization, and writer slices cannot treat a candidate payload as a writer input.
+Add the pure approval-proof slice that binds item-level approved findings to the deterministic final issue-comment body hash before any writer, actor/permission gate, target freshness gate, marker reconciliation scan, or graph post mode exists.
 
-This issue validates the MVP GitHub artifact contract without making the graph writer-ready. It does not implement approval, final payload construction, finalization, marker reconciliation, fake writer, real writer, or live posting.
+This issue models approval and final hash binding only. It may add deterministic final payload preview/build helpers needed to compute the approved final hash, but it must not introduce a writer adapter, live GitHub calls, post-mode routing, actor/permission discovery, current-target refetch, marker reconciliation against existing comments, or approval prompts.
 
 ## Contracts To Preserve
 
-- MVP GitHub write artifact is only a top-level `issue_comment`.
-- MVP endpoint is only `POST /repos/{owner}/{repo}/issues/{pr_number}/comments`.
-- Formal PR review payloads, `/pulls/{pr}/reviews`, `event: COMMENT`, `APPROVE`, and `REQUEST_CHANGES` are rejected or deferred.
-- Candidate payloads carry candidate visible body hash and findings hash inputs only.
-- Candidate payloads do not contain a final marker line and do not expose candidate-owned final hash semantics.
-- Candidate dataclass and dry-run JSON/markdown must remove `full_body_hash`; a candidate preview hash, if needed later, must be a separate explicitly named field and is not part of this issue.
-- Remove `candidate_payload_hash` from `ReviewState`, `docs/architecture/state-graph.md`, and model contract tests. Candidate visible body hash stays on the candidate payload object only.
-- Candidate payloads are never accepted as writer or final-payload input.
-- Final issue-comment payload contract models carry final body, exact marker line/components, visible body hash, final payload hash, findings hash, review target, item fingerprints, and redaction status. They are inert contracts in this issue, not graph-produced writer inputs.
-- Final payload self-consistency validation checks the exact invariants: marker is the final line, marker fields match payload fields, marker `payload` equals visible-body hash excluding marker, final payload hash includes marker, target hash matches payload review target, and findings hash matches sorted unique payload fingerprints.
-- Writer-readiness validation is deferred. This issue may define a pure request contract validator, but it must not connect it to the graph or writer adapters. If present, that validator must accept independent expected inputs (`ReviewTarget`, selected unique fingerprints, and final payload) so later approval/finalization cannot self-validate payload-owned fields.
-- Candidate and final payload validation require passing redaction status; failed or unknown redaction status fails validation with a stable reason code.
-- Pure request-shape validation, if included, includes `method=POST`, exact issue-comment endpoint `/repos/{owner}/{repo}/issues/{pr_number}/comments`, endpoint owner/repo/PR number matching the independently supplied expected `ReviewTarget`, and a body shape exactly equal to `{"body": final_payload.body}` with no formal-review fields.
-- Payload validation runs before any writer adapter can receive a payload.
-- `ReviewState` and `docs/architecture/state-graph.md` use distinct candidate/final payload type names.
-- `docs/architecture/side-effects.md`, `docs/architecture/github-integration.md`, `docs/plans/implementation-plan.md`, `docs/prds/0003-contracts.md`, and `docs/prds/0007-side-effects.md` must be updated to stop describing candidate payloads as having generic/final payload hashes. They should distinguish candidate visible-body/findings hash inputs from final payload hash.
-- Validation failures return stable machine-readable reason codes so later finalization/writer slices can fail closed without parsing prose exceptions.
-- Candidate tamper validation is bound by independent expected inputs: current `ReviewTarget`, posting plan/current classified findings or rebuilt expected candidate payload, expected sorted unique fingerprints, `body`, `visible_body_hash`, `findings_hash`, sorted unique `item_fingerprints`, and passing `redaction_status`. Removing candidate `full_body_hash` must not weaken the existing render-time proof that the supplied candidate equals the payload rebuilt from the current posting plan and findings.
-- `PayloadValidationResult` must expose a typed/validated `reason_code` machine contract. A free-form display `reason` may remain, but tests must reject unknown reason codes and no downstream code may need to parse prose.
-
-## Stable Reason Codes
-
-The initial stable code set is:
-
-- `wrong_artifact_kind`
-- `redaction_not_passed`
-- `candidate_contains_marker`
-- `candidate_binding_mismatch`
-- `not_final_payload`
-- `body_hash_mismatch`
-- `findings_hash_mismatch`
-- `duplicate_fingerprints`
-- `target_hash_mismatch`
-- `marker_not_final_line`
-- `marker_field_mismatch`
-- `final_payload_hash_mismatch`
-- `wrong_method`
-- `wrong_endpoint`
-- `request_target_mismatch`
-- `wrong_request_body`
-- `formal_review_payload_rejected`
+- Dry-run remains default; no code path posts to GitHub.
+- Approval is item-level and stores approved finding IDs.
+- Approval is target-bound and stores the full `ReviewTarget` plus `approved_review_target_hash`.
+- Approval stores `approved_final_payload_hash` for the post-selection final issue-comment body.
+- Approved final hash uses AUR-244 hash domains: marker `payload` equals visible-body hash excluding the marker, and `approved_final_payload_hash` equals the full final body hash including the exact marker line.
+- Approval binding uses AUR-218 candidate/final split. Candidate payloads have no final marker, no final payload hash, and are never writer/final input.
+- Approving a subset changes the final body and final hash when the selected item set changes.
+- Stale candidate-visible hash inputs are rejected: approval/final-hash proof must rebuild the final body from current posting plan, current findings, current candidate payload binding, selected approved IDs, target, and run ID.
+- Empty approved finding sets are rejected when `approved=True`. A rejected approval may carry no approved IDs, but it must not carry a writer-reachable final payload proof.
+- Duplicate approved finding fingerprints fail closed before final marker/hash construction.
+- Suggested replies, local notes, suppressed outputs, clarification requests, and inline candidates remain local-only and cannot enter the final issue-comment payload.
+- Public request-changes wording remains excluded unless a later issue explicitly supports it; this issue does not submit GitHub `REQUEST_CHANGES` or approvals.
+- Actor/permission snapshot storage is deferred to `AUR-219`/`AUR-243`. Existing placeholder fields may remain on `ApprovalDecision` for compatibility, but this issue must not make them live proof.
+- `ApprovalDecision` should not be sufficient by itself to reach a writer. Later finalization must still validate actor/permission, target freshness, redaction, marker reconciliation, payload validation, and writer request shape.
 
 ## Implementation Shape
 
-1. Replace the current `CandidateIssueCommentPayload = GitHubReviewPayload` alias with distinct dataclasses in `src/reviewgraph/models.py`.
-2. Remove `full_body_hash` from candidate payload model and candidate dry-run JSON/markdown. Candidate preview should expose body, visible body hash, findings hash, item fingerprints, review target, artifact kind, and redaction status only.
-3. Remove `candidate_payload_hash` state from code/docs/tests.
-4. Add inert final payload model fields for marker components and exact marker line, reusing `AUR-244` hash helpers, without constructing final payloads in the graph.
-5. Add a small pure request contract model or validator input for method/endpoint/body-shape validation without implementing a writer transport.
-6. Extend `PayloadValidationResult` with a typed/validated `reason_code` field and keep `reason` as optional display text only.
-7. Add a payload validation module, likely `src/reviewgraph/payload_validation.py`, with explicit validators for:
-   - candidate payload preview against independent expected inputs or a rebuilt expected candidate payload,
-   - finalized issue-comment payload self-consistency,
-   - optional writer request shape accepts only finalized issue comments and independently supplied expected target/fingerprint inputs,
-   - request endpoint target matches the independently supplied expected review target,
-   - request body is exactly `{"body": final_payload.body}`,
-   - rejected formal review payload dictionaries/endpoints.
-8. Add `tests/test_payload_validation.py` covering every acceptance criterion, including stable failure reason codes, candidate-as-final/request rejection, unknown reason-code rejection, and the import boundary proving `payload_validation.py` does not import GitHub transport, writer, approval, finalization, or live adapter modules.
-9. Preserve the existing render binding check that rejects a supplied candidate payload unless it matches the independently rebuilt candidate from the current `posting_plan` and classified findings. It may stay a `RenderError` or move into `payload_validation.py` as `candidate_binding_mismatch`, but the current tampered-body-with-recomputed-hashes regression must keep failing.
-10. Update `docs/architecture/state-graph.md`, `docs/architecture/side-effects.md`, `docs/architecture/github-integration.md`, `docs/plans/implementation-plan.md`, `docs/prds/0003-contracts.md`, `docs/prds/0007-side-effects.md`, and model contract tests so candidate/final payload fields and hash semantics are distinct.
-11. Update existing tests/render serialization only where required by the candidate/final split.
+1. Add `src/reviewgraph/approval.py` as a pure module with no GitHub transport, writer, graph post-mode, or live IO imports.
+2. Define approval helper/result contracts as needed, likely:
+   - approved item selection validation,
+   - deterministic final issue-comment payload preview/build from current posting inputs,
+   - approval decision construction that stores approved IDs, target hash, target, final payload hash, public-verdict choice, approver, and timestamp.
+3. Reuse `build_candidate_issue_comment_payload` or AUR-218 validation to prove the supplied candidate matches current posting inputs before computing final payload proof.
+4. Build final issue-comment payloads from approved top-level review-body items only. Include exact ReviewGraph v1 marker line/components and return a `FinalIssueCommentPayload`.
+5. Use AUR-244 helpers for visible body hash, marker payload hash, findings hash, review target hash, and final payload hash.
+6. Require a run ID for marker generation and keep it within the AUR-244 marker grammar.
+7. Keep actor/permission fields inert placeholders or compatibility inputs only; do not claim endpoint permission proof in this issue.
+8. Add `tests/test_approval.py` for:
+   - approving all findings stores approved IDs, target hash/target, and final payload hash,
+   - approving a subset changes final body/hash and findings hash,
+   - stale/tampered candidate payload with recomputed candidate hashes is rejected,
+   - candidate payload cannot be used as final/writer input,
+   - empty approved finding set is rejected for `approved=True`,
+   - duplicate approved fingerprints fail closed,
+   - local-only destinations are excluded from final payload,
+   - final payload marker fields and final hash match AUR-244 helpers,
+   - approval module import-boundary proof.
+9. Update narrow durable docs only if implementation clarifies behavior beyond existing side-effect docs.
 
 ## Validation
 
 Focused:
 
 ```bash
-python -m pytest tests/test_payload_validation.py -q
+python -m pytest tests/test_approval.py -q
 ```
 
 Regression:
 
 ```bash
-python -m pytest tests/test_payload_hashes.py tests/test_posting.py tests/test_models.py tests/test_render.py tests/test_cli.py tests/test_tracer_fixture_run.py tests/test_redaction.py tests/test_github_read_gaps.py -q
+python -m pytest tests/test_approval.py tests/test_payload_validation.py tests/test_payload_hashes.py tests/test_posting.py tests/test_models.py tests/test_render.py tests/test_cli.py -q
 python scripts/check_docs.py
 git diff --check
 ```
 
-Run the full suite because model/render/CLI payload previews touch shared contracts broadly.
+Run the full suite because approval contracts touch shared models and side-effect guardrails.
 
 ## Out Of Scope
 
-- Approval decision model or item-level approval (`AUR-217`).
-- Actor/permission gates, target freshness, non-interactive post mode, marker reconciliation, fake writer, real writer, or live post smoke.
-- Posting formal PR reviews, inline comments, replies, labels, statuses, approvals, or request-changes.
+- Actor/permission discovery or binding (`AUR-219`, `AUR-243`).
+- Target freshness refetch/finalization gate (`AUR-220`).
+- Marker reconciliation against existing GitHub comments (`AUR-221`, `AUR-245`).
+- Non-interactive post-mode gate (`AUR-246`).
+- Suppressing writer calls for no approved findings in graph/fake-writer paths (`AUR-223`).
+- Fake writer, real writer, live post smoke, or GitHub write adapters.
