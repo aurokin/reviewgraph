@@ -10,7 +10,7 @@ ReviewGraph reads GitHub pull requests, uses the PR conversation as shared revie
 
 ## Current runnable slice
 
-The current implementation includes the PRD 0002 fixture tracer bullet, the PRD 0010 reviewer-context boundary harness, the PRD 0004 graph-orchestration slice, and the PRD 0005 review-quality slice. It does not perform live GitHub reads, live LLM calls, approval, or posting. It proves the dry-run product shape with packaged fixtures, staged reviewer selection, deterministic risk/size routing, reviewer run status, deterministic fake reviewer output, scoped reviewer context packages, passive/trusted PR memory labeling, non-live provider request previews, strict reviewer-output normalization and repair, quality classification, diff anchors, clarification stop/resume, optional failure continuation, and private local verdict policy:
+The current implementation includes the PRD 0002 fixture tracer bullet, the PRD 0010 reviewer-context boundary harness, the PRD 0004 graph-orchestration slice, the PRD 0005 review-quality slice, and the PRD 0006 GitHub read/memory slice. It does not perform production live GitHub review, live LLM calls, approval, or posting. It proves the dry-run product shape with packaged fixtures, staged reviewer selection, deterministic risk/size routing, reviewer run status, deterministic fake reviewer output, scoped reviewer context packages, passive/trusted PR memory labeling, non-live provider request previews, strict reviewer-output normalization and repair, quality classification, diff anchors, clarification stop/resume, optional failure continuation, private local verdict policy, fake paginated GitHub PR reads, fail-closed read gaps, GitHub conversation trust rules, trusted-memory reviewer routing, GitHub PR dry-run, and an opt-in read-only live smoke harness:
 
 ```bash
 PYTHONPATH=src python -m reviewgraph.cli --fixture-pr basic-pr --print-markdown
@@ -23,6 +23,7 @@ python -m pytest tests/test_tracer_fixture_run.py
 python -m pytest tests/test_stage_cursor.py tests/test_routing.py tests/test_reviewer_runs.py
 python -m pytest tests/test_reviewer_context.py tests/test_prompt_injection_memory.py
 python -m pytest tests/test_findings.py tests/test_reviewer_json_repair.py tests/test_quality.py tests/test_diff_anchor.py tests/test_quality_testing.py tests/test_clarification.py tests/test_clarification_resume.py tests/test_optional_reviewer_failure.py tests/test_verdict.py -q
+python -m pytest tests/test_github_fake_read.py tests/test_github_read_gaps.py tests/test_github_pagination.py tests/test_github_memory_trust.py tests/test_conversation_routing.py tests/test_github_dry_run_cli.py tests/test_live_read_smoke.py -q
 python -m pytest
 python scripts/check_docs.py
 ```
@@ -73,4 +74,4 @@ Read in this order:
 
 ## Repository status
 
-Fixture dry-run tracer, context budgeting, reviewer context package, inert reviewer tool metadata, passive-memory prompt boundaries, prompt-injection memory harness, provider preview redaction, staged reviewer selection, deterministic risk/size gates, reviewer run status, fake reviewer execution, review-quality classification, deterministic malformed-output repair, dry-run diff anchors, testing-feedback quality rules, required-reviewer fail-closed dry-run output, optional-reviewer partial-review metadata, clarification stop/resume primitives, private local verdict policy, and side-effect import boundaries are implemented. Live GitHub reads, live LLM reviewers, approval finalization, and GitHub writers are still future milestones.
+Fixture dry-run tracer, context budgeting, reviewer context package, inert reviewer tool metadata, passive-memory prompt boundaries, prompt-injection memory harness, provider preview redaction, staged reviewer selection, deterministic risk/size gates, reviewer run status, fake reviewer execution, review-quality classification, deterministic malformed-output repair, dry-run diff anchors, testing-feedback quality rules, required-reviewer fail-closed dry-run output, optional-reviewer partial-review metadata, clarification stop/resume primitives, private local verdict policy, side-effect import boundaries, fake paginated GitHub reads, GitHub read-gap fail-closed envelopes, GitHub memory trust/seen-state rules, conversation-pattern routing from trusted actionable memory, GitHub PR fake-read dry-run, and skipped-by-default live-read smoke boundaries are implemented. Production live GitHub review, live LLM reviewers, approval finalization, and GitHub writers are still future milestones.
