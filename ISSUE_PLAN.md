@@ -43,7 +43,7 @@ Current code only exposes dry-run routes and the CLI intentionally has no post f
    - `evaluate_post_mode_interaction_gate(...) -> PostInteractionGateResult`.
    - Use existing `PostInteractionGateResult` and `GateStatus`.
    - Reject `run_mode=post` when `interactive=False` with a stable reason such as `non_interactive_posting_requires_future_policy`.
-   - Dry-run mode should either not run the gate or return a non-blocking skipped/pass-like result only if tests need it; do not make dry-run require interactivity.
+   - Dry-run mode must not evaluate or record `post_mode_interaction_gate`; the state graph bypasses this gate unless `run_mode=post`.
 2. Add a harness-only post-attempt runner path:
    - Keep `run_fixture_dry_run(...)` unchanged for default dry-run callers.
    - Add a narrow function such as `run_fixture_non_interactive_post_attempt(...)` or `run_fixture_review(..., run_mode=RunMode.POST, interactive=False)` that reuses dry-run rendering, then evaluates `post_mode_interaction_gate`.
@@ -55,12 +55,13 @@ Current code only exposes dry-run routes and the CLI intentionally has no post f
    - No `input()`, `sys.stdin`, `isatty`, `os.environ`, or CI environment probing inside policy logic. Tests pass explicit `interactive=False` and explicit non-interactive reason.
 4. Add CLI policy evidence without adding `--post`:
    - Keep `tests/test_cli.py::test_cli_does_not_expose_post_flag` passing.
+   - Strengthen that test to assert `--post` is unrecognized, absent from parser actions, and absent from help text.
    - If needed, add an internal CLI helper or parser assertion proving config-only CLI cannot request post mode.
    - Do not add public post CLI flags before AUR-222/AUR-224 define the interactive approval route.
 5. Update JSON/dry-run output for post attempts:
    - top-level `run_mode` should be `post` for the harnessed post-attempt result.
    - `post_enabled` should be `false` after the interaction gate fails.
-   - include `post_mode_interaction_gate` data or equivalent in `side_effects`/graph trace.
+   - include first-class `post_interaction_gate` data matching `ReviewState.post_interaction_gate`, and a `post_mode_interaction_gate` graph trace event.
    - include a `GraphError` with stable code such as `non_interactive_post_mode`.
    - `candidate_payload_preview` may still exist in the rendered review because rendering happened before the gate; final payload and approval fields must remain absent. If the implementation suppresses candidate payload after the gate, update docs/tests to prove the rendering-before-gate contract is still understandable.
 6. Update narrow durable docs:
@@ -72,14 +73,15 @@ Current code only exposes dry-run routes and the CLI intentionally has no post f
 Create `tests/test_non_interactive_posting.py` covering:
 
 - Default dry-run remains renderable in non-interactive contexts and does not require a post gate.
-- CLI still does not expose a public `--post` flag.
+- Default dry-run never evaluates or records `post_mode_interaction_gate`.
+- CLI still does not expose a public `--post` flag: it is unrecognized, absent from parser actions, and absent from help text.
 - Internal post-attempt path with `interactive=False` returns `run_mode=post`, `post_enabled=false`, and a failed `post_mode_interaction_gate`.
 - CI, webhook, config-only, and non-TTY CLI reasons all fail closed without blocking.
 - Error output explains that future explicit non-interactive approval policy is required.
 - No approval prompt/input function is called; use a raising prompt sentinel if the implementation accepts one.
 - Final payload builder sentinel is not called.
 - Writer sentinel/fake writer is not called.
-- Graph trace records `post_mode_interaction_gate` after render/review output and before any approval/finalization event.
+- Graph trace records `post_mode_interaction_gate` after render/review output and before any approval/finalization event, and JSON includes first-class `post_interaction_gate` data.
 - Approval, final payload, final payload hash, marker reconciliation, and writer result remain unset in any returned state/json.
 - Import-boundary proof: the non-interactive gate module does not import writer, GitHub transport, finalization, live network clients, `os`, `subprocess`, clocks, or ambient stdin.
 
