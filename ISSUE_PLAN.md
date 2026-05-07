@@ -1,6 +1,6 @@
-# ISSUE PLAN: AUR-221 Reconcile Embedded ReviewGraph Markers
+# ISSUE PLAN: AUR-245 Harden Marker Author Pagination Reconciliation
 
-Active issue plan for `AUR-221` / `RG-032: Reconcile Embedded ReviewGraph Markers`.
+Active issue plan for `AUR-245` / `RG-056: Harden Marker Author Pagination Reconciliation`.
 
 Linear is the durable source for status, blockers, and handoff. Durable behavior comes from `docs/architecture/side-effects.md`, `docs/architecture/state-graph.md`, `docs/architecture/github-integration.md`, `docs/harnesses/harness-engineering.md`, and `docs/prds/0007-side-effects.md`.
 
@@ -9,118 +9,125 @@ Linear is the durable source for status, blockers, and handoff. Durable behavior
 - Project: `ReviewGraph`
 - Team: `Aurokin`
 - Milestone: `PRD 0007: Side Effects`
-- Issue: `AUR-221`
-- Title: `RG-032: Reconcile Embedded ReviewGraph Markers`
+- Issue: `AUR-245`
+- Title: `RG-056: Harden Marker Author Pagination Reconciliation`
 - Status when planned: `In Progress`
 - Linear comments fetched on 2026-05-07: none
-- Upstream blockers complete: `AUR-244`, `AUR-218`, `AUR-217`, `AUR-219`, `AUR-243`, and `AUR-220`.
-- Downstream hardening/writer issues: `AUR-245` owns adversarial marker trust and pagination failures; `AUR-222` owns fake writer and end-to-end post-mode routing.
+- Upstream blockers complete: `AUR-244`, `AUR-218`, `AUR-217`, `AUR-219`, `AUR-243`, `AUR-220`, and `AUR-221`.
+- Downstream issues: `AUR-246` owns non-interactive post-mode blocking; `AUR-222` owns fake writer graph/CLI integration; `AUR-241` owns the real writer adapter; `AUR-224` owns manual live post smoke.
 
 ## Objective
 
-Add the marker primitive that lets ReviewGraph attach, parse, and reconcile the hidden final-line marker for top-level issue comments.
+Turn AUR-221's trust-neutral marker primitive into a hardened, fake-transport reconciliation preflight that later finalization/writer code can consume without unsafe write behavior.
 
-This is a harness-first marker slice. It should make marker generation/parsing reusable and prove happy-path duplicate detection, but it must not add a writer adapter, graph post-mode routing, live GitHub reads, pagination failure handling, author-trust policy, or adversarial conflict hardening.
+This issue must prove that marker scans paginate existing comments, restrict marker trust to the approved actor or configured ReviewGraph bot, fail closed on incomplete or ambiguous trusted marker state, and emit redacted transport summaries. It must not add real GitHub writes, post-mode graph routing, a fake writer, or live network behavior.
 
 ## Contracts To Preserve
 
-- Dry-run remains the default behavior and no GitHub mutation is introduced.
-- Marker lines use the existing exact v1 grammar:
-  `<!-- reviewgraph:v1 run_id=<id> target=<sha256> payload=<sha256> findings=<sha256> -->`
-- Generated final comments place the marker as the exact final line.
-- Marker `target`, `payload`, and `findings` fields must use the AUR-244 hash-domain primitives:
-  - `ReviewTarget.target_hash()` / `reviewgraph.review_target.v1`
-  - visible-body hash for marker `payload`
-  - sorted approved-fingerprint hash for marker `findings`
-  - final full-body hash includes the exact marker line.
-- Scanner recognition is exact final-line only. A copied marker in the middle of a comment body is inert.
-- Existing matching marker prevents duplicate posting in the happy path only when target hash, findings hash, and payload hash all match.
-- Retry after an ambiguous timeout can reconcile by marker against a fake existing-comment list without posting again.
-- Same-target/same-findings/different-payload markers must not return reconciled/no-post in AUR-221. They may return a trust-neutral non-reconciled/deferred-conflict result; `AUR-245` owns turning trusted conflicts into fail-closed policy.
-- Author trust, pagination failure, malformed trusted markers, spoofed markers, marker-count transport summaries, and duplicate-fingerprint hardening beyond existing hash primitive rejection are deferred to `AUR-245`.
-- The writer adapter remains unreachable in this issue. `AUR-221` produces trust-neutral marker scan data that later finalization/writer work can consume; it does not prove final marker reconciliation while author trust is deferred.
+- Dry-run remains default and no GitHub mutation is introduced.
+- Marker parsing/generation remains exact v1 grammar and final-line only.
+- AUR-221 trust-neutral helpers continue to be usable in pure tests.
+- Marker trust is narrower than conversation memory trust:
+  - trusted marker author = approved GitHub actor with `author_type=user`
+  - or configured trusted ReviewGraph bot with `author_type=bot`
+  - not every owner/member/collaborator and not every trusted PR commenter
+- Untrusted/spoofed markers are ignored and cannot block or reconcile a post.
+- Trusted same-target/same-findings/same-payload markers reconcile with no post.
+- Trusted same-target/same-findings/different-payload markers fail closed.
+- Trusted malformed ReviewGraph-looking final-line markers fail closed when they reference the expected target or when duplicate safety cannot be proven.
+- Existing comment scans must either fully paginate within explicit page/comment caps or fail closed before any writer can post.
+- Timeout, rate limit, forbidden, not found, unavailable, malformed page shape, pagination loop, page cap, comment cap, and stale/incomplete scan states must produce stable fail-closed reason codes.
+- Transport summaries are redacted structured data only: endpoint kind, pages scanned, comments scanned, markers scanned, retryability, stable reason code, and allowlisted GitHub request ID. They must not include tokens, raw stderr, raw comment bodies, or payload bodies.
+- Duplicate approved finding fingerprints inside one final payload fail before posting. If this is already covered by approval/finalization preflight, this issue adds an adversarial regression harness rather than inventing a second policy.
 
 ## Implementation Shape
 
-1. Add `src/reviewgraph/markers.py` as a pure module:
+1. Extend `src/reviewgraph/markers.py` with hardened reconciliation types:
+   - reason-code enum for marker scan failures and conflicts
+   - transport-summary dataclass with endpoint kind, page count, comment count, marker count, retryable, reason code, and request ID
+   - author/provenance dataclass for existing comments
+   - scan policy dataclass for page/comment caps and trusted bot authors
+   - hardened reconciliation result that can express pass/reconciled, no-match, and fail-closed states without releasing writer input
+2. Keep the new marker code pure:
    - no live GitHub client
    - no writer adapter
    - no graph imports
    - no shell, environment, subprocess, or clock reads
-2. Define marker data contracts in `src/reviewgraph/models.py` only as needed:
-   - likely `ReviewGraphMarker` for parsed/generated marker fields
-   - optional `ExistingComment`/scan input model if a typed fake comment helps tests
-   - prefer a trust-neutral marker scan/match result for AUR-221
-   - reserve `MarkerReconciliationResult(PASS)` for later trusted reconciliation unless fake caller-supplied trust is explicit
-3. Reuse one canonical grammar surface:
-   - import marker regex helpers or expose parser helpers from `reviewgraph.hashing`
-   - avoid a third independent regex that can drift from `hashing.py` and `payload_validation.py`
-4. Add generation helpers:
-   - `build_reviewgraph_marker_line(run_id, review_target, visible_body, finding_fingerprints)`
-   - `attach_reviewgraph_marker(...)` or `build_final_issue_comment_payload(...)` if the cleaner seam is to return `FinalIssueCommentPayload`
-   - generated body must canonicalize to one trailing newline after the final marker line
-5. Add parsing/scanning helpers:
-   - parse only exact marker lines
-   - scan only the final line of each comment body
-   - ignore body-middle marker copies
-   - return structured no-match and match outcomes without throwing for ordinary no-marker comments
-6. Add happy-path reconciliation:
-   - matching target hash, findings hash, and payload hash means no new post is needed
-   - matching payload can return existing comment ID and marker metadata
-   - same target/findings with a different payload hash must return non-reconciled/deferred-conflict data, not a reconciled result
-   - retry-after-timeout harness can feed existing fake comments and prove a matching marker reconciles
-7. Keep `payload_validation.validate_final_issue_comment_payload(...)` aligned:
-   - final payload marker validation should continue to enforce final-line-only and exact hash fields
-   - update it to consume shared parser/helper functions if that removes regex duplication without widening behavior
-8. Update narrow docs:
-   - marker primitive and final-line-only behavior in `docs/architecture/github-integration.md`
-   - marker reconciliation boundary in `docs/architecture/side-effects.md`
-   - harness bullet in `docs/harnesses/harness-engineering.md` if the AUR-221 proof adds a new named harness
+3. Add a fake paginated comment-scan adapter surface:
+   - accept a deterministic fake transport that returns issue-comment pages
+   - page shape includes comments, `next_cursor`, completion marker, optional request ID
+   - failures are injected as structured transport failures, not real exceptions from network code
+   - scan all pages before deciding `NO_MATCH`; partial scans fail closed
+4. Add explicit caps and failure taxonomy:
+   - max pages and max comments are required positive values
+   - repeated cursor, malformed page, page cap exceeded, comment cap exceeded, timeout, rate limit, forbidden, not found, unavailable, and unknown transport failure all fail closed
+   - timeout/rate-limit/unavailable are retryable; conflicts/malformed trusted markers/spoofing policy failures are non-retryable
+5. Add marker author trust policy:
+   - compare exact approved actor for user-authored comments
+   - compare configured trusted ReviewGraph bot authors for bot-authored comments
+   - ignore other authors, even if GitHub association is owner/member/collaborator
+   - reject unknown or malformed author identity only for trust; do not let it become trusted
+6. Compose with AUR-221 marker semantics:
+   - only final-line exact markers count
+   - body-middle markers are inert
+   - same target/findings/payload trusted marker reconciles
+   - same target/findings/different payload trusted marker fails closed
+   - trusted malformed final-line ReviewGraph marker with the expected target fails closed
+   - multiple trusted identical matching markers reconcile but record duplicate marker metadata if the result type supports it
+7. Prove duplicate-fingerprint preflight:
+   - add a focused regression that duplicate approved finding fingerprints fail before marker reconciliation can release writer input
+   - reuse existing `finalize_github_payload` or approval preflight when possible instead of duplicating finalization policy
+8. Update narrow durable docs:
+   - marker trust, pagination fail-closed behavior, and transport summary shape in `docs/architecture/github-integration.md`
+   - finalization/idempotency wording in `docs/architecture/side-effects.md`
+   - harness bullet in `docs/harnesses/harness-engineering.md`
 
 ## Focused Harness
 
-Create `tests/test_markers.py` covering:
+Create `tests/test_marker_hardening.py` covering:
 
-- Generated marker line matches exact v1 grammar.
-- Generated final body includes marker as the final line and exactly one trailing newline.
-- Generated marker fields use AUR-244 hash-domain primitives.
-- `FinalIssueCommentPayload` built through marker helper validates with `validate_final_issue_comment_payload`.
-- Parser returns marker fields for exact marker lines.
-- Parser rejects malformed markers, reordered fields, extra fields, wrong version, bad run IDs, uppercase hash characters, missing hashes, and wrong whitespace.
-- Scanner recognizes only final-line markers.
-- Copied middle-of-body marker is inert when the final line is not a marker.
-- Existing target/findings/payload marker returns reconciled/no-post result with existing comment ID.
-- Same-target/same-findings/different-payload marker returns a non-reconciled/deferred-conflict result, not no-post success.
-- No existing marker returns a no-match result that does not fail closed yet.
-- Retry-after-timeout fake comments can reconcile by marker without invoking any writer sentinel.
-- Returned scan/reconciliation data is not writer input and is not a finalization pass while author trust is deferred.
-- Import-boundary proof: `src/reviewgraph/markers.py` has no GitHub, writer, graph, subprocess, environment, or clock imports.
+- Paginated scan reads all pages before returning no-match.
+- Matching trusted marker on a later page reconciles and posts zero in the fake retry helper.
+- Page cap exceeded fails closed with stable reason code and no writer release.
+- Comment cap exceeded fails closed with stable reason code and no writer release.
+- Repeated cursor/incomplete pagination fails closed.
+- Timeout, rate limit, forbidden, not found, unavailable, malformed response, and unknown transport failure classify to stable reason code, retryability, and redacted summary.
+- Transport summary includes endpoint kind, page count, comment count, marker count, retryability, reason code, and safe request ID.
+- Transport summary rejects or drops token-looking request IDs and never exposes raw stderr, comment body, payload body, or token fragments.
+- Markers from unapproved users, unconfigured bots, and owner/member/collaborator commenters that are not the approved actor are ignored.
+- Approved actor marker and configured trusted ReviewGraph bot marker are trusted.
+- Trusted same-target/same-findings/different-payload marker fails closed.
+- Trusted malformed ReviewGraph-looking final-line marker for the expected target fails closed.
+- Spoofed malformed marker from an untrusted author is ignored.
+- Body-middle copied marker remains inert.
+- Multiple trusted identical matching markers reconcile with duplicate metadata and no extra post.
+- Duplicate approved finding fingerprints fail before marker reconciliation/writer release.
+- Import-boundary proof for `src/reviewgraph/markers.py`.
 
 Update existing tests as needed:
 
-- `tests/test_payload_hashes.py` if shared parser helpers change hashing exports.
-- `tests/test_approval.py` if approval marker generation is refactored to use `markers.py`.
-- `tests/test_models.py` if marker/reconciliation model fields change.
-- `tests/test_posting.py` / payload validation tests if final payload helper centralizes final-body construction.
+- `tests/test_markers.py` if the trust-neutral result or marker comment model gains fields.
+- `tests/test_finalization.py` if duplicate-fingerprint preflight gets a narrower regression there.
+- `tests/test_models.py` if marker reconciliation model fields move into shared models.
 
 ## Validation
 
 Focused:
 
 ```bash
-python -m pytest tests/test_markers.py -q
+python -m pytest tests/test_marker_hardening.py -q
 ```
 
 Regression:
 
 ```bash
-python -m pytest tests/test_markers.py tests/test_payload_hashes.py tests/test_payload_validation.py tests/test_approval.py tests/test_models.py tests/test_target_freshness.py -q
+python -m pytest tests/test_marker_hardening.py tests/test_markers.py tests/test_payload_hashes.py tests/test_payload_validation.py tests/test_approval.py tests/test_target_freshness.py tests/test_finalization.py -q
 python scripts/check_docs.py
 git diff --check
 python -m py_compile src/reviewgraph/*.py
 ```
 
-Run the full suite because this issue touches shared marker/hash/final-payload contracts:
+Run the full suite because this issue touches side-effect safety contracts:
 
 ```bash
 python -m pytest -q
@@ -128,11 +135,11 @@ python -m pytest -q
 
 ## Out Of Scope
 
-- Live GitHub reads or writes.
-- Fake or real writer adapter.
-- Graph/CLI post-mode route.
-- Pagination, page/comment caps, scan transport summaries, timeout/rate-limit handling.
-- Author-trust restrictions and spoofed-marker handling.
-- Malformed trusted-marker fail-closed policy.
-- Same-target/same-findings/different-payload conflict handling.
+- Real network reads or writes.
+- Fake top-level comment writer.
+- Real writer adapter.
+- Graph/CLI post-mode routing.
+- Non-interactive posting policy.
+- Manual live post smoke.
 - Editing, deleting, or updating existing comments.
+- Global cross-process duplicate prevention.

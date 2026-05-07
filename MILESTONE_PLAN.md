@@ -6,7 +6,7 @@ Active execution artifact for this milestone. Linear remains the durable source 
 
 - Milestone: `PRD 0007: Side Effects`
 - Milestone ID: `c6087171-c932-43a9-81b1-5cf3ddec025a`
-- Current execution status as of 2026-05-07 after the AUR-221 evidence update: `AUR-244`, `AUR-218`, `AUR-217`, `AUR-219`, `AUR-243`, `AUR-220`, and `AUR-221` are `Done`; remaining active implementation issues are `Backlog`; `AUR-261` is the milestone gate.
+- Current execution status as of 2026-05-07 after moving AUR-245 to implementation: `AUR-244`, `AUR-218`, `AUR-217`, `AUR-219`, `AUR-243`, `AUR-220`, and `AUR-221` are `Done`; `AUR-245` is `In Progress`; remaining active implementation issues are `Backlog`; `AUR-261` is the milestone gate.
 - Active implementation issues:
   - `AUR-244` / `RG-055: Define Payload Hash Domains And Golden Tests` / `Done`
   - `AUR-218` / `RG-029: Validate Top-Level Issue Comment Payloads` / `Done`
@@ -15,7 +15,7 @@ Active execution artifact for this milestone. Linear remains the durable source 
   - `AUR-243` / `RG-054: Bind Approval To Actor And Permission Snapshot` / `Done`
   - `AUR-220` / `RG-031: Fail Closed On Stale Review Target` / `Done`
   - `AUR-221` / `RG-032: Reconcile Embedded ReviewGraph Markers` / `Done`
-  - `AUR-245` / `RG-056: Harden Marker Author Pagination Reconciliation` / `Backlog`
+  - `AUR-245` / `RG-056: Harden Marker Author Pagination Reconciliation` / `In Progress`
   - `AUR-246` / `RG-057: Block Non-Interactive Posting Mode` / `Backlog`
   - `AUR-223` / `RG-034: Suppress Writes With No Approved Findings` / `Backlog`
   - `AUR-222` / `RG-033: Implement Fake Top-Level Comment Writer` / `Backlog`
