@@ -1,55 +1,64 @@
-# MILESTONE PLAN: PRD 0006 GitHub Read And Memory
+# MILESTONE PLAN: PRD 0007 Side Effects
 
 Active execution artifact for this milestone. Linear remains the durable source for issue status, milestone order, blockers, relationships, and handoff details; if this file conflicts with Linear, Linear wins. Re-fetch current Linear state before starting each issue.
 
 ## Linear Scope Snapshot
 
-- Milestone: `PRD 0006: GitHub Read And Memory`
-- Milestone ID: `d5570b49-93a7-453b-af77-9e8a5396d21b`
-- Current execution status as of 2026-05-07: `AUR-213`, `AUR-247`, `AUR-214`, `AUR-215`, `AUR-236`, `AUR-239`, and `AUR-216` are `Done`; `AUR-259` is the active milestone gate.
+- Milestone: `PRD 0007: Side Effects`
+- Milestone ID: `c6087171-c932-43a9-81b1-5cf3ddec025a`
+- Current execution status as of 2026-05-07: all active implementation issues are `Backlog`; `AUR-261` is the milestone gate.
 - Active implementation issues:
-  - `AUR-213` / `RG-024: Read GitHub PR Metadata With Fake Transport` / `Done`
-  - `AUR-247` / `RG-058: Fail Closed On GitHub Read Gaps` / `Done`
-  - `AUR-214` / `RG-025: Paginate GitHub Files Comments And Reviews` / `Done`
-  - `AUR-215` / `RG-026: Apply GitHub Trust Rules To Memory` / `Done`
-  - `AUR-236` / `RG-047: Select Conversation Pattern Reviewers` / `Done`
-  - `AUR-239` / `RG-050: Add GitHub PR Dry-Run Adapter Path` / `Done`
-  - `AUR-216` / `RG-027: Add Opt-In Live Read Smoke` / `Done`
+  - `AUR-244` / `RG-055: Define Payload Hash Domains And Golden Tests` / `Backlog`
+  - `AUR-217` / `RG-028: Model Item-Level Approval And Final Hash` / `Backlog`
+  - `AUR-218` / `RG-029: Validate Top-Level Issue Comment Payloads` / `Backlog`
+  - `AUR-219` / `RG-030: Gate Posting On Actor And Permission` / `Backlog`
+  - `AUR-243` / `RG-054: Bind Approval To Actor And Permission Snapshot` / `Backlog`
+  - `AUR-220` / `RG-031: Fail Closed On Stale Review Target` / `Backlog`
+  - `AUR-221` / `RG-032: Reconcile Embedded ReviewGraph Markers` / `Backlog`
+  - `AUR-245` / `RG-056: Harden Marker Author Pagination Reconciliation` / `Backlog`
+  - `AUR-223` / `RG-034: Suppress Writes With No Approved Findings` / `Backlog`
+  - `AUR-222` / `RG-033: Implement Fake Top-Level Comment Writer` / `Backlog`
+  - `AUR-246` / `RG-057: Block Non-Interactive Posting Mode` / `Backlog`
+  - `AUR-241` / `RG-052: Add Real Top-Level Comment Writer Adapter` / `Backlog`
+  - `AUR-224` / `RG-035: Add Manual Live Post Smoke Contract` / `Backlog`
 - Gate issue:
-  - `AUR-259` / `Complete PRD 0006: GitHub Read And Memory` / `In Progress`
-- Canceled duplicate:
-  - `AUR-252` / `RG-058: Fail Closed On GitHub Read Gaps` / `Duplicate`
-- Linear comments: `AUR-213`, `AUR-247`, `AUR-214`, `AUR-215`, `AUR-236`, `AUR-239`, and `AUR-216` have implementation evidence comments. `AUR-259` had no comments when gate planning began on 2026-05-07.
+  - `AUR-261` / `Complete PRD 0007: Side Effects` / `Backlog`
+- Canceled duplicates known from earlier Linear inventory:
+  - `AUR-248` / duplicate of actor/permission approval binding scope
+  - `AUR-249` / duplicate of payload hash domain scope
+  - `AUR-250` / duplicate of hardened marker reconciliation scope
+  - `AUR-251` / duplicate of non-interactive posting block scope
 
 ## Milestone Intent
 
-PRD 0006 moves ReviewGraph from fixture-only review targets toward GitHub PR read targets without introducing write behavior. The milestone should prove that PR metadata, changed files, comments, review comments, reviews, and thread state can be read through adapters, represented as explicit state, transformed into structured conversation memory, and fed into the existing dry-run graph safely.
+PRD 0007 introduces GitHub write behavior without weakening ReviewGraph's default dry-run posture. The milestone should prove that a GitHub write is reachable only after quality classification, posting-plan rendering, item-level human approval, final payload hash validation, actor/permission proof, target freshness proof, marker reconciliation, redaction, and idempotency checks.
 
-The product point is safe memory. PR discussion is shared context across reviewer agents, but it is labeled data, not an instruction stream. Trusted actionable memory may route reviewers through explicit graph state. Untrusted, resolved, unknown, truncated, or partially-read memory remains passive and cannot create routing pressure, public findings, approval input, local verdict pressure, or provider instructions.
+The product point is controlled side effects. Reviewers do not write to GitHub, prompts do not decide whether to post, and candidate payloads are not final payloads. MVP writes only one approved top-level issue comment. Formal PR reviews, inline comments, labels, statuses, approvals, request changes, automatic replies, and hosted/webhook approval policies remain out of scope.
 
-## Final PRD 0006 Code Snapshot
+## Current Code Snapshot
 
-- `src/reviewgraph/fixtures.py` parses fixture PRs into `PullRequestContext` and `ReviewTarget`.
-- `src/reviewgraph/models.py` defines the shared target, PR context, conversation memory, read-gap, reviewer, verdict, and posting-plan contracts used by fixture and GitHub-read paths.
-- `src/reviewgraph/github.py` provides PR ref parsing, fake GitHub read transports, read-result envelopes, pagination across files/comments/reviews/thread state, required/optional read-gap reporting, patch anchor metadata, actor/permission snapshots, and redacted serialization without live network or writer behavior.
-- `src/reviewgraph/read_gaps.py` owns fail-closed read-gap classification and targetless/target-bound fail-closed outcomes before downstream review, routing, rendering, or post eligibility can rely on partial context.
-- `src/reviewgraph/memory.py` builds conversation memory from GitHub-derived PR context, preserves source IDs/thread IDs, applies trusted-human and allowlisted-bot rules, and keeps untrusted, resolved, unknown-state, and passive memory from routing, verdict, prompt body, and public payload surfaces.
-- `src/reviewgraph/routing.py` matches `conversation_patterns` only against trusted actionable memory and records selection reasons with memory IDs, trust labels, and GitHub source metadata.
-- `src/reviewgraph/runner.py` exposes a generic dry-run input path so fixture and GitHub fake-read contexts feed the same memory, budget, reviewer, quality, verdict, render, and dry-run posting-plan contracts.
-- `src/reviewgraph/cli.py` supports fixture dry-run and GitHub fake-read dry-run with `--github-pr` and `--github-fake-data`; live GitHub review remains deferred/fail-closed outside the production CLI path.
-- `src/reviewgraph/github_live.py` provides the opt-in live-read smoke harness through read-only `gh api` REST calls, skipped by default, separated from writer/approval/finalization/reviewer execution, and fail-closed when REST cannot prove required thread state.
-- PRD 0006 tests cover fake reads, read gaps, pagination, memory trust, conversation routing, GitHub dry-run CLI, live-read smoke boundaries, and shared side-effect boundaries without requiring default credentials.
+- `src/reviewgraph/models.py` already defines schema primitives for `GitHubReviewPayload`, `ApprovalDecision`, `ActorPermissionGateResult`, `PayloadValidationResult`, `MarkerReconciliationResult`, `FinalizationStatus`, and `GitHubWriterResult`.
+- `src/reviewgraph/posting.py` builds dry-run posting plans and candidate issue-comment payloads, validates MVP artifact kind, computes visible/full/findings hashes, and rejects public request-changes verdict text.
+- `src/reviewgraph/runner.py` and `src/reviewgraph/targets.py` produce dry-run output and writer-call sentinel proof, but do not yet implement post mode, approval, finalization, marker reconciliation, or writer adapters.
+- `docs/architecture/side-effects.md`, `docs/architecture/github-integration.md`, and `docs/architecture/state-graph.md` define the durable side-effect contract.
+- Existing tests cover candidate payload construction, posting-plan local-only behavior, dry-run writer boundaries, payload schema primitives, redaction, and GitHub read/dry-run paths. PRD 0007 must add approval/finalization/writer harnesses without making default runs post.
 
 ## Execution Order
 
-1. `AUR-213` first: introduce a fake GitHub read adapter, PR ref parser, and read-result envelope for metadata and changed files. This establishes the adapter contract, `ReviewTarget` parity with fixtures, read-without-write-credentials posture, initial redaction coverage for adapter errors and PR text, and the bridge shape later needed by the dry-run runner. The adapter should either derive changed ranges from patches or mark changed-line anchoring unavailable explicitly so `AUR-239` does not discover the runner mismatch late.
-2. `AUR-247` second: model GitHub read gaps and fail-closed partial reads before success-only pagination assumptions spread. Required read gaps should become durable state with deterministic downstream behavior: graph error, `post_enabled=false`, no candidate payload, and visible dry-run markdown/JSON output. Optional gaps remain visible local context and cannot support postable findings or routing.
-3. `AUR-214` third: extend the fake adapter with pagination for files, issue comments, review comments, reviews, and thread state. Pagination must complete before context-budget truncation is applied, and pagination failure must use the `AUR-247` read-gap envelope.
-4. `AUR-215` fourth: apply GitHub-derived trust, allowlisted bots, seen-state, and resolved/unknown thread-state behavior to conversation memory. Reuse and harden `memory.py`; do not move trust policy into prompts.
-5. `AUR-236` fifth: allow trusted actionable GitHub memory to select reviewers through `conversation_patterns`, with selection reasons that name matching memory IDs and trust status. Untrusted, unlisted bot, resolved, and unknown-state memory must not route reviewers.
-6. `AUR-239` sixth: wire GitHub PR refs/URLs into the CLI and graph dry-run path using fake transport by default. The GitHub read result must feed the same target, memory, context budget, reviewer, quality, render, and dry-run path as fixtures; no writer path should be reachable.
-7. `AUR-216` seventh: add opt-in live-read smoke coverage. It must be skipped by default, read-only, clear when `gh` or token is missing, and separate from any write or approval behavior. This is complete.
-8. `AUR-259` last: close the milestone only after every active implementation issue is `Done`, focused/full validation passes, durable docs explain the final read/memory contracts, Linear evidence is complete, and fresh subagent review reports no material gaps. This is active.
+1. `AUR-244` first: define canonical payload hash domains and golden tests for visible body, full final body, marker payload hash, findings hash, newline normalization, marker whitespace, target ordering, and duplicate fingerprints. Later approval, finalization, marker, and writer code must reuse these primitives.
+2. `AUR-217` second: model item-level approval and final hash binding using the `AUR-244` hash primitives. Approval records approved item IDs, review target binding, final full payload hash, actor metadata placeholders, and rejects stale candidate hashes before any writer exists.
+3. `AUR-218` third: validate top-level issue-comment payloads and reject formal PR review payloads/endpoints. Candidate and final payload schemas should include marker fields and remain redacted before any side-effect adapter sees them.
+4. `AUR-219` fourth: add actor and permission discovery/gate state for write mode. Unknown actor, unknown permission, insufficient permission, or missing check timestamp blocks approval/posting.
+5. `AUR-243` fifth: bind approval to the actor/permission snapshot from `AUR-219` and require finalization to verify the current actor/permission still matches before writer reachability.
+6. `AUR-220` sixth: implement target freshness finalization gates. Head, base, merge-base, owner/repo, PR number, and diff-basis drift all fail closed with dry-run output before writer invocation.
+7. `AUR-221` seventh: implement embedded ReviewGraph marker grammar, generation, parsing, and happy-path duplicate detection. Marker recognition must be exact final-line only.
+8. `AUR-245` eighth: harden marker reconciliation for pagination, author trust, spoofed markers, malformed trusted markers, conflicting payload hashes, and duplicate fingerprints.
+9. `AUR-223` ninth: prove no writer is invoked for empty approvals, local-notes-only, suggested-reply-only, suppressed-only, and clarification-only runs. Mixed runs with approved findings must keep suggested replies out of candidate/final payloads.
+10. `AUR-222` tenth: implement the fake top-level issue-comment writer after payload, approval, finalization, freshness, and marker rules exist. The fake writer accepts only finalized issue-comment payloads and creates at most one fake comment.
+11. `AUR-246` eleventh: block non-interactive posting mode so CI/webhook/config-only mode cannot infer human approval or reach final payload construction.
+12. `AUR-241` twelfth: implement the real top-level issue-comment writer adapter. It receives only finalized payloads plus marker reconciliation plans and supports only `POST /repos/{owner}/{repo}/issues/{pr_number}/comments`.
+13. `AUR-224` thirteenth: add the manual-only live post smoke contract for disposable PRs. It must be opt-in, skipped by default, require explicit approval, and prove top-level issue-comment-only behavior through the real writer.
+14. `AUR-261` last: close the milestone only after every active implementation issue is `Done`, focused/full validation passes, durable docs explain the final side-effect contracts, Linear evidence is complete, and fresh subagent review reports no material gaps.
 
 ## Issue Workflow
 
@@ -67,18 +76,20 @@ For each issue:
 
 ## Harness Strategy
 
-- `AUR-213` focused harness: `python -m pytest tests/test_github_fake_read.py`
-- `AUR-247` focused harness: `python -m pytest tests/test_github_read_gaps.py`
-- `AUR-214` focused harness: `python -m pytest tests/test_github_pagination.py`
-- `AUR-215` focused harness: `python -m pytest tests/test_github_memory_trust.py`
-- `AUR-236` focused harness: `python -m pytest tests/test_conversation_routing.py`
-- `AUR-239` focused harness: `python -m pytest tests/test_github_dry_run_cli.py`
-- `AUR-216` focused harness: `python -m pytest -m live_read` only when explicitly enabled; default tests must prove it is skipped by default.
-- Fixture/CLI regression harness:
-  - `python -m pytest tests/test_fixtures.py tests/test_memory.py tests/test_routing.py tests/test_reviewer_context.py tests/test_context_budget.py tests/test_tracer_fixture_run.py tests/test_cli.py tests/test_render.py`
-- Quality and side-effect boundary regression harness:
-  - `python -m pytest tests/test_findings.py tests/test_quality.py tests/test_quality_testing.py tests/test_verdict.py tests/test_posting.py tests/test_prompt_injection_memory.py tests/test_redaction.py`
-- Full validation after shared adapter or CLI changes:
+- `AUR-244` focused harness: payload hash domain and marker hash golden tests, likely in `tests/test_posting_hashes.py` or `tests/test_posting.py`.
+- `AUR-217` focused harness: approval model/final-hash binding tests, likely in `tests/test_approval.py`.
+- `AUR-218` focused harness: payload validation tests rejecting formal PR reviews and non-issue-comment endpoints.
+- `AUR-219` focused harness: actor/permission gate tests with fake permission transport.
+- `AUR-243` focused harness: approval actor/permission snapshot binding and finalization mismatch tests.
+- `AUR-220` focused harness: stale target/freshness finalization tests with fake current target transport.
+- `AUR-221` focused harness: marker generation/parsing/reconciliation happy path tests.
+- `AUR-245` focused harness: marker pagination, trusted-author, spoofing, malformed marker, conflict, and duplicate-fingerprint tests.
+- `AUR-223` focused harness: no-approved-finding and local-only writer suppression tests.
+- `AUR-222` focused harness: fake writer tests for finalized top-level issue comments and idempotent retry.
+- `AUR-246` focused harness: non-interactive post-mode rejection tests.
+- `AUR-241` focused harness: real writer adapter command/request construction tests with fake transport; no live network in default tests.
+- `AUR-224` focused harness: manual live-post smoke contract tests skipped by default.
+- Full validation after shared side-effect changes:
   - `python -m pytest -q`
   - `python -m py_compile src/reviewgraph/*.py`
   - `python scripts/check_docs.py`
@@ -86,76 +97,65 @@ For each issue:
 
 ## Contract Guardrails
 
-- Dry-run remains the default. PRD 0006 must not introduce GitHub writes, approval prompts, live LLM calls, inline comments, statuses, labels, or formal PR reviews.
-- Fake GitHub transport is the default implementation harness. Live read is opt-in and read-only.
-- GitHub read adapters may use REST API or `gh`, but the adapter contract must report whether thread resolution state is available.
-- Required read context includes owner/repo, PR number, title/body/author, base/head SHAs, merge base, labels, changed files, patches, comments, reviews, review comments, and thread state where available.
-- Adapter output must include an explicit read-result envelope with `PullRequestContext`, `ReviewTarget`, available changed-line metadata or anchor-unavailable metadata, read gaps, thread-state availability, optional actor/permission snapshot, and redaction status for external PR text.
-- Adapters must paginate files, issue comments, review comments, reviews, and thread state. Partial pagination failure is a read gap, not context-budget truncation.
-- Required resources for PRD 0006 are PR metadata, target SHAs, changed-file list, file patch availability metadata, issue comments, reviews, review comments, and thread-state availability. If a required resource cannot be read or pagination is incomplete, the graph must fail closed for post eligibility. Missing patch text for an individual file may be optional only when represented with `patch_status` and not used for anchoring or finding evidence.
-- Conversation memory stores author, author association, timestamp, body, URL, path/line when available, source type, resolved status, trust label, actionable status, and passive reason.
-- Trusted human authors are owner/member/collaborator plus configured authenticated operators.
-- Trusted review bots are default-deny allowlisted. Unlisted bots are passive.
-- Untrusted comments, missing/unknown actor types, resolved threads, and unknown thread state cannot trigger `conversation_patterns`.
-- Unknown thread state is distinct from resolved/unresolved. It remains visible as passive memory but cannot support actionable routing or postable findings by default.
-- Seen-state in PRD 0006 means preserving source comment, review, review-comment, and thread IDs in memory and rendered JSON so later slices can avoid reprocessing. It does not imply durable storage or semantic deduplication in this milestone.
-- If truncation occurs after complete pagination, ReviewGraph emits local notes and avoids findings dependent on omitted context.
-- If required read gaps occur before complete context is available, downstream review must fail closed: record `ReadGap` and `GraphError`, set `post_enabled=false`, produce no candidate payload, and render the gap explicitly. Optional read gaps are rendered as local context and cannot support routing, finding evidence, or public payload text.
-- Selection reasons for conversation-pattern routing must be inspectable and include matching memory IDs and trust status.
-- GitHub-read PR titles, bodies, labels, patches, comments, reviews, review comments, thread bodies, adapter errors, `gh` failures, markdown, JSON, traces, and local notes must pass through existing redaction before display or persistence.
-- Actor/permission discovery in PRD 0006 is read-only and advisory. The adapter may return an actor/permission snapshot for later approval work, and unknown or insufficient permission must block any approval/posting path if post mode is attempted. Implementing approval prompts, finalization, or writer behavior remains PRD 0007.
-- Reviewer prompts remain decoupled from GitHub transports and write code. Reviewer agents receive scoped context packages, not adapter clients.
+- Dry-run remains the default behavior.
+- GitHub writes require explicit human approval.
+- Candidate payloads are not final payloads and are not writer inputs.
+- Approval is item-level and binds to the final full issue-comment body hash after approved item selection.
+- Approval is also bound to the review target, actor, permission, and checked-at time shown to the human.
+- `finalize_github_payload` owns the last pre-writer gate: final hash, actor, permission, target freshness, redaction, non-empty approved findings, and marker reconciliation.
+- The writer receives only finalized payloads plus marker reconciliation plan; it must not own approval/freshness/policy decisions.
+- MVP writer supports only top-level `issue_comment` payloads to `POST /repos/{owner}/{repo}/issues/{pr_number}/comments`.
+- Formal PR reviews, inline comments, replies, labels, statuses, approvals, and request-changes writes are rejected or deferred.
+- Suggested replies are local-only and never eligible for candidate/final GitHub payloads in MVP.
+- Empty approvals, local-note-only, suggested-reply-only, suppressed-only, and clarification-only runs never invoke a writer.
+- Marker reconciliation must paginate existing comments or fail closed. Trusted marker conflicts fail closed; untrusted/spoofed markers are ignored.
+- Non-interactive mode cannot infer approval from config, CI, or webhook context.
+- Live post smoke is manual-only, disposable-PR-only, and skipped by default.
 
 ## Documentation Work
 
 Update the narrowest durable docs alongside behavior:
 
-- Read adapter contract, PR ref parsing, thread-state availability, read-result envelope, actor/permission snapshot scope, redaction requirements, and live-read posture belong in `docs/architecture/github-integration.md`.
-- Memory trust, resolved/unknown thread-state actionability, and conversation-pattern routing rules belong in `docs/architecture/state-graph.md` and `docs/architecture/reviewer-config.md` when config semantics change.
-- Read-gap state and fail-closed behavior belong in `docs/architecture/state-graph.md` and, if a durable tradeoff is introduced, `docs/decisions/`.
-- Harness expectations for fake read, pagination, read gaps, and opt-in live smoke belong in `docs/harnesses/harness-engineering.md`.
+- Approval/finalization, actor/permission, target freshness, non-interactive policy, no-approved-finding behavior, and writer reachability belong in `docs/architecture/side-effects.md` and `docs/architecture/state-graph.md`.
+- GitHub artifact kinds, endpoints, marker grammar, marker reconciliation, and real writer adapter posture belong in `docs/architecture/github-integration.md`.
+- Harness expectations for approval, finalization, fake writer, real writer construction, and manual live post belong in `docs/harnesses/harness-engineering.md`.
 - Implementation sequencing belongs in `docs/plans/implementation-plan.md` only if the project phase narrative changes materially.
-- Keep Linear as the executable backlog. Do not copy the full issue tree into durable product docs beyond this active execution plan.
+- Durable tradeoffs belong in `docs/decisions/` only when future agents need to preserve the decision.
 
-## PRD 0006 Acceptance Surface
+## PRD 0007 Acceptance Surface
 
 The milestone is complete when ReviewGraph proves:
 
-- GitHub PR URL and `owner/repo#number` refs parse into a stable read target.
-- Fake GitHub read adapter returns PR metadata, labels, base/head SHAs, merge base, changed files, patches, read-result envelope metadata, and redaction status without write credentials.
-- Fake read output produces the same `ReviewTarget` and `PullRequestContext` shape used by fixtures.
-- Fake read output includes changed-line metadata derived from patches, or explicit anchor-unavailable metadata that keeps GitHub-read dry-runs local/degraded rather than pretending inline anchors are valid.
-- Adapter pagination covers files, issue comments, review comments, reviews, and thread state before truncation.
-- Read failures, partial pagination, unknown required thread state, and unavailable thread-state data become explicit read-gap state. Required gaps create graph errors, set `post_enabled=false`, suppress candidate payloads, and render in markdown/JSON.
-- GitHub-read external text and adapter errors are redacted before markdown, JSON, traces, local notes, or error output.
-- Actor/permission data is read-only/advisory in this milestone; missing, unknown, or insufficient permission blocks any attempted approval/posting path, while approval/finalization/writer implementation remains deferred.
-- GitHub conversation memory applies trusted-human, trusted-bot allowlist, untrusted-passive, source-ID seen-state preservation, resolved-thread, and unknown-thread rules.
-- Trusted actionable memory can route reviewers through `conversation_patterns`; untrusted, unlisted bot, resolved, and unknown-state memory cannot.
-- Selection reasons expose matching memory IDs and trust status.
-- GitHub PR dry-run CLI path feeds the same graph and render contracts as fixture dry-run, using a generic run-input bridge rather than forcing all GitHub data through fixture file loading.
-- Default tests need no GitHub credentials and cannot reach writer code.
-- Live read smoke is opt-in, skipped by default, read-only, and clear about missing `gh` or token.
+- Payload hash domains are canonical and covered by golden tests.
+- Approval stores approved item IDs, target binding, final full payload hash, actor, permission, checked-at time, approver, timestamp, and public-verdict choice.
+- Approving a subset changes the final payload hash and stale candidate hashes are rejected.
+- Top-level issue-comment payloads are the only MVP GitHub artifact accepted.
+- Formal PR review payloads, `/pulls/{pr}/reviews`, `COMMENT`, `APPROVE`, `REQUEST_CHANGES`, labels, statuses, inline comments, and replies are rejected or deferred.
+- Actor/permission discovery is shown before approval and blocks approval/posting when unknown or insufficient.
+- Finalization fails closed if actor, permission, target, redaction, payload hash, marker reconciliation, or approved finding set is invalid.
+- Marker generation/parsing/reconciliation is exact, paginated, author-aware, idempotent, and fail-closed on trusted conflicts.
+- No-approved-finding and local-only paths never invoke writer code.
+- Fake writer proves approved finalized top-level comments create at most one fake comment and reconcile retries.
+- Non-interactive post mode cannot approve or post by config alone.
+- Real writer adapter supports only finalized top-level issue comments.
+- Manual live post smoke is opt-in, skipped by default, requires explicit human approval, and targets disposable PRs only.
 
 ## Deferred Scope
 
-- GitHub write behavior remains PRD 0007.
+- Formal GitHub reviews, inline comments, labels, statuses, approvals, request changes, editing/deleting comments, automatic replies, hosted webhooks, and long-term storage remain out of scope.
 - Live LLM behavior remains PRD 0008.
-- Long-running PR monitoring and webhooks remain out of scope.
-- Inline comments, formal PR reviews, labels, status checks, approvals, and request changes remain deferred.
+- Broad harness strategy backlog remains PRD 0009.
 
 ## Milestone Completion Criteria
 
-`AUR-259` can close only when:
+`AUR-261` can close only when:
 
 - Every active implementation issue listed in this plan is `Done` in Linear with an evidence comment.
-- `AUR-252` remains documented as the canceled duplicate of `AUR-247`.
-- A fresh Linear milestone inventory proves every active PRD 0006 blocker is complete or has an explicit stale/canceled/not-applicable rationale in Linear.
-- A temporary Linear-derived canonical backlog export passes `python scripts/check_docs.py --backlog-export <path>` and is removed before closure.
-- Every commit hash cited in PRD 0006 Linear evidence comments is reachable from current `HEAD`, and gate validation is rerun at the current gate commit.
-- Live network smoke is either executed with an explicit public PR artifact or explicitly documented as not run, with default skipped tests treated only as harness proof.
-- Focused validation for all PRD 0006 harness families passes.
-- Fixture/CLI, quality/boundary, full validation, docs check, py-compile, and diff check pass.
-- Durable docs explain the final GitHub read, memory trust, read-gap, and live-read contracts an implementation agent needs when dropping into the repo.
+- Known canceled duplicate issues are documented with explicit duplicate rationale.
+- A fresh Linear milestone inventory proves every active PRD 0007 blocker is complete or has an explicit stale/canceled/not-applicable rationale in Linear.
+- Focused validation for all PRD 0007 harness families passes.
+- Fixture/CLI, quality/boundary, GitHub read, full validation, docs check, py-compile, and diff check pass.
+- Durable docs explain the final side-effect, approval, finalization, marker, fake writer, real writer, and manual live-post contracts an implementation agent needs when dropping into the repo.
 - Fresh subagent review of code, tests, docs, Linear evidence, and the milestone gate reports no material issues.
-- No GitHub writer, approval, inline-posting, live LLM, or unapproved live API behavior has been introduced.
-- No `.ws/`, temporary export artifacts, live-read artifacts, audit scratch files, or subagent scratch files remain in the repository.
+- Default commands still cannot write to GitHub, call live LLMs, or require credentials.
+- No `.ws/` or temporary export artifacts remain.
