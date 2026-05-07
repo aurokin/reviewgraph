@@ -72,6 +72,7 @@ class FinalizeGithubPayloadResult:
     actor_permission_finalization_check: ActorPermissionFinalizationCheckResult | None
     target_freshness_check: TargetFreshnessCheckResult | None
     finalization_status: FinalizationStatus
+    approved_github_actor: str | None = None
     payload_validation: PayloadValidationResult | None = None
     marker_reconciliation: MarkerReconciliationResult | None = None
     final_payload: FinalIssueCommentPayload | None = None
@@ -495,6 +496,7 @@ def finalize_github_payload(
                         final_payload_hash=payload.final_payload_hash,
                         target_hash=payload.review_target.target_hash(),
                     ),
+                    approved_github_actor=approval.approved_github_actor,
                     payload_validation=payload_validation,
                     marker_reconciliation=marker_reconciliation,
                     final_payload=payload,

@@ -36,7 +36,10 @@ def test_approved_post_mode_route_calls_fake_writer_once() -> None:
     assert result.json_data["actor_permission_finalization_check"]["status"] == "pass"
     assert result.json_data["target_freshness_check"]["status"] == "pass"
     assert result.json_data["finalization_status"]["state"] == "finalized"
+    assert result.json_data["payload_validation"]["status"] == "pass"
+    assert result.json_data["payload_validation"]["reason_code"] is None
     assert result.json_data["marker_reconciliation"]["status"] == "safe_to_post"
+    assert result.json_data["marker_reconciliation"]["transport_summary"]["endpoint_kind"] == "issue_comments"
     assert result.json_data["writer_result"]["status"] == "posted"
     assert result.json_data["writer_result"]["comment_id"] == "fake-comment-1"
     assert result.json_data["side_effects"] == {"writer_called": True, "writer_call_count": 1}
@@ -95,9 +98,37 @@ def test_blocked_post_mode_paths_call_fake_writer_zero_times(case: str, expected
     assert "approval" in result.json_data
     assert "actor_permission_finalization_check" in result.json_data
     assert "target_freshness_check" in result.json_data
+    assert "dry_run_error" in result.json_data
     assert "writer_result" in result.json_data
     if case != "marker_duplicate_matching":
         assert result.json_data["writer_result"] is None
+
+
+def test_payload_validation_failure_records_reason_evidence() -> None:
+    result = run_fixture_fake_post_attempt(case="payload_validation_failure")
+
+    assert result.json_data["payload_validation"]["status"] == "fail"
+    assert result.json_data["payload_validation"]["reason_code"] == "marker_field_mismatch"
+    assert result.json_data["dry_run_error"]["reason_code"] == "payload_validation_failed"
+    assert result.json_data["dry_run_error"]["endpoint_kind"] == "final_payload"
+
+
+def test_marker_transport_failure_records_redacted_transport_summary() -> None:
+    result = run_fixture_fake_post_attempt(case="marker_timeout")
+
+    assert result.json_data["marker_reconciliation"]["status"] == "failed_closed"
+    assert result.json_data["marker_reconciliation"]["reason_code"] == "timeout"
+    assert result.json_data["marker_reconciliation"]["transport_summary"] == {
+        "endpoint_kind": "issue_comments",
+        "page_count": 0,
+        "comment_count": 0,
+        "marker_count": 0,
+        "retryable": True,
+        "reason_code": "timeout",
+        "request_id": "REQ-marker-failure",
+    }
+    assert result.json_data["dry_run_error"]["retryable"] is True
+    assert result.json_data["dry_run_error"]["request_id"] == "REQ-marker-failure"
 
 
 def test_duplicate_matching_markers_reconcile_without_new_fake_post() -> None:

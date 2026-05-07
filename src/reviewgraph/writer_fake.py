@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from reviewgraph.finalization import FinalizeGithubPayloadResult
 from reviewgraph.markers import MarkerCommentPage, PaginatedMarkerComment
 from reviewgraph.models import (
+    ApprovalDecision,
     ArtifactKind,
     FinalIssueCommentPayload,
     FinalizationState,
@@ -75,11 +76,13 @@ class FakeIssueComment:
 def build_finalized_issue_comment_writer_input(
     *,
     finalization: FinalizeGithubPayloadResult,
-    approved_actor: str,
+    approval: ApprovalDecision,
     run_id: str,
 ) -> FinalizedIssueCommentWriterInput:
     if not isinstance(finalization, FinalizeGithubPayloadResult):
         raise ValueError("finalized writer input requires finalization result")
+    if not isinstance(approval, ApprovalDecision):
+        raise ValueError("finalized writer input requires approval decision")
     if finalization.finalization_status.state != FinalizationState.FINALIZED:
         raise ValueError("finalized writer input requires finalized state")
     if not finalization.writer_input_released:
@@ -103,12 +106,18 @@ def build_finalized_issue_comment_writer_input(
         raise ValueError("finalized writer input finalization hash mismatch")
     if finalization.finalization_status.target_hash != finalization.final_payload.review_target.target_hash():
         raise ValueError("finalized writer input target hash mismatch")
+    if finalization.approved_github_actor != approval.approved_github_actor:
+        raise ValueError("finalized writer input approved actor mismatch")
+    if approval.approved_final_payload_hash != finalization.final_payload.final_payload_hash:
+        raise ValueError("finalized writer input approval payload hash mismatch")
+    if approval.approved_review_target_hash != finalization.final_payload.review_target.target_hash():
+        raise ValueError("finalized writer input approval target hash mismatch")
     return FinalizedIssueCommentWriterInput(
         final_payload=finalization.final_payload,
         final_payload_hash=finalization.final_payload.final_payload_hash,
         target_hash=finalization.final_payload.review_target.target_hash(),
         marker_reconciliation_status=finalization.marker_reconciliation.status,
-        approved_actor=approved_actor,
+        approved_actor=approval.approved_github_actor,
         run_id=run_id,
         _build_token=_WRITER_INPUT_BUILD_TOKEN,
     )

@@ -409,7 +409,7 @@ def _post_or_emit(
         return None
     writer_input = build_finalized_issue_comment_writer_input(
         finalization=finalization,
-        approved_actor=approval.approved_github_actor,
+        approval=approval,
         run_id=RUN_ID,
     )
     return writer.post_issue_comment(writer_input)
@@ -463,6 +463,7 @@ def _result(
         "target_freshness_check": (
             _target_freshness_check_json(finalization.target_freshness_check) if finalization is not None else None
         ),
+        "dry_run_error": finalization.dry_run_error if finalization is not None else None,
         "writer_result": None,
     }
     if post_interaction_gate is not None:
@@ -479,20 +480,8 @@ def _result(
             ),
         }
         json_data["final_payload_hash"] = finalization.finalization_status.final_payload_hash
-        json_data["payload_validation"] = (
-            {"status": finalization.payload_validation.status.value}
-            if finalization.payload_validation is not None
-            else None
-        )
-        json_data["marker_reconciliation"] = (
-            {
-                "status": finalization.marker_reconciliation.status.value,
-                "reason_code": finalization.marker_reconciliation.reason_code.value,
-                "existing_comment_id": finalization.marker_reconciliation.existing_comment_id,
-            }
-            if finalization.marker_reconciliation is not None
-            else None
-        )
+        json_data["payload_validation"] = _payload_validation_json(finalization.payload_validation)
+        json_data["marker_reconciliation"] = _marker_reconciliation_json(finalization.marker_reconciliation)
     if writer_result is not None:
         json_data["writer_result"] = {
             "status": writer_result.status.value,
@@ -531,6 +520,43 @@ def _approval_json(approval: ApprovalDecision | None) -> dict[str, object] | Non
         "approved_by": approval.approved_by,
         "timestamp": approval.timestamp,
         "include_public_verdict": approval.include_public_verdict,
+    }
+
+
+def _payload_validation_json(validation) -> dict[str, object] | None:
+    if validation is None:
+        return None
+    return {
+        "status": validation.status.value,
+        "reason_code": validation.reason_code.value if validation.reason_code is not None else None,
+        "payload_hash": validation.payload_hash,
+        "target_hash": validation.target_hash,
+        "reason": validation.reason,
+    }
+
+
+def _marker_reconciliation_json(reconciliation) -> dict[str, object] | None:
+    if reconciliation is None:
+        return None
+    return {
+        "status": reconciliation.status.value,
+        "reason_code": reconciliation.reason_code.value,
+        "existing_comment_id": reconciliation.existing_comment_id,
+        "duplicate_comment_ids": list(reconciliation.duplicate_comment_ids),
+        "trusted_actor": reconciliation.trusted_actor,
+        "transport_summary": _marker_transport_summary_json(reconciliation.transport_summary),
+    }
+
+
+def _marker_transport_summary_json(summary) -> dict[str, object]:
+    return {
+        "endpoint_kind": summary.endpoint_kind,
+        "page_count": summary.page_count,
+        "comment_count": summary.comment_count,
+        "marker_count": summary.marker_count,
+        "retryable": summary.retryable,
+        "reason_code": summary.reason_code.value if summary.reason_code is not None else None,
+        "request_id": summary.request_id,
     }
 
 

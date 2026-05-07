@@ -5,6 +5,7 @@ import pytest
 from reviewgraph.finalization import FinalizeGithubPayloadResult
 from reviewgraph.markers import build_final_issue_comment_payload
 from reviewgraph.models import (
+    ApprovalDecision,
     ActorPermissionFinalizationCheckResult,
     ActorPermissionTransportSummary,
     ArtifactKind,
@@ -23,6 +24,7 @@ from reviewgraph.models import (
     TargetFreshnessTransportSummary,
     WriterStatus,
 )
+from reviewgraph.permissions import issue_comment_endpoint
 from reviewgraph.writer_fake import (
     FakeIssueCommentWriter,
     FinalizedIssueCommentWriterInput,
@@ -35,7 +37,7 @@ def test_fake_writer_accepts_finalized_safe_to_post_input_only() -> None:
     finalization = _finalization(payload=payload)
     writer_input = build_finalized_issue_comment_writer_input(
         finalization=finalization,
-        approved_actor="reviewgraph-bot",
+        approval=_approval(payload=payload),
         run_id="run-123",
     )
     writer = FakeIssueCommentWriter(author_login="reviewgraph-bot")
@@ -137,7 +139,7 @@ def test_finalized_writer_input_rejects_non_released_or_non_safe_states(case: st
     with pytest.raises(ValueError):
         build_finalized_issue_comment_writer_input(
             finalization=finalization,
-            approved_actor="reviewgraph-bot",
+            approval=_approval(payload=payload),
             run_id="run-123",
         )
 
@@ -147,7 +149,7 @@ def test_fake_writer_returns_failed_without_transport_call_for_invalid_wrapped_p
     finalization = _finalization(payload=payload)
     writer_input = build_finalized_issue_comment_writer_input(
         finalization=finalization,
-        approved_actor="reviewgraph-bot",
+        approval=_approval(payload=payload),
         run_id="run-123",
     )
     writer = FakeIssueCommentWriter()
@@ -164,7 +166,7 @@ def test_fake_writer_rejects_approved_actor_mismatch_before_transport_call() -> 
     payload = _payload()
     writer_input = build_finalized_issue_comment_writer_input(
         finalization=_finalization(payload=payload),
-        approved_actor="reviewgraph-bot",
+        approval=_approval(payload=payload),
         run_id="run-123",
     )
     writer = FakeIssueCommentWriter(author_login="other-bot")
@@ -175,6 +177,17 @@ def test_fake_writer_rejects_approved_actor_mismatch_before_transport_call() -> 
     assert result.error == "approved_actor_mismatch"
     assert writer.call_count == 0
     assert writer.comments == ()
+
+
+def test_finalized_writer_input_rejects_rebound_approval_actor() -> None:
+    payload = _payload()
+
+    with pytest.raises(ValueError, match="approved actor mismatch"):
+        build_finalized_issue_comment_writer_input(
+            finalization=_finalization(payload=payload),
+            approval=_approval(payload=payload, actor="other-bot"),
+            run_id="run-123",
+        )
 
 
 def _finalization(payload) -> FinalizeGithubPayloadResult:
@@ -203,6 +216,7 @@ def _finalization(payload) -> FinalizeGithubPayloadResult:
             payload.final_payload_hash,
             payload.review_target.target_hash(),
         ),
+        approved_github_actor="reviewgraph-bot",
         payload_validation=PayloadValidationResult(
             status=GateStatus.PASS,
             payload_hash=payload.final_payload_hash,
@@ -211,6 +225,39 @@ def _finalization(payload) -> FinalizeGithubPayloadResult:
         marker_reconciliation=_marker_reconciliation("safe"),
         final_payload=payload,
         writer_input_released=True,
+    )
+
+
+def _approval(payload, *, actor: str = "reviewgraph-bot") -> ApprovalDecision:
+    target = payload.review_target
+    return ApprovalDecision(
+        approved=True,
+        approved_item_ids=("finding-1",),
+        approved_final_payload_hash=payload.final_payload_hash,
+        approved_review_target_hash=target.target_hash(),
+        approved_review_target=target,
+        approved_github_actor=actor,
+        approved_permission="write",
+        approved_permission_checked_at="2026-05-07T00:04:00Z",
+        approved_credential_principal=f"gh-user:{actor}",
+        approved_credential_source="pat",
+        approved_repo_permission="write",
+        approved_installation_permission=None,
+        approved_endpoint_permission=None,
+        approved_issue_comment_write=True,
+        approved_permission_check_method="fake_issue_comment_permission_probe",
+        approved_permission_endpoint_method="POST",
+        approved_permission_checked_target=target.to_ordered_dict(),
+        approved_permission_checked_target_hash=target.target_hash(),
+        approved_permission_endpoint=issue_comment_endpoint(target),
+        approved_permission_endpoint_kind="issue_comment",
+        approved_permission_transport_summary=ActorPermissionTransportSummary(
+            endpoint_kind="issue_comment_permission",
+            retryable=False,
+        ),
+        include_public_verdict=False,
+        approved_by="local-user",
+        timestamp="2026-05-07T00:04:30Z",
     )
 
 
