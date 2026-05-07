@@ -100,6 +100,7 @@ This issue should create the first approved-post vertical slice, but it must sta
    - `docs/architecture/side-effects.md` for fake writer handoff and marker-aware writer release.
    - `docs/architecture/state-graph.md` for `post_or_emit` behavior and finalized/reconciled paths.
    - `docs/architecture/github-integration.md` is mandatory because marker reconciliation ownership moves to finalization and the writer receives only finalized writer input, not a marker reconciliation plan.
+   - `docs/prds/0007-side-effects.md` is mandatory because it currently describes marker reconciliation as writer-owned durable behavior; update it to match finalization-owned marker reconciliation and finalized writer-input handoff.
    - `docs/harnesses/harness-engineering.md` for the fake writer and post-mode graph harness.
 
 ## Focused Harness
