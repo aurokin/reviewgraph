@@ -6,13 +6,13 @@ Active execution artifact for this milestone. Linear remains the durable source 
 
 - Milestone: `PRD 0007: Side Effects`
 - Milestone ID: `c6087171-c932-43a9-81b1-5cf3ddec025a`
-- Current execution status as of 2026-05-07: all active implementation issues are `Backlog`; `AUR-261` is the milestone gate.
+- Current execution status as of 2026-05-07 after the AUR-219 evidence update: `AUR-244`, `AUR-218`, `AUR-217`, and `AUR-219` are `Done`; `AUR-243` is `In Progress`; remaining active implementation issues are `Backlog`; `AUR-261` is the milestone gate.
 - Active implementation issues:
-  - `AUR-244` / `RG-055: Define Payload Hash Domains And Golden Tests` / `Backlog`
-  - `AUR-218` / `RG-029: Validate Top-Level Issue Comment Payloads` / `Backlog`
-  - `AUR-217` / `RG-028: Model Item-Level Approval And Final Hash` / `Backlog`
-  - `AUR-219` / `RG-030: Gate Posting On Actor And Permission` / `Backlog`
-  - `AUR-243` / `RG-054: Bind Approval To Actor And Permission Snapshot` / `Backlog`
+  - `AUR-244` / `RG-055: Define Payload Hash Domains And Golden Tests` / `Done`
+  - `AUR-218` / `RG-029: Validate Top-Level Issue Comment Payloads` / `Done`
+  - `AUR-217` / `RG-028: Model Item-Level Approval And Final Hash` / `Done`
+  - `AUR-219` / `RG-030: Gate Posting On Actor And Permission` / `Done`
+  - `AUR-243` / `RG-054: Bind Approval To Actor And Permission Snapshot` / `In Progress`
   - `AUR-220` / `RG-031: Fail Closed On Stale Review Target` / `Backlog`
   - `AUR-221` / `RG-032: Reconcile Embedded ReviewGraph Markers` / `Backlog`
   - `AUR-245` / `RG-056: Harden Marker Author Pagination Reconciliation` / `Backlog`
@@ -51,7 +51,7 @@ The product point is controlled side effects. Reviewers do not write to GitHub, 
 ## Execution Order
 
 1. `AUR-244` first: define canonical payload hash domains and golden tests for visible body, full final body, marker payload hash, findings hash, newline normalization, marker whitespace, target ordering, and duplicate fingerprints. `marker.payload` equals `visible_body_hash(final_body_without_marker)`, while `final_payload_hash` equals the hash of the full final body including the exact marker line. Duplicate postable or approved finding fingerprints are fail-closed input errors, not deduplicated lists or multisets. Later approval, finalization, marker, and writer code must reuse these primitives.
-2. `AUR-218` second: validate top-level issue-comment payloads and reject formal PR review payloads/endpoints. Final payload schema includes explicit marker components and marker line. Candidate payload schema carries candidate visible body and findings hash inputs only; it must not contain a final marker line, expose candidate-owned final hash semantics, or be accepted as writer input. The current `CandidateIssueCommentPayload` alias to `GitHubReviewPayload` is implementation debt for `AUR-218`, not work to preserve in `AUR-244`.
+2. `AUR-218` second: validate top-level issue-comment payloads and reject formal PR review payloads/endpoints. Final payload schema includes explicit marker components and marker line. Candidate payload schema carries candidate visible body and findings hash inputs only; it must not contain a final marker line, expose candidate-owned final hash semantics, or be accepted as writer input. This split is now implemented; future issues must preserve the separate candidate/final payload models.
 3. `AUR-217` third: model item-level approval and final hash binding using the `AUR-244` hash primitives and the `AUR-218` candidate/final schema split. Approval records approved item IDs, review target binding, final full payload hash, actor metadata placeholders, and rejects stale candidate hashes before any writer exists.
 4. `AUR-219` fourth: add actor and permission discovery/gate state for write mode. `ActorPermissionGateResult` is endpoint-specific for top-level issue-comment posting: authenticated actor, credential principal/source, repo or installation permission, ability to call `POST /repos/{owner}/{repo}/issues/{pr_number}/comments`, check method, checked target, checked-at time, and stable failure code. Unknown actor, unknown credential source, unknown permission, insufficient endpoint permission, missing check timestamp, timeout, rate limit, forbidden, not found, unavailable, malformed response, or stale cached data blocks approval/posting with a redacted transport summary. Fake cases must include repo-role-write but token/app lacks issue-comment write ability.
 5. `AUR-243` fifth: bind approval to the actor/permission snapshot from `AUR-219` and require finalization to verify the current actor/permission still matches before writer reachability. Re-check failures use the same fail-closed transport taxonomy as `AUR-219`; cached success cannot substitute for an unknown or failed current check.
