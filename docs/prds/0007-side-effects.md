@@ -29,9 +29,10 @@ Implement side effects only after dry-run, quality classification, posting plan 
 - `approval_gate` records approved item IDs and metadata only.
 - `finalize_github_payload` builds the final body after item-level selection and validates the final hash.
 - `approved_final_payload_hash` binds to the final issue-comment body after item selection.
-- Writer uses an embedded hidden marker as the final comment line.
+- Finalization uses an embedded hidden marker as the final comment line.
 - Marker fields include run ID, target hash, payload hash, and findings hash.
-- Writer fetches existing PR comments before posting and reconciles matching markers.
+- Finalization fetches existing PR comments before writer release and reconciles matching markers.
+- The writer receives only finalized writer input after marker reconciliation returns `SAFE_TO_POST`.
 - If the PR target changes before posting, ReviewGraph fails closed and emits dry-run output.
 - If no findings are approved, the writer is not invoked.
 

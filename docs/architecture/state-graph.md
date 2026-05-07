@@ -279,9 +279,9 @@ Selected reviewer output may get exactly one deterministic fake repair attempt w
 
 `finalize_github_payload` starts with preflight, not body construction. It validates approval shape, approved item IDs, non-empty approved findings, and duplicate approved finding fingerprints, then re-reads current GitHub actor, current endpoint permission, and full review target freshness. Actor, permission, and target re-checks must use current transport results; unknown credential source, timeout, rate limit, forbidden, not found, unavailable service, malformed response, stale cached proof, or missing checked-at time fails closed with a redacted transport summary. A failed preflight leaves `final_github_payload` and `final_payload_hash` unset.
 
-Only after preflight passes does `finalize_github_payload` build the final issue-comment body from approved item IDs, compute the final hash, verify it matches `approval.approved_final_payload_hash`, verify redaction status, reconcile markers, and allow `post_or_emit` to call the writer.
+Only after preflight passes does `finalize_github_payload` build the final issue-comment body from approved item IDs, compute the final hash, verify it matches `approval.approved_final_payload_hash`, verify redaction status, and reconcile markers. `SAFE_TO_POST` produces finalized writer input for `post_or_emit`; `RECONCILED_EXISTING` is a terminal no-post state where `post_or_emit` reports reconciliation without invoking the writer; `FAILED_CLOSED` blocks writer reachability.
 
-The writer adapter receives a finalized top-level issue-comment payload plus a marker reconciliation plan. It must not perform its own policy decisions beyond transport errors and marker reconciliation.
+The writer adapter receives only finalized top-level issue-comment writer input. It must not accept raw candidate payloads, raw final payloads, marker reconciliation plans, or non-finalized state, and it must not perform policy decisions beyond writer-local validation and transport errors.
 
 ## Error handling
 

@@ -3,13 +3,9 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from reviewgraph.hashing import (
-    final_payload_hash,
-    findings_hash,
     is_exact_reviewgraph_v1_marker_line,
-    marker_payload_hash,
-    visible_body_hash,
 )
-from reviewgraph.markers import build_reviewgraph_marker_line
+from reviewgraph.final_payload import build_approved_final_issue_comment
 from reviewgraph.models import (
     ApprovalDecision,
     ApprovalDecisionBuildReasonCode,
@@ -25,13 +21,11 @@ from reviewgraph.models import (
     PostingDestination,
     PostingPlan,
     PostingPlanItem,
-    RedactionStatus,
     ReviewTarget,
     ReviewVerdict,
 )
 from reviewgraph.payload_validation import validate_candidate_issue_comment_payload
 from reviewgraph.posting import build_candidate_issue_comment_payload
-from reviewgraph.redaction import redact_text
 
 
 class ApprovalProofError(ValueError):
@@ -106,46 +100,31 @@ def build_approval_proof(
     if candidate_validation.status != GateStatus.PASS:
         return _fail(ApprovalProofReasonCode.CANDIDATE_BINDING_MISMATCH, candidate_validation.reason or "candidate binding failed")
 
-    raw_visible_body = _approved_visible_body(
+    final_build = build_approved_final_issue_comment(
+        run_id=run_id,
         review_target=review_target,
         findings_by_id=findings_by_id,
         selected_items=tuple(selected_items),
         local_verdict=local_verdict,
         include_public_verdict=include_public_verdict,
     )
-    redaction = redact_text(raw_visible_body)
-    final_redaction_status = RedactionStatus(
-        redacted=redaction.redacted,
-        replacement_count=redaction.replacement_count,
-        categories=redaction.categories,
-    )
-    if final_redaction_status.status != GateStatus.PASS:
+    if final_build.redaction_status.status != GateStatus.PASS:
         return _fail(ApprovalProofReasonCode.FINAL_REDACTION_FAILED, "final redaction did not pass")
-
-    visible_body = redaction.text.rstrip("\n") + "\n"
-    visible_hash = visible_body_hash(visible_body)
-    selected_findings_hash = findings_hash(sorted_fingerprints)
-    marker_line = build_reviewgraph_marker_line(
-        run_id=run_id,
-        review_target=review_target,
-        visible_body=visible_body,
-        finding_fingerprints=sorted_fingerprints,
-    )
+    marker_line = final_build.payload.marker_line
     if not is_exact_reviewgraph_v1_marker_line(marker_line):
         return _fail(ApprovalProofReasonCode.INVALID_RUN_ID, "generated marker line is invalid")
-    full_body = f"{visible_body}{marker_line}\n"
 
     return ApprovalProofResult(
         status=GateStatus.PASS,
         approved_item_ids=tuple(item.id for item in selected_items),
         approved_review_target=review_target,
         approved_review_target_hash=review_target.target_hash(),
-        approved_final_payload_hash=final_payload_hash(full_body),
-        final_visible_body_hash=visible_hash,
-        marker_payload_hash=marker_payload_hash(visible_body),
-        findings_hash=selected_findings_hash,
+        approved_final_payload_hash=final_build.payload.final_payload_hash,
+        final_visible_body_hash=final_build.visible_body_hash,
+        marker_payload_hash=final_build.payload.marker_payload_hash,
+        findings_hash=final_build.payload.findings_hash,
         marker_line=marker_line,
-        final_redaction_status=final_redaction_status,
+        final_redaction_status=final_build.redaction_status,
         include_public_verdict=include_public_verdict,
         approved_by=approved_by,
         timestamp=timestamp,
@@ -229,31 +208,6 @@ def build_approval_decision(
             timestamp=proof.timestamp,
         ),
     )
-
-
-def _approved_visible_body(
-    *,
-    review_target: ReviewTarget,
-    findings_by_id: dict[str, ClassifiedFinding],
-    selected_items: tuple[PostingPlanItem, ...],
-    local_verdict: ReviewVerdict | None,
-    include_public_verdict: bool,
-) -> str:
-    body_parts = [
-        "ReviewGraph approved findings",
-        f"Target: {review_target.owner_repo}#{review_target.pr_number}",
-        f"Head: {review_target.head_sha}",
-        "",
-    ]
-    if include_public_verdict and local_verdict is not None:
-        body_parts.extend([f"Local verdict: {local_verdict.value}", ""])
-    body_parts.append("Approved findings:")
-    for item in selected_items:
-        finding = findings_by_id[item.id]
-        body_parts.append(
-            f"- P{finding.priority} {finding.title}: {finding.body} ({finding.path}:{finding.line})"
-        )
-    return "\n".join(body_parts).rstrip("\n") + "\n"
 
 
 def _summary_item(posting_plan: PostingPlan) -> PostingPlanItem | None:

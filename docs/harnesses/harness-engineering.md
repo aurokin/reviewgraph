@@ -181,6 +181,7 @@ python -m pytest tests/test_findings.py tests/test_reviewer_json_repair.py tests
 - Finalization re-checks target freshness, actor, endpoint permission, redaction, payload hash, marker reconciliation, and duplicate fingerprints before writer reachability.
 - Target freshness harnesses cover changed target fields plus timeout, rate limit, forbidden, not found, unavailable service, malformed response, stale-cache rejection, and proof that unknown freshness never reaches final payload construction or writer calls.
 - Marker reconciliation paginates existing comments, trusts only the exact approved actor or configured ReviewGraph bot, reconciles trusted identical duplicate markers without another post, and fails closed on incomplete scans, caps, transport failures, trusted malformed markers, or trusted conflicting markers for the same target/findings.
+- Fake writer harnesses must prove the writer accepts only `FinalizedIssueCommentWriterInput` produced after finalization reaches `FINALIZED` with marker reconciliation `SAFE_TO_POST`. Raw final payloads, reconciled-existing marker states, failed marker states, and `writer_input_released=false` state must call the writer zero times. `RECONCILED_EXISTING` is reported by `post_or_emit` without invoking the writer.
 - Writer idempotency harnesses prove retry safety for one approved run/retry sequence. Cross-process duplicate prevention is deferred unless an external lock/storage design is added.
 
 ## Tracer Bullets

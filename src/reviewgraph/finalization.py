@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from dataclasses import dataclass
+from typing import Callable
 
 from reviewgraph.models import (
     ACTOR_PERMISSION_FINALIZATION_MISMATCH_FIELDS,
@@ -19,6 +20,8 @@ from reviewgraph.models import (
     FinalizationState,
     FinalizationStatus,
     GateStatus,
+    MarkerReconciliationResult,
+    MarkerReconciliationStatus,
     OutputClassification,
     PayloadValidationResult,
     PostingDestination,
@@ -37,6 +40,7 @@ from reviewgraph.permissions import (
     ActorPermissionProbeResult,
     evaluate_actor_permission_gate,
 )
+from reviewgraph.payload_validation import validate_final_issue_comment_payload
 
 TARGET_DEFAULT_MAX_PROOF_AGE_SECONDS = 300
 TARGET_MAX_FUTURE_SKEW_SECONDS = 60
@@ -69,6 +73,7 @@ class FinalizeGithubPayloadResult:
     target_freshness_check: TargetFreshnessCheckResult | None
     finalization_status: FinalizationStatus
     payload_validation: PayloadValidationResult | None = None
+    marker_reconciliation: MarkerReconciliationResult | None = None
     final_payload: FinalIssueCommentPayload | None = None
     dry_run_error: dict[str, object] | None = None
     final_payload_builder_calls: int = 0
@@ -342,7 +347,10 @@ def finalize_github_payload(
     current_target_probe: TargetFreshnessProbeResult,
     evaluated_at: str,
     final_payload_builder=None,
+    marker_reconciler: Callable[[FinalIssueCommentPayload], MarkerReconciliationResult] | None = None,
 ) -> FinalizeGithubPayloadResult:
+    if marker_reconciler is not None and not callable(marker_reconciler):
+        raise ValueError("marker_reconciler must be callable")
     approved_preflight = _approval_preflight(approval, posting_plan, approved_findings_by_id)
     if approved_preflight is not None:
         return FinalizeGithubPayloadResult(
@@ -419,6 +427,80 @@ def finalize_github_payload(
                 payload_validation=None,
                 final_payload_builder_calls=builder_calls,
                 dry_run_error=_dry_run_error("payload_validation_failed", False, "final_payload", None, ()),
+            )
+        if marker_reconciler is not None:
+            payload_validation = validate_final_issue_comment_payload(payload)
+            if payload_validation.status != GateStatus.PASS:
+                return FinalizeGithubPayloadResult(
+                    actor_permission_finalization_check=actor_check,
+                    target_freshness_check=target_check,
+                    finalization_status=FinalizationStatus(
+                        state=FinalizationState.FAILED_CLOSED,
+                        final_payload_hash=None,
+                        target_hash=approval.approved_review_target_hash,
+                        reason_code=FinalizationReasonCode.PAYLOAD_VALIDATION_FAILED,
+                        reason="final payload validation failed",
+                    ),
+                    payload_validation=payload_validation,
+                    final_payload_builder_calls=builder_calls,
+                    dry_run_error=_dry_run_error("payload_validation_failed", False, "final_payload", None, ()),
+                )
+            marker_reconciliation = marker_reconciler(payload)
+            if not isinstance(marker_reconciliation, MarkerReconciliationResult):
+                raise ValueError("marker_reconciler must return MarkerReconciliationResult")
+            if marker_reconciliation.status == MarkerReconciliationStatus.SAFE_TO_POST:
+                return FinalizeGithubPayloadResult(
+                    actor_permission_finalization_check=actor_check,
+                    target_freshness_check=target_check,
+                    finalization_status=FinalizationStatus(
+                        state=FinalizationState.FINALIZED,
+                        final_payload_hash=payload.final_payload_hash,
+                        target_hash=payload.review_target.target_hash(),
+                    ),
+                    payload_validation=payload_validation,
+                    marker_reconciliation=marker_reconciliation,
+                    final_payload=payload,
+                    final_payload_builder_calls=builder_calls,
+                    writer_input_released=True,
+                )
+            if marker_reconciliation.status == MarkerReconciliationStatus.RECONCILED_EXISTING:
+                return FinalizeGithubPayloadResult(
+                    actor_permission_finalization_check=actor_check,
+                    target_freshness_check=target_check,
+                    finalization_status=FinalizationStatus(
+                        state=FinalizationState.NOT_READY,
+                        final_payload_hash=None,
+                        target_hash=approval.approved_review_target_hash,
+                        reason_code=FinalizationReasonCode.MARKER_RECONCILED_EXISTING,
+                        reason="marker reconciliation matched an existing comment",
+                    ),
+                    payload_validation=payload_validation,
+                    marker_reconciliation=marker_reconciliation,
+                    final_payload_builder_calls=builder_calls,
+                    writer_input_released=False,
+                )
+            summary = marker_reconciliation.transport_summary
+            return FinalizeGithubPayloadResult(
+                actor_permission_finalization_check=actor_check,
+                target_freshness_check=target_check,
+                finalization_status=FinalizationStatus(
+                    state=FinalizationState.FAILED_CLOSED,
+                    final_payload_hash=None,
+                    target_hash=approval.approved_review_target_hash,
+                    reason_code=FinalizationReasonCode.MARKER_RECONCILIATION_FAILED,
+                    reason="marker reconciliation failed closed",
+                ),
+                payload_validation=payload_validation,
+                marker_reconciliation=marker_reconciliation,
+                final_payload_builder_calls=builder_calls,
+                writer_input_released=False,
+                dry_run_error=_dry_run_error(
+                    marker_reconciliation.reason_code.value,
+                    summary.retryable,
+                    summary.endpoint_kind,
+                    summary.request_id,
+                    (),
+                ),
             )
     return FinalizeGithubPayloadResult(
         actor_permission_finalization_check=actor_check,

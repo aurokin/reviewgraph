@@ -156,6 +156,8 @@ class FinalizationReasonCode(StrEnum):
     TARGET_FRESHNESS_FAILED = "target_freshness_failed"
     PAYLOAD_VALIDATION_FAILED = "payload_validation_failed"
     MARKER_RECONCILIATION_DEFERRED = "marker_reconciliation_deferred"
+    MARKER_RECONCILED_EXISTING = "marker_reconciled_existing"
+    MARKER_RECONCILIATION_FAILED = "marker_reconciliation_failed"
 
 
 class WriterReleasePreflightReasonCode(StrEnum):
