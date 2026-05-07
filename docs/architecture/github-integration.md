@@ -181,3 +181,5 @@ The writer also records in-memory result metadata for the current run:
 ```
 
 Before posting, finalization checks existing ReviewGraph markers for the same target, approved finding fingerprints, and payload hash. The writer receives only finalized writer input after `SAFE_TO_POST`; it does not receive a marker reconciliation plan and is not invoked for `RECONCILED_EXISTING`.
+
+The real writer's ambiguous POST recovery is narrower than pre-write marker reconciliation. It may rescan comments only after a POST attempt returns an ambiguous accepted-write transport result. That recovery scan uses shared marker parsing/reconciliation primitives plus the expected marker hashes from finalized writer input, and it may use a supplied comment-scan transport and trusted ReviewGraph author configuration. It must not rebuild payloads, widen approval, decide pre-write `SAFE_TO_POST`, or issue a second POST unless a complete recovery scan proves no accepted artifact exists.
