@@ -6,20 +6,20 @@ Active execution artifact for this milestone. Linear remains the durable source 
 
 - Milestone: `PRD 0006: GitHub Read And Memory`
 - Milestone ID: `d5570b49-93a7-453b-af77-9e8a5396d21b`
-- Current execution status as of 2026-05-07: `AUR-213`, `AUR-247`, `AUR-214`, and `AUR-215` are `Done`; `AUR-236` is `In Progress`; remaining active PRD 0006 issues are `Backlog`.
+- Current execution status as of 2026-05-07: `AUR-213`, `AUR-247`, `AUR-214`, `AUR-215`, and `AUR-236` are `Done`; `AUR-239` is `In Progress`; remaining active PRD 0006 issues are `Backlog`.
 - Active implementation issues:
   - `AUR-213` / `RG-024: Read GitHub PR Metadata With Fake Transport` / `Done`
   - `AUR-247` / `RG-058: Fail Closed On GitHub Read Gaps` / `Done`
   - `AUR-214` / `RG-025: Paginate GitHub Files Comments And Reviews` / `Done`
   - `AUR-215` / `RG-026: Apply GitHub Trust Rules To Memory` / `Done`
-  - `AUR-236` / `RG-047: Select Conversation Pattern Reviewers` / `In Progress`
-  - `AUR-239` / `RG-050: Add GitHub PR Dry-Run Adapter Path` / `Backlog`
+  - `AUR-236` / `RG-047: Select Conversation Pattern Reviewers` / `Done`
+  - `AUR-239` / `RG-050: Add GitHub PR Dry-Run Adapter Path` / `In Progress`
   - `AUR-216` / `RG-027: Add Opt-In Live Read Smoke` / `Backlog`
 - Gate issue:
   - `AUR-259` / `Complete PRD 0006: GitHub Read And Memory` / `Backlog`
 - Canceled duplicate:
   - `AUR-252` / `RG-058: Fail Closed On GitHub Read Gaps` / `Duplicate`
-- Linear comments: `AUR-214` and `AUR-215` have implementation evidence; `AUR-236` had no comments when fetched on 2026-05-07.
+- Linear comments: `AUR-214`, `AUR-215`, and `AUR-236` have implementation evidence; `AUR-239` had no comments when fetched on 2026-05-07.
 
 ## Milestone Intent
 
