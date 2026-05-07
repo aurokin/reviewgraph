@@ -149,6 +149,9 @@ The milestone is complete when ReviewGraph proves:
 - Every active implementation issue listed in this plan is `Done` in Linear with an evidence comment.
 - `AUR-252` remains documented as the canceled duplicate of `AUR-247`.
 - A fresh Linear milestone inventory proves every active PRD 0006 blocker is complete or has an explicit stale/canceled/not-applicable rationale in Linear.
+- A temporary Linear-derived canonical backlog export passes `python scripts/check_docs.py --backlog-export <path>` and is removed before closure.
+- Every commit hash cited in PRD 0006 Linear evidence comments is reachable from current `HEAD`, and gate validation is rerun at the current gate commit.
+- Live network smoke is either executed with an explicit public PR artifact or explicitly documented as not run, with default skipped tests treated only as harness proof.
 - Focused validation for all PRD 0006 harness families passes.
 - Fixture/CLI, quality/boundary, full validation, docs check, py-compile, and diff check pass.
 - Durable docs explain the final GitHub read, memory trust, read-gap, and live-read contracts an implementation agent needs when dropping into the repo.

@@ -50,6 +50,9 @@ Map every gate requirement to concrete evidence before closing:
 - Side-effect boundary: no new GitHub writer, approval, finalization, inline posting, formal review, status, label, live LLM, or unapproved live API path is reachable from PRD 0006 read/dry-run/live-smoke code.
 - Temporary artifacts: no `.ws/` tree or temporary Linear export remains.
 - Validation commands: focused PRD 0006 harnesses, full suite, docs check, py-compile, and diff check.
+- Linear queue verifier: a temporary canonical backlog export must be generated from current Linear milestone data, checked with `python scripts/check_docs.py --backlog-export <path>`, summarized in the final gate evidence, and removed before closure.
+- Live-read decision: either run `REVIEWGRAPH_LIVE_READ=1 ... pytest -m live_read` against an explicit public PR target and record the artifact, or explicitly document that live network smoke was not executed and that the gate evidence is limited to skipped-by-default harness proof plus fake/read-only boundary proof.
+- Commit reconciliation: verify every commit hash cited by PRD 0006 Linear evidence is reachable from current `HEAD`, and rerun gate validation at the current gate commit rather than relying on earlier issue comments.
 - Review gate: fresh subagents review code, tests, docs, Linear evidence, and this gate plan until they report no material findings.
 
 ## Audit Steps
@@ -57,7 +60,9 @@ Map every gate requirement to concrete evidence before closing:
 1. Re-fetch Linear issue statuses and comments for the full PRD 0006 milestone.
 2. Inspect the durable docs and compare them against PRD 0006 acceptance surface and the final implemented behavior.
 3. Inspect key implementation files for contract coverage and side-effect boundaries.
-4. Run focused harnesses:
+4. Generate a temporary canonical Linear backlog export from current Linear data, run `python scripts/check_docs.py --backlog-export <path> --verbose`, save the command result in the audit notes, and remove the temporary export before closing.
+5. Verify the commit hashes referenced in implementation evidence comments are reachable from current `HEAD`.
+6. Run focused harnesses:
    - `python -m pytest tests/test_github_fake_read.py -q`
    - `python -m pytest tests/test_github_read_gaps.py -q`
    - `python -m pytest tests/test_github_pagination.py -q`
@@ -65,15 +70,18 @@ Map every gate requirement to concrete evidence before closing:
    - `python -m pytest tests/test_conversation_routing.py -q`
    - `python -m pytest tests/test_github_dry_run_cli.py -q`
    - `python -m pytest tests/test_live_read_smoke.py -q`
-5. Run integration and repository checks:
+7. Decide live network smoke explicitly:
+   - If `gh`, a token, and `REVIEWGRAPH_LIVE_READ_PR` are intentionally available, run `REVIEWGRAPH_LIVE_READ=1 REVIEWGRAPH_LIVE_READ_OUT=<tmp artifact> python -m pytest -m live_read tests/test_live_read_smoke.py -q` and record the artifact summary.
+   - If not run, record the exact rationale in `AUR-259` evidence and do not describe skipped default tests as live network proof.
+8. Run integration and repository checks at the current gate commit:
    - `python -m pytest tests/test_contract_boundaries.py tests/test_prompt_injection_memory.py tests/test_redaction.py tests/test_cli.py tests/test_render.py -q`
    - `python -m pytest -q`
    - `python -m py_compile src/reviewgraph/*.py`
    - `python scripts/check_docs.py`
    - `git diff --check`
-6. Ask fresh subagents for independent milestone-gate review after local audit data is available.
-7. If docs or implementation gaps are found, fix them in scoped commits and rerun affected checks and reviewer passes.
-8. Move `AUR-259` to `In Review`, add a Linear evidence comment with the audit mapping and command results, then move it to `Done` only after all findings are none-issues.
+9. Ask fresh subagents for independent milestone-gate review after local audit data is available.
+10. If docs or implementation gaps are found, fix them in scoped commits and rerun affected checks and reviewer passes.
+11. Move `AUR-259` to `In Review`, add a Linear evidence comment with the audit mapping, command results, live-read decision, commit reachability, backlog verifier result, temporary-artifact cleanup proof, and final subagent review results. Move it to `Done` only after all findings are none-issues.
 
 ## Documentation Refactor Expectations
 
