@@ -38,8 +38,11 @@ This issue models approval and final hash binding only. It may add deterministic
 - The final body proof must redact before computing marker payload hash and approved final hash.
 - Public request-changes wording remains excluded unless a later issue explicitly supports it; this issue does not submit GitHub `REQUEST_CHANGES` or approvals.
 - Actor/permission snapshot storage is deferred to `AUR-219`/`AUR-243`. Do not populate fake actor/permission proof to satisfy the existing `ApprovalDecision` shape.
-- Adjust `ApprovalDecision` or add a separate non-writer approval proof/result type so rejected/no-proof states do not require fake `approved_final_payload_hash`, actor, permission, or checked-at values.
+- Add a separate non-writer `ApprovalProofResult` contract for this issue. Keep `ApprovalDecision` unchanged until actor/permission binding work, and do not use it to represent rejected/no-proof proof states in AUR-217.
+- `ApprovalProofResult` owns pass/fail proof state: `status`, typed `reason_code`, approved IDs, review target/hash, approved final payload hash, final visible body hash, marker payload hash, findings hash, exact marker line, final redaction status, include-public-verdict flag, approved-by, and timestamp. Proof/hash fields are present only on pass.
 - `ApprovalDecision` or approval proof should not be sufficient by itself to reach a writer. Later finalization must still validate actor/permission, target freshness, redaction, marker reconciliation, payload validation, and writer request shape.
+- Any current posting plan containing `top_level_summary_item` fails closed in AUR-217 with `summary_item_deferred`, even if the approved ID set does not include `summary`. Summary approval can be reintroduced only after there is a durable summary-body contract.
+- `approved_by` and `timestamp` are explicit inputs to the pure helper. The approval module must not read the environment, clock, TTY, GitHub, or config to infer them.
 
 ## Stable Approval Reason Codes
 
@@ -58,15 +61,15 @@ The initial approval proof failure code set is:
 ## Implementation Shape
 
 1. Add `src/reviewgraph/approval.py` as a pure module with no GitHub transport, writer, graph post-mode, or live IO imports.
-2. Define approval helper/result contracts as needed, likely:
+2. Define approval helper/result contracts:
    - approved item selection validation,
    - deterministic final issue-comment body proof/preview from current posting inputs,
-   - approval decision/proof construction that stores approved IDs, target hash, target, approved final payload hash, final visible body hash, marker payload hash, findings hash, exact marker line, public-verdict choice, approver, timestamp, and typed failure reason when blocked.
+   - `ApprovalProofResult` plus an `ApprovalProofReasonCode` enum containing the stable code set above.
 3. Reuse `build_candidate_issue_comment_payload` or AUR-218 validation to prove the supplied candidate matches current posting inputs before computing final payload proof.
 4. Build final issue-comment body proofs from approved `review_body_item` findings only. Include exact ReviewGraph v1 marker line/components, but do not return `FinalIssueCommentPayload` or `GitHubIssueCommentRequest` in this issue.
 5. Use AUR-244 helpers for visible body hash, marker payload hash, findings hash, review target hash, and final payload hash.
 6. Require a run ID for marker generation and keep it within the AUR-244 marker grammar.
-7. Adjust `ApprovalDecision` or add a separate approval proof/result type so this issue does not invent actor/permission values. Keep actor/permission compatibility fields inert if they remain.
+7. Keep `ApprovalDecision` unchanged in this issue unless a narrow model import update is necessary. Use `ApprovalProofResult` for all new pass/fail proof behavior so this issue does not invent actor/permission values.
 8. Add `tests/test_approval.py` for:
    - approving all findings stores approved IDs, target hash/target, and final payload hash,
    - approving a subset changes final body/hash and findings hash,
@@ -74,8 +77,11 @@ The initial approval proof failure code set is:
    - candidate payload cannot be used as final/writer input,
    - empty approved finding set is rejected for `approved=True`,
    - duplicate approved fingerprints fail closed,
+   - any posting plan containing `top_level_summary_item` fails closed with `summary_item_deferred`,
    - unknown IDs, local-only IDs, inline-candidate IDs, suggested-reply IDs, and summary IDs are rejected as approved inputs,
    - final body proof redacts before marker payload hash and approved final hash computation,
+   - `ApprovalProofResult` carries final `redaction_status` on pass and stable typed `reason_code` on fail,
+   - `approved_by` and `timestamp` are caller-supplied and no clock/environment lookup is used,
    - final payload marker fields and final hash match AUR-244 helpers,
    - approval module import-boundary proof.
 9. Update narrow durable docs only if implementation clarifies behavior beyond existing side-effect docs.
