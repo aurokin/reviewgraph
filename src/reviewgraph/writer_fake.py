@@ -16,7 +16,10 @@ from reviewgraph.models import (
 from reviewgraph.payload_validation import validate_final_issue_comment_payload
 
 
-@dataclass(frozen=True)
+_WRITER_INPUT_BUILD_TOKEN = object()
+
+
+@dataclass(frozen=True, init=False)
 class FinalizedIssueCommentWriterInput:
     final_payload: FinalIssueCommentPayload
     final_payload_hash: str
@@ -25,7 +28,28 @@ class FinalizedIssueCommentWriterInput:
     approved_actor: str
     run_id: str
 
-    def __post_init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        final_payload: FinalIssueCommentPayload,
+        final_payload_hash: str,
+        target_hash: str,
+        marker_reconciliation_status: MarkerReconciliationStatus,
+        approved_actor: str,
+        run_id: str,
+        _build_token: object | None = None,
+    ) -> None:
+        if _build_token is not _WRITER_INPUT_BUILD_TOKEN:
+            raise ValueError("finalized writer input must be built from verified finalization")
+        object.__setattr__(self, "final_payload", final_payload)
+        object.__setattr__(self, "final_payload_hash", final_payload_hash)
+        object.__setattr__(self, "target_hash", target_hash)
+        object.__setattr__(self, "marker_reconciliation_status", marker_reconciliation_status)
+        object.__setattr__(self, "approved_actor", approved_actor)
+        object.__setattr__(self, "run_id", run_id)
+        self._validate()
+
+    def _validate(self) -> None:
         if not isinstance(self.final_payload, FinalIssueCommentPayload):
             raise ValueError("finalized writer input requires final payload")
         if self.final_payload_hash != self.final_payload.final_payload_hash:
@@ -86,6 +110,7 @@ def build_finalized_issue_comment_writer_input(
         marker_reconciliation_status=finalization.marker_reconciliation.status,
         approved_actor=approved_actor,
         run_id=run_id,
+        _build_token=_WRITER_INPUT_BUILD_TOKEN,
     )
 
 

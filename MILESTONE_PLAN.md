@@ -44,9 +44,9 @@ The product point is controlled side effects. Reviewers do not write to GitHub, 
 
 - `src/reviewgraph/models.py` already defines schema primitives for `GitHubReviewPayload`, `ApprovalDecision`, `ActorPermissionGateResult`, `PayloadValidationResult`, `MarkerReconciliationResult`, `FinalizationStatus`, and `GitHubWriterResult`.
 - `src/reviewgraph/posting.py` builds dry-run posting plans and candidate issue-comment payloads, validates MVP artifact kind, computes visible/full/findings hashes, and rejects public request-changes verdict text.
-- `src/reviewgraph/runner.py` and `src/reviewgraph/targets.py` produce dry-run output and writer-call sentinel proof, but do not yet implement post mode, approval, finalization, marker reconciliation, or writer adapters.
+- `src/reviewgraph/runner.py` and `src/reviewgraph/targets.py` produce dry-run output and writer-call sentinel proof. Approval, finalization, marker reconciliation, and fake writer/post-mode harnesses now exist behind explicit non-default boundaries; public runs still do not expose a production post path.
 - `docs/architecture/side-effects.md`, `docs/architecture/github-integration.md`, and `docs/architecture/state-graph.md` define the durable side-effect contract.
-- Existing tests cover candidate payload construction, posting-plan local-only behavior, dry-run writer boundaries, payload schema primitives, redaction, and GitHub read/dry-run paths. PRD 0007 must add approval/finalization/writer harnesses without making default runs post.
+- Existing tests cover candidate/final payload construction, posting-plan local-only behavior, dry-run writer boundaries, approval/finalization gates, marker reconciliation, fake writer reachability, payload schema primitives, redaction, and GitHub read/dry-run paths. Remaining PRD 0007 issues must preserve default dry-run behavior while adding the real writer adapter and manual live-post smoke proof.
 
 ## Execution Order
 
@@ -115,7 +115,7 @@ For milestone gates and any issue that changes blockers/order, also run `python 
 - `finalize_github_payload` owns the last pre-writer gate: approval shape, approved IDs, non-empty approved findings, duplicate fingerprints, current actor, current permission, target freshness, final hash, redaction, and marker reconciliation.
 - Final payload construction happens only after approval shape, approved IDs, non-empty/duplicate checks, current actor/permission, and current target freshness pass.
 - External read failures during finalization fail closed. Timeout, rate limit, forbidden, not found, unavailable, malformed response, or stale cached data cannot fall back to an earlier success.
-- The writer receives only finalized payloads plus marker reconciliation plan; it must not own approval/freshness/policy decisions.
+- The writer receives only finalized writer input after finalization-owned marker reconciliation returns `SAFE_TO_POST`; it must not own approval, freshness, marker policy, or reconciliation-plan decisions.
 - MVP writer supports only top-level `issue_comment` payloads to `POST /repos/{owner}/{repo}/issues/{pr_number}/comments`.
 - Formal PR reviews, inline comments, replies, labels, statuses, approvals, and request-changes writes are rejected or deferred.
 - Suggested replies are local-only and never eligible for candidate/final GitHub payloads in MVP.

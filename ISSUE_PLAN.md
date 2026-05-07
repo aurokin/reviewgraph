@@ -30,7 +30,7 @@ This issue should create the first approved-post vertical slice, but it must sta
 - Approval stays item-level and uses `approved_item_ids`.
 - `writer_release_preflight` must pass before finalization and still records `writer_input_released=false`.
 - `finalize_github_payload(...)` owns current actor/permission re-check, target freshness, payload hash validation, marker reconciliation, and final writer-input release.
-- Only `FinalIssueCommentPayload` with top-level `issue_comment` artifact kind can reach the fake writer.
+- Only builder-owned `FinalizedIssueCommentWriterInput` wrapping a validated top-level `issue_comment` final payload can reach the fake writer.
 - Candidate payloads, formal PR review payloads, inline comments, labels, statuses, approvals, request-changes writes, suggested replies, local notes, suppressed outputs, and clarification requests cannot reach the fake writer.
 - Marker reconciliation must complete before posting. `SAFE_TO_POST` may release writer input; `RECONCILED_EXISTING` is terminal no-post/reconciled; `FAILED_CLOSED` blocks writer calls.
 - `writer_result.status=RECONCILED` means the post path ended reconciled from marker state with no writer invocation. It is synthesized by `post_or_emit` from finalization/marker state, not returned by the fake writer.

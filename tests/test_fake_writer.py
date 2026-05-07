@@ -25,6 +25,7 @@ from reviewgraph.models import (
 )
 from reviewgraph.writer_fake import (
     FakeIssueCommentWriter,
+    FinalizedIssueCommentWriterInput,
     build_finalized_issue_comment_writer_input,
 )
 
@@ -58,6 +59,20 @@ def test_fake_writer_rejects_raw_final_payload_without_finalized_writer_input() 
 
     assert writer.call_count == 0
     assert writer.comments == ()
+
+
+def test_fake_writer_input_cannot_be_directly_constructed_to_bypass_finalization() -> None:
+    payload = _payload()
+
+    with pytest.raises(ValueError, match="verified finalization"):
+        FinalizedIssueCommentWriterInput(
+            final_payload=payload,
+            final_payload_hash=payload.final_payload_hash,
+            target_hash=payload.review_target.target_hash(),
+            marker_reconciliation_status=MarkerReconciliationStatus.SAFE_TO_POST,
+            approved_actor="reviewgraph-bot",
+            run_id="run-123",
+        )
 
 
 @pytest.mark.parametrize(
