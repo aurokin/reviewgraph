@@ -31,7 +31,10 @@ from reviewgraph.models import (
     GateStatus,
     GitHubWriterResult,
     GraphError,
+    MarkerReconciliationReasonCode,
     MarkerReconciliationResult,
+    MarkerReconciliationStatus,
+    MarkerScanTransportSummary,
     MemoryReference,
     NormalizationError,
     OutputClassification,
@@ -634,9 +637,15 @@ def test_side_effect_contracts_bind_approval_finalization_and_writer_metadata() 
         target_hash=target.target_hash(),
     )
     reconciliation = MarkerReconciliationResult(
-        status=GateStatus.PASS,
-        trusted_actor="reviewgraph-bot",
-        existing_comment_id=None,
+        status=MarkerReconciliationStatus.SAFE_TO_POST,
+        reason_code=MarkerReconciliationReasonCode.SAFE_TO_POST,
+        transport_summary=MarkerScanTransportSummary(
+            endpoint_kind="issue_comments",
+            page_count=1,
+            comment_count=0,
+            marker_count=0,
+            retryable=False,
+        ),
     )
     finalization = FinalizationStatus(
         state=FinalizationState.FINALIZED,
@@ -657,7 +666,8 @@ def test_side_effect_contracts_bind_approval_finalization_and_writer_metadata() 
     assert interaction_gate.interactive is True
     assert actor_gate.permission == "write"
     assert validation.payload_hash == payload.final_payload_hash
-    assert reconciliation.trusted_actor == "reviewgraph-bot"
+    assert reconciliation.status == MarkerReconciliationStatus.SAFE_TO_POST
+    assert reconciliation.transport_summary.endpoint_kind == "issue_comments"
     assert finalization.state == FinalizationState.FINALIZED
     assert writer.status == WriterStatus.NOT_CALLED
 
@@ -1100,9 +1110,31 @@ def test_actionable_memory_requires_trusted_unresolved_supported_actor(kwargs: d
             "sha256:target",
             PayloadValidationReasonCode.WRONG_ENDPOINT,
         ),
-        lambda: MarkerReconciliationResult(GateStatus.PASS, None),
-        lambda: MarkerReconciliationResult("pass", "reviewgraph-bot"),
-        lambda: MarkerReconciliationResult(GateStatus.FAIL, "", reason="failed"),
+        lambda: MarkerScanTransportSummary("wrong", 1, 0, 0, False),
+        lambda: MarkerScanTransportSummary("issue_comments", -1, 0, 0, False),
+        lambda: MarkerScanTransportSummary(
+            "issue_comments",
+            1,
+            0,
+            0,
+            True,
+        ),
+        lambda: MarkerScanTransportSummary("issue_comments", 1, 0, 0, False, request_id="ghp_secret"),
+        lambda: MarkerReconciliationResult(
+            GateStatus.PASS,
+            MarkerReconciliationReasonCode.SAFE_TO_POST,
+            MarkerScanTransportSummary("issue_comments", 1, 0, 0, False),
+        ),
+        lambda: MarkerReconciliationResult(
+            MarkerReconciliationStatus.SAFE_TO_POST,
+            "safe_to_post",
+            MarkerScanTransportSummary("issue_comments", 1, 0, 0, False),
+        ),
+        lambda: MarkerReconciliationResult(
+            MarkerReconciliationStatus.FAILED_CLOSED,
+            MarkerReconciliationReasonCode.TRUSTED_MARKER_CONFLICT,
+            MarkerScanTransportSummary("issue_comments", 1, 0, 1, False),
+        ),
         lambda: FinalizationStatus(FinalizationState.FINALIZED, None, "sha256:target"),
         lambda: FinalizationStatus("finalized", "sha256:payload", "sha256:target"),
         lambda: FinalizationStatus(

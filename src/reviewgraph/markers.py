@@ -13,7 +13,18 @@ from reviewgraph.hashing import (
     parse_reviewgraph_v1_marker_line,
     visible_body_hash,
 )
-from reviewgraph.models import ArtifactKind, FinalIssueCommentPayload, RedactionStatus, ReviewTarget
+from reviewgraph.models import (
+    MARKER_SCAN_ENDPOINT_KIND,
+    RETRYABLE_MARKER_RECONCILIATION_REASON_CODES,
+    ArtifactKind,
+    FinalIssueCommentPayload,
+    MarkerReconciliationReasonCode,
+    MarkerReconciliationResult,
+    MarkerReconciliationStatus,
+    MarkerScanTransportSummary,
+    RedactionStatus,
+    ReviewTarget,
+)
 from reviewgraph.redaction import redact_text
 
 
@@ -24,38 +35,6 @@ class MarkerScanStatus(StrEnum):
     DEFERRED_MALFORMED = "deferred_malformed"
 
 
-class MarkerReconciliationStatus(StrEnum):
-    SAFE_TO_POST = "safe_to_post"
-    RECONCILED_EXISTING = "reconciled_existing"
-    FAILED_CLOSED = "failed_closed"
-
-
-class MarkerReconciliationReasonCode(StrEnum):
-    SAFE_TO_POST = "safe_to_post"
-    MATCHED_EXISTING = "matched_existing"
-    PAGINATION_INCOMPLETE = "pagination_incomplete"
-    REPEATED_CURSOR = "repeated_cursor"
-    PAGE_CAP_EXCEEDED = "page_cap_exceeded"
-    COMMENT_CAP_EXCEEDED = "comment_cap_exceeded"
-    MALFORMED_PAGE = "malformed_page"
-    TIMEOUT = "timeout"
-    RATE_LIMITED = "rate_limited"
-    FORBIDDEN = "forbidden"
-    NOT_FOUND = "not_found"
-    UNAVAILABLE = "unavailable"
-    TRANSPORT_UNKNOWN = "transport_unknown"
-    TRUSTED_MARKER_CONFLICT = "trusted_marker_conflict"
-    TRUSTED_MARKER_MALFORMED = "trusted_marker_malformed"
-
-
-RETRYABLE_MARKER_RECONCILIATION_REASON_CODES = frozenset(
-    {
-        MarkerReconciliationReasonCode.TIMEOUT,
-        MarkerReconciliationReasonCode.RATE_LIMITED,
-        MarkerReconciliationReasonCode.UNAVAILABLE,
-        MarkerReconciliationReasonCode.TRANSPORT_UNKNOWN,
-    }
-)
 TRANSPORT_MARKER_RECONCILIATION_REASON_CODES = frozenset(
     {
         MarkerReconciliationReasonCode.TIMEOUT,
@@ -67,8 +46,6 @@ TRANSPORT_MARKER_RECONCILIATION_REASON_CODES = frozenset(
         MarkerReconciliationReasonCode.TRANSPORT_UNKNOWN,
     }
 )
-
-MARKER_SCAN_ENDPOINT_KIND = "issue_comments"
 _ALLOWED_MARKER_REQUEST_ID_CHARS = frozenset(
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.:/"
 )
@@ -86,40 +63,6 @@ class MarkerScanLimits:
             value = getattr(self, name)
             if not isinstance(value, int) or value <= 0:
                 raise ValueError(f"marker scan {name} must be a positive integer")
-
-
-@dataclass(frozen=True)
-class MarkerScanTransportSummary:
-    endpoint_kind: str
-    page_count: int
-    comment_count: int
-    marker_count: int
-    retryable: bool
-    reason_code: MarkerReconciliationReasonCode | None = None
-    request_id: str | None = None
-
-    def __post_init__(self) -> None:
-        if self.endpoint_kind != MARKER_SCAN_ENDPOINT_KIND:
-            raise ValueError("marker scan transport summary endpoint_kind must be issue_comments")
-        for name in ("page_count", "comment_count", "marker_count"):
-            value = getattr(self, name)
-            if not isinstance(value, int) or value < 0:
-                raise ValueError(f"marker scan transport summary {name} must be non-negative")
-        if not isinstance(self.retryable, bool):
-            raise ValueError("marker scan transport summary retryable must be bool")
-        if self.reason_code is not None and not isinstance(
-            self.reason_code,
-            MarkerReconciliationReasonCode,
-        ):
-            raise ValueError("marker scan transport summary reason_code must be valid")
-        if self.reason_code is None and self.retryable:
-            raise ValueError("marker scan transport summary without failure cannot be retryable")
-        if self.reason_code is not None:
-            expected_retryable = self.reason_code in RETRYABLE_MARKER_RECONCILIATION_REASON_CODES
-            if self.retryable != expected_retryable:
-                raise ValueError("marker scan transport summary retryable mismatch")
-        if self.request_id is not None and not _is_safe_marker_request_id(self.request_id):
-            raise ValueError("marker scan transport summary request_id must be allowlisted")
 
 
 @dataclass(frozen=True)
@@ -190,55 +133,6 @@ class PaginatedMarkerCommentTransport(Protocol):
         cursor: object | None,
         timeout_seconds: int,
     ) -> MarkerCommentPage: ...
-
-
-@dataclass(frozen=True)
-class TrustedMarkerReconciliationResult:
-    status: MarkerReconciliationStatus
-    reason_code: MarkerReconciliationReasonCode
-    transport_summary: MarkerScanTransportSummary
-    trusted_actor: str | None = None
-    existing_comment_id: str | None = None
-    marker: ReviewGraphMarker | None = None
-    duplicate_comment_ids: tuple[str, ...] = ()
-    writer_input_released: bool = False
-    finalization_passed: bool = False
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.status, MarkerReconciliationStatus):
-            raise ValueError("trusted marker reconciliation status must be valid")
-        if not isinstance(self.reason_code, MarkerReconciliationReasonCode):
-            raise ValueError("trusted marker reconciliation reason_code must be valid")
-        if not isinstance(self.transport_summary, MarkerScanTransportSummary):
-            raise ValueError("trusted marker reconciliation transport_summary must be valid")
-        for name in ("trusted_actor", "existing_comment_id"):
-            value = getattr(self, name)
-            if value is not None and (not isinstance(value, str) or not value):
-                raise ValueError(f"trusted marker reconciliation {name} must be non-empty")
-        if self.marker is not None and not isinstance(self.marker, ReviewGraphMarker):
-            raise ValueError("trusted marker reconciliation marker must be a ReviewGraphMarker")
-        if not isinstance(self.duplicate_comment_ids, tuple) or not all(
-            isinstance(comment_id, str) and comment_id for comment_id in self.duplicate_comment_ids
-        ):
-            raise ValueError("trusted marker reconciliation duplicate_comment_ids must be non-empty strings")
-        if self.writer_input_released or self.finalization_passed:
-            raise ValueError("marker reconciliation cannot release writer input by itself")
-        if self.status == MarkerReconciliationStatus.SAFE_TO_POST:
-            if self.reason_code != MarkerReconciliationReasonCode.SAFE_TO_POST:
-                raise ValueError("safe marker reconciliation requires safe_to_post reason")
-            if self.trusted_actor is not None or self.existing_comment_id is not None or self.marker is not None:
-                raise ValueError("safe marker reconciliation must not include existing marker data")
-        if self.status == MarkerReconciliationStatus.RECONCILED_EXISTING:
-            if self.reason_code != MarkerReconciliationReasonCode.MATCHED_EXISTING:
-                raise ValueError("reconciled marker requires matched_existing reason")
-            if self.trusted_actor is None or self.existing_comment_id is None or self.marker is None:
-                raise ValueError("reconciled marker requires trusted actor, comment id, and marker")
-        if self.status == MarkerReconciliationStatus.FAILED_CLOSED:
-            if self.reason_code in {
-                MarkerReconciliationReasonCode.SAFE_TO_POST,
-                MarkerReconciliationReasonCode.MATCHED_EXISTING,
-            }:
-                raise ValueError("failed marker reconciliation requires failure reason")
 
 
 @dataclass(frozen=True)
@@ -449,7 +343,7 @@ def reconcile_paginated_trusted_markers(
     expected_payload_hash: str,
     expected_findings_hash: str,
     limits: MarkerScanLimits | None = None,
-) -> TrustedMarkerReconciliationResult:
+) -> MarkerReconciliationResult:
     _require_non_empty_string(owner_repo, "marker scan owner_repo")
     if not isinstance(pr_number, int) or pr_number <= 0:
         raise ValueError("marker scan pr_number must be a positive integer")
@@ -611,12 +505,11 @@ def reconcile_paginated_trusted_markers(
         )
     if trusted_match is not None:
         comment, marker = trusted_match
-        return TrustedMarkerReconciliationResult(
+        return MarkerReconciliationResult(
             status=MarkerReconciliationStatus.RECONCILED_EXISTING,
             reason_code=MarkerReconciliationReasonCode.MATCHED_EXISTING,
             trusted_actor=comment.author_login,
             existing_comment_id=comment.comment_id,
-            marker=marker,
             duplicate_comment_ids=tuple(duplicate_comment_ids),
             transport_summary=_marker_scan_summary(
                 page_count=page_count,
@@ -625,7 +518,7 @@ def reconcile_paginated_trusted_markers(
                 request_id=request_id,
             ),
         )
-    return TrustedMarkerReconciliationResult(
+    return MarkerReconciliationResult(
         status=MarkerReconciliationStatus.SAFE_TO_POST,
         reason_code=MarkerReconciliationReasonCode.SAFE_TO_POST,
         transport_summary=_marker_scan_summary(
@@ -659,8 +552,8 @@ def _trusted_marker_failure(
     comment_count: int,
     marker_count: int,
     request_id: str | None,
-) -> TrustedMarkerReconciliationResult:
-    return TrustedMarkerReconciliationResult(
+) -> MarkerReconciliationResult:
+    return MarkerReconciliationResult(
         status=MarkerReconciliationStatus.FAILED_CLOSED,
         reason_code=reason_code,
         transport_summary=_marker_scan_summary(
