@@ -190,6 +190,7 @@ def run_fixture_fake_post_attempt(
             fake_writer,
             graph_trace,
             writer_call_count_before=writer_call_count_before,
+            approval=approval_result if isinstance(approval_result, ApprovalDecision) else None,
             post_interaction_gate=_gate_json(GateStatus.PASS, None),
             writer_release_preflight=_writer_release_json(writer_release),
             post_or_emit_reason=writer_release.reason_code.value if writer_release.reason_code is not None else "writer_release_failed",
@@ -366,6 +367,7 @@ def run_fixture_fake_post_attempt(
         fake_writer,
         graph_trace,
         writer_call_count_before=writer_call_count_before,
+        approval=approval_result,
         finalization=finalization,
         writer_result=writer_result,
         post_interaction_gate=_gate_json(GateStatus.PASS, None),
@@ -437,6 +439,7 @@ def _result(
     graph_trace: list[str],
     *,
     writer_call_count_before: int,
+    approval: ApprovalDecision | None = None,
     finalization: FinalizeGithubPayloadResult | None = None,
     writer_result: GitHubWriterResult | None = None,
     post_interaction_gate: dict[str, object] | None = None,
@@ -451,6 +454,16 @@ def _result(
         "side_effects": {"writer_called": writer_call_delta > 0, "writer_call_count": writer_call_delta},
         "post_or_emit": {"reason_code": post_or_emit_reason},
         "errors": errors or [],
+        "approval": _approval_json(approval),
+        "actor_permission_finalization_check": (
+            _actor_permission_finalization_check_json(finalization.actor_permission_finalization_check)
+            if finalization is not None
+            else None
+        ),
+        "target_freshness_check": (
+            _target_freshness_check_json(finalization.target_freshness_check) if finalization is not None else None
+        ),
+        "writer_result": None,
     }
     if post_interaction_gate is not None:
         json_data["post_interaction_gate"] = post_interaction_gate
@@ -503,6 +516,70 @@ def _writer_release_json(result) -> dict[str, object]:
         "writer_input_released": result.writer_input_released,
         "eligible_for_finalization": result.eligible_for_finalization,
         "approved_item_ids": list(result.approved_item_ids),
+    }
+
+
+def _approval_json(approval: ApprovalDecision | None) -> dict[str, object] | None:
+    if approval is None:
+        return None
+    return {
+        "approved": approval.approved,
+        "approved_item_ids": list(approval.approved_item_ids),
+        "approved_final_payload_hash": approval.approved_final_payload_hash,
+        "approved_review_target_hash": approval.approved_review_target_hash,
+        "approved_github_actor": approval.approved_github_actor,
+        "approved_by": approval.approved_by,
+        "timestamp": approval.timestamp,
+        "include_public_verdict": approval.include_public_verdict,
+    }
+
+
+def _actor_permission_finalization_check_json(check) -> dict[str, object] | None:
+    if check is None:
+        return None
+    transport = check.actor_permission_transport_summary
+    return {
+        "status": check.status.value,
+        "reason_code": check.reason_code.value if check.reason_code is not None else None,
+        "actor_permission_reason_code": (
+            check.actor_permission_reason_code.value if check.actor_permission_reason_code is not None else None
+        ),
+        "current_actor_permission_checked_at": check.current_actor_permission_checked_at,
+        "mismatched_fields": list(check.mismatched_fields),
+        "transport_summary": (
+            {
+                "endpoint_kind": transport.endpoint_kind,
+                "retryable": transport.retryable,
+                "reason_code": transport.reason_code.value if transport.reason_code is not None else None,
+                "request_id": transport.request_id,
+            }
+            if transport is not None
+            else None
+        ),
+    }
+
+
+def _target_freshness_check_json(check) -> dict[str, object] | None:
+    if check is None:
+        return None
+    transport = check.transport_summary
+    return {
+        "status": check.status.value,
+        "reason_code": check.reason_code.value if check.reason_code is not None else None,
+        "current_target_hash": check.current_target_hash,
+        "current_checked_at": check.current_checked_at,
+        "check_method": check.check_method,
+        "mismatched_fields": list(check.mismatched_fields),
+        "transport_summary": (
+            {
+                "endpoint_kind": transport.endpoint_kind,
+                "retryable": transport.retryable,
+                "reason_code": transport.reason_code.value if transport.reason_code is not None else None,
+                "request_id": transport.request_id,
+            }
+            if transport is not None
+            else None
+        ),
     }
 
 

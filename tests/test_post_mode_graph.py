@@ -31,6 +31,10 @@ def test_approved_post_mode_route_calls_fake_writer_once() -> None:
         "post_or_emit",
     ]
     assert result.json_data["writer_release_preflight"]["status"] == "pass"
+    assert result.json_data["approval"]["approved"] is True
+    assert result.json_data["approval"]["approved_item_ids"] == ["finding-1"]
+    assert result.json_data["actor_permission_finalization_check"]["status"] == "pass"
+    assert result.json_data["target_freshness_check"]["status"] == "pass"
     assert result.json_data["finalization_status"]["state"] == "finalized"
     assert result.json_data["marker_reconciliation"]["status"] == "safe_to_post"
     assert result.json_data["writer_result"]["status"] == "posted"
@@ -88,6 +92,12 @@ def test_blocked_post_mode_paths_call_fake_writer_zero_times(case: str, expected
     assert result.writer.comments == ()
     assert result.json_data["side_effects"] == {"writer_called": False, "writer_call_count": 0}
     assert result.json_data["post_or_emit"]["reason_code"] == expected_reason
+    assert "approval" in result.json_data
+    assert "actor_permission_finalization_check" in result.json_data
+    assert "target_freshness_check" in result.json_data
+    assert "writer_result" in result.json_data
+    if case != "marker_duplicate_matching":
+        assert result.json_data["writer_result"] is None
 
 
 def test_duplicate_matching_markers_reconcile_without_new_fake_post() -> None:
