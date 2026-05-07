@@ -30,7 +30,7 @@ Linear remains the durable source of current issue status and relationships. Thi
    - Add an explicit live-read flag or mode surface that fails closed with a clear "deferred to live-read smoke" error until AUR-216 implements it.
    - This proves live behavior cannot happen accidentally in AUR-239.
 4. GitHub read output feeds the same `ReviewTarget`, memory, context budget, reviewer, quality, render, and dry-run path as fixtures.
-   - Refactor the fixture runner just enough to accept already-read PR context, review target, changed-line metadata, truncation/read-gap metadata, and fake reviewer outputs.
+   - Refactor the fixture runner just enough to accept already-read PR context, review target, anchor-compatible changed-line metadata, truncation/read-gap metadata, source metadata, and fake reviewer outputs.
    - Reuse existing memory builder, context budget, staged reviewer selection/execution, quality classification, local verdict, posting plan, candidate payload, and renderer.
    - Do not force GitHub data through fixture PR file loading.
 5. No writer path is reachable from read-only GitHub dry-run.
@@ -48,22 +48,43 @@ Planned contract:
   - `--github-fake-data <path>` supplies deterministic paginated fake transport data.
   - `--github-live-read` is explicit opt-in and currently fails closed with a clear deferred-live-read message.
 - `--fixture-pr` and `--github-pr` are mutually exclusive. Existing default remains `--fixture-pr basic-pr`.
+- Fake-data JSON is a harness input format, not a fixture PR format. Raw reviewer outputs are intentionally outside the transport object so the GitHub adapter remains read-only.
 - Fake-data JSON contains:
 
   ```json
   {
-    "pull_request": {},
-    "files": {"pages": [...]},
-    "issue_comments": {"pages": [...]},
-    "review_comments": {"pages": [...]},
-    "reviews": {"pages": [...]},
-    "review_threads": {"pages": [...]},
+    "transport": {
+      "pull_request": {},
+      "files": {"pages": [...]},
+      "issue_comments": {"pages": [...]},
+      "review_comments": {"pages": [...]},
+      "reviews": {"pages": [...]},
+      "review_threads": {"pages": [...]}
+    },
     "raw_reviewer_outputs": [...]
   }
   ```
 
-- The test transport built from fake-data JSON must expose only read methods required by `read_github_pr_with_paginated_fake_transport()`.
-- If the paginated fake read returns a `FailClosedReadOutcome`, the CLI should render/emit that fail-closed JSON/markdown surface where available or return a redacted error without running reviewers. AUR-247 already covers the fail-closed read envelope; AUR-239 focused happy path can use complete fake pages.
+- Each `pages` list is converted into cursor-addressed pages:
+  - first page cursor is `null`
+  - page objects must contain either `{"items": [...], "has_next_page": bool, "next_cursor": "optional-string"}` or `{"error": {"reason": "...", "message": "..."}}`
+  - when `has_next_page=true`, `next_cursor` is required and must map to another page in order
+  - unknown top-level fake-data fields and malformed page metadata fail with redacted CLI errors
+- CLI option matrix:
+  - `--fixture-pr` and `--github-pr` are mutually exclusive
+  - `--github-fake-data` requires `--github-pr`
+  - `--github-pr` requires either `--github-fake-data` or `--github-live-read`
+  - `--github-live-read` requires `--github-pr`, cannot combine with `--github-fake-data`, and fails closed/deferred in AUR-239
+- If the paginated fake read returns a `FailClosedReadOutcome`, the CLI must emit explicit dry-run artifacts with `post_enabled=false`, no selected reviewers, no reviewer results, no findings, no candidate payload, read gaps, and no writer call. Treat this as a successful dry-run artifact emission (`exit 0`) when output writing succeeds, because the product result is a fail-closed review, not a CLI crash.
+- Add a narrow generic runner bridge, likely an internal `DryRunInput`, that contains:
+  - `source_id` and `source_ref`
+  - `pr: PullRequestContext`
+  - `review_target: ReviewTarget`
+  - anchor-compatible changed-line contexts (`GitHubReadResult.changed_file_lines` or fixture `ChangedFile`)
+  - existing truncation notices
+  - raw reviewer outputs
+  - optional `github_read` metadata for output JSON
+- `run_fixture_dry_run()` and the GitHub fake dry-run entrypoint must both call the same dry-run core. The GitHub path must not synthesize a fixture file just to reuse the runner.
 - Add a runner entrypoint, likely `run_github_fake_dry_run()`, that:
   - reads fake transport data,
   - calls `read_github_pr_with_paginated_fake_transport()`,
@@ -71,8 +92,9 @@ Planned contract:
   - applies context budget,
   - runs the existing staged fake reviewer loop with `GitHubReadResult.pr`, `GitHubReadResult.review_target`, and `GitHubReadResult.changed_file_lines`,
   - renders through the existing dry-run renderer,
-  - returns the same `DryRunResult` shape as fixture dry-run with extra GitHub read metadata in JSON.
-- Raw reviewer outputs remain deterministic fake outputs supplied by fake-data JSON. This issue does not introduce live LLM.
+  - returns the same `DryRunResult` shape as fixture dry-run with `github_read` metadata at the top level of the JSON envelope.
+- Raw reviewer outputs remain deterministic fake outputs supplied by fake-data JSON. This issue does not introduce live LLM. GitHub-path tests must cover missing selected raw output, extra unselected raw output, and duplicate raw output keys to prove existing runner validation still applies.
+- GitHub anchor-unavailable changed files must remain anchor-unavailable. Tests should prove postable findings on available changed ranges can classify/anchor, while unavailable patches suppress findings or keep them local according to existing quality policy.
 
 ## Files
 
@@ -99,6 +121,11 @@ Likely tests:
    - CLI accepts GitHub PR URL with fake data.
    - GitHub fake dry-run output includes GitHub `ReviewTarget`, selected reviewers, memory, context budget, reviewer output, render JSON, and no writer calls.
    - Missing fake data for `--github-pr` fails closed without credentials.
+   - Full CLI option matrix around `--fixture-pr`, `--github-pr`, `--github-fake-data`, and `--github-live-read`.
+   - Fake page failure emits a fail-closed dry-run artifact with no reviewer execution and no candidate payload.
+   - Malformed fake-data/page metadata fails with redacted CLI errors.
+   - GitHub path preserves existing raw reviewer output validation for missing, extra, and duplicate selected outputs.
+   - Available GitHub changed-line metadata supports quality/diff-anchor behavior; anchor-unavailable files cannot support postable findings.
    - `--github-live-read` is explicit and currently fails closed/deferred.
    - `--fixture-pr` and `--github-pr` are mutually exclusive.
 2. Refactor runner internals to make the dry-run core accept a generic read input without duplicating fixture behavior.
