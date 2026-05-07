@@ -16,9 +16,9 @@ Active execution artifact for this milestone. Linear remains the durable source 
   - `AUR-220` / `RG-031: Fail Closed On Stale Review Target` / `Backlog`
   - `AUR-221` / `RG-032: Reconcile Embedded ReviewGraph Markers` / `Backlog`
   - `AUR-245` / `RG-056: Harden Marker Author Pagination Reconciliation` / `Backlog`
+  - `AUR-246` / `RG-057: Block Non-Interactive Posting Mode` / `Backlog`
   - `AUR-223` / `RG-034: Suppress Writes With No Approved Findings` / `Backlog`
   - `AUR-222` / `RG-033: Implement Fake Top-Level Comment Writer` / `Backlog`
-  - `AUR-246` / `RG-057: Block Non-Interactive Posting Mode` / `Backlog`
   - `AUR-241` / `RG-052: Add Real Top-Level Comment Writer Adapter` / `Backlog`
   - `AUR-224` / `RG-035: Add Manual Live Post Smoke Contract` / `Backlog`
 - Gate issue:
@@ -53,11 +53,11 @@ The product point is controlled side effects. Reviewers do not write to GitHub, 
 6. `AUR-220` sixth: implement target freshness finalization gates. Head, base, merge-base, owner/repo, PR number, and diff-basis drift all fail closed with dry-run output before writer invocation.
 7. `AUR-221` seventh: implement embedded ReviewGraph marker grammar, generation, parsing, and happy-path duplicate detection. Marker recognition must be exact final-line only.
 8. `AUR-245` eighth: harden marker reconciliation for pagination, author trust, spoofed markers, malformed trusted markers, conflicting payload hashes, and duplicate fingerprints.
-9. `AUR-223` ninth: prove no writer is invoked for empty approvals, local-notes-only, suggested-reply-only, suppressed-only, and clarification-only runs. Mixed runs with approved findings must keep suggested replies out of candidate/final payloads.
-10. `AUR-222` tenth: implement the fake top-level issue-comment writer after payload, approval, finalization, freshness, and marker rules exist. The fake writer accepts only finalized issue-comment payloads and creates at most one fake comment.
-11. `AUR-246` eleventh: block non-interactive posting mode so CI/webhook/config-only mode cannot infer human approval or reach final payload construction.
-12. `AUR-241` twelfth: implement the real top-level issue-comment writer adapter. It receives only finalized payloads plus marker reconciliation plans and supports only `POST /repos/{owner}/{repo}/issues/{pr_number}/comments`.
-13. `AUR-224` thirteenth: add the manual-only live post smoke contract for disposable PRs. It must be opt-in, skipped by default, require explicit approval, and prove top-level issue-comment-only behavior through the real writer.
+9. `AUR-246` ninth: block non-interactive posting mode before any graph/CLI post path is introduced. CI, webhook, config-only, or non-TTY mode cannot infer approval or reach final payload construction.
+10. `AUR-223` tenth: prove no writer is invoked for missing approval, rejected approval, empty approvals, local-notes-only, suggested-reply-only, suppressed-only, and clarification-only runs. Mixed runs with approved findings must keep suggested replies out of candidate/final payloads.
+11. `AUR-222` eleventh: implement the fake top-level issue-comment writer after payload, approval, finalization, freshness, marker, and non-interactive policy exist. This issue must include an end-to-end graph/CLI fake-post harness proving `render_review -> approval_gate -> finalize_github_payload -> post_or_emit`: dry-run writes zero times; missing/rejected approval writes zero times; approved item-level payload reaches fake writer once; stale target, actor mismatch, redaction failure, marker conflict, and empty approval fail before writer reachability; graph trace/JSON records approval, finalization, payload hashes, marker reconciliation, and writer result.
+12. `AUR-241` twelfth: implement the real top-level issue-comment writer adapter. It receives only finalized payloads plus marker reconciliation plans and supports only `POST /repos/{owner}/{repo}/issues/{pr_number}/comments`. It must model outcomes such as posted, reconciled-existing, blocked/fail-closed, retryable-unknown, and transport-failed. Fake-transport tests must cover ambiguous POST timeout after GitHub may have accepted the write, followed by paginated marker rescan and zero additional POSTs on retry.
+13. `AUR-224` thirteenth: add the manual-only live post smoke contract for disposable PRs. It must be opt-in, skipped by default, require a TTY/manual approval proof plus typed final-hash confirmation, restrict targets through an explicit allowlist and disposable PR marker convention, and prove top-level issue-comment-only behavior through the real writer with evidence of one POST max, marker seen/reconciled state, actor shown to the human, and final hash shown or matched.
 14. `AUR-261` last: close the milestone only after every active implementation issue is `Done`, focused/full validation passes, durable docs explain the final side-effect contracts, Linear evidence is complete, and fresh subagent review reports no material gaps.
 
 ## Issue Workflow
@@ -83,12 +83,12 @@ For each issue:
 - `AUR-243` focused harness: approval actor/permission snapshot binding and finalization mismatch tests.
 - `AUR-220` focused harness: stale target/freshness finalization tests with fake current target transport.
 - `AUR-221` focused harness: marker generation/parsing/reconciliation happy path tests.
-- `AUR-245` focused harness: marker pagination, trusted-author, spoofing, malformed marker, conflict, and duplicate-fingerprint tests.
-- `AUR-223` focused harness: no-approved-finding and local-only writer suppression tests.
-- `AUR-222` focused harness: fake writer tests for finalized top-level issue comments and idempotent retry.
-- `AUR-246` focused harness: non-interactive post-mode rejection tests.
-- `AUR-241` focused harness: real writer adapter command/request construction tests with fake transport; no live network in default tests.
-- `AUR-224` focused harness: manual live-post smoke contract tests skipped by default.
+- `AUR-245` focused harness: marker pagination, trusted-author, spoofing, malformed marker, conflict, page cap/timeout/rate-limit, transport-summary, and duplicate-fingerprint tests.
+- `AUR-246` focused harness: non-interactive post-mode rejection tests proving final payload construction is unreachable.
+- `AUR-223` focused harness: no-approved-finding, missing/rejected approval, and local-only writer suppression tests.
+- `AUR-222` focused harness: fake writer tests for finalized top-level issue comments, idempotent retry, and graph/CLI allowed-post proof with trace/JSON state assertions.
+- `AUR-241` focused harness: real writer adapter construction and retry/reconciliation tests with fake transport; no live network in default tests.
+- `AUR-224` focused harness: manual live-post smoke contract tests skipped by default, including disposable-target preflight and typed confirmation proof.
 - Full validation after shared side-effect changes:
   - `python -m pytest -q`
   - `python -m py_compile src/reviewgraph/*.py`
@@ -109,8 +109,10 @@ For each issue:
 - Suggested replies are local-only and never eligible for candidate/final GitHub payloads in MVP.
 - Empty approvals, local-note-only, suggested-reply-only, suppressed-only, and clarification-only runs never invoke a writer.
 - Marker reconciliation must paginate existing comments or fail closed. Trusted marker conflicts fail closed; untrusted/spoofed markers are ignored.
-- Non-interactive mode cannot infer approval from config, CI, or webhook context.
-- Live post smoke is manual-only, disposable-PR-only, and skipped by default.
+- Marker scans, actor/permission checks, and writer attempts must emit redacted transport summaries with endpoint kind, page count, retryability, stable failure code, and request ID when available. They must not log tokens, raw stderr, or unredacted payload bodies.
+- Marker and writer pagination must have explicit page caps, timeout handling, rate-limit classification, and fail-closed output for long PR comment histories.
+- Non-interactive mode cannot infer approval from config, CI, webhook context, or non-TTY execution.
+- Live post smoke is manual-only, allowlisted-disposable-PR-only, typed-final-hash-confirmed, one-POST-max, and skipped by default.
 
 ## Documentation Work
 
@@ -137,8 +139,9 @@ The milestone is complete when ReviewGraph proves:
 - No-approved-finding and local-only paths never invoke writer code.
 - Fake writer proves approved finalized top-level comments create at most one fake comment and reconcile retries.
 - Non-interactive post mode cannot approve or post by config alone.
-- Real writer adapter supports only finalized top-level issue comments.
-- Manual live post smoke is opt-in, skipped by default, requires explicit human approval, and targets disposable PRs only.
+- Graph/CLI post mode proves the real side-effect route with fake writer: dry-run and blocked paths call writer zero times, approved item-level payload calls fake writer once, and state/trace records approval, finalization, hashes, marker reconciliation, and writer result.
+- Real writer adapter supports only finalized top-level issue comments and reconciles ambiguous accepted-write timeouts by rescanning markers before retrying.
+- Manual live post smoke is opt-in, skipped by default, requires explicit TTY/human approval and typed final-hash confirmation, and targets allowlisted disposable PRs only.
 
 ## Deferred Scope
 
