@@ -22,6 +22,8 @@ Prove that ReviewGraph never releases writer input when there is no approved pub
 
 The current code already has approval proof and finalization preflight primitives, but there is no writer route yet. This issue should therefore harden the no-approved-finding contract at the approval/finalization boundary and in dry-run harness output, without adding fake writer, real writer, public post mode, or live GitHub writes.
 
+Linear's handoff names `src/reviewgraph/finalize.py`; the repository module is `src/reviewgraph/finalization.py`.
+
 ## Contracts To Preserve
 
 - Dry-run remains the default behavior.
@@ -29,9 +31,10 @@ The current code already has approval proof and finalization preflight primitive
 - Approval is item-level and only public `postable_finding` items may be approved.
 - Missing approval, empty `approved_item_ids`, rejected approval, unknown approved IDs, local notes, suggested replies, suppressed findings, and clarification requests cannot release writer input.
 - Suggested replies remain local-only even when the same run has approved findings.
+- Writer reachability in later issues must require `post_enabled=true`, an `ApprovalDecision` with `approved=true`, and approved IDs that are public `review_body_item` postable finding items from the current posting plan.
 - Final payload construction stays after approval preflight, actor/permission re-check, and target freshness re-check.
 - No writer module should be imported or reachable in this issue.
-- Default dry-run output should explain why no public payload was prepared when everything is local-only.
+- Default dry-run output should say no GitHub write is attempted in dry-run, and separately explain why no public payload was prepared when everything is local-only.
 
 ## Implementation Shape
 
@@ -39,7 +42,8 @@ The current code already has approval proof and finalization preflight primitive
    - empty `approved_item_ids` fails at the approval-proof/model layer or finalization preflight before payload builder and before writer reachability; do not introduce a parallel `approved_finding_ids` field.
    - missing approval is represented by a narrow pre-finalization guard or post-route preflight helper that accepts `approval=None` and fails before `finalize_github_payload(...)`; if no route consumes it yet, this helper is still the AUR-222 handoff contract.
    - rejected approval fails finalization preflight before current reads, payload builder, and writer reachability.
-   - finalization preflight rejects approved IDs whose current object is not a `ClassifiedFinding` or whose classification is not a public postable finding, even if the object happens to carry a `fingerprint` attribute.
+   - finalization preflight rejects approved IDs whose current object is not a `ClassifiedFinding` or whose current posting-plan item is not a public `review_body_item` `postable_finding`, even if the object happens to carry a `fingerprint` attribute.
+   - direct negative cases should include approved IDs for a local note, suggested reply, suppressed output, clarification request, inline candidate, summary item, and malformed fingerprint-bearing object.
    - local-notes-only dry-run has `post_enabled=false`, no candidate payload preview, zero writer calls, and markdown explains no public payload was prepared.
    - suggested-reply-only dry-run has the same no-write proof and keeps the reply in local-only output.
    - suppressed-findings-only dry-run has no candidate payload preview, no writer call, and local-only posting-plan evidence.
@@ -47,11 +51,11 @@ The current code already has approval proof and finalization preflight primitive
    - mixed run with approved findings plus suggested reply keeps candidate payload/final approval proof restricted to the finding; suggested reply text must not enter candidate or final public payloads.
 2. Tighten finalization preflight evidence if needed:
    - Preserve `_approval_preflight(...)` as the first finalization check.
-   - Return stable dry-run/preflight evidence for empty or rejected approval.
-   - Keep `final_payload_builder_calls=0` and `writer_input_released=false` for all preflight failures.
+   - Return stable dry-run/preflight evidence for missing, empty, rejected, failed-proof, unknown, or non-public approval.
+   - Keep `final_payload_builder_calls=0`, `writer_input_released=false`, `final_payload=None`, no final payload hash, no writer result, and a structured reason code for all preflight failures.
    - Do not import writer, GitHub transport, CLI, graph post-mode, marker scanning, or ambient process state.
 3. Improve render/dry-run explanation if needed:
-   - When `candidate_payload_preview` is absent because all items are local-only or no public findings are eligible, markdown should say no public GitHub payload was prepared and identify the local-only/no-post reason at a high level.
+   - When `candidate_payload_preview` is absent because all items are local-only or no public findings are eligible, markdown should say dry-run never attempts a GitHub write and no public GitHub payload was prepared because no public postable finding items are eligible.
    - Do not label other fail-closed states as "no public findings" when postable findings exist but are blocked by clarification, required reviewer failure, read gaps, or another graph error.
    - Keep existing JSON shape stable unless a small first-class explanation is clearly needed for tests.
 4. Update narrow durable docs:
@@ -67,7 +71,9 @@ Create `tests/test_no_approved_findings.py` covering:
 - Empty approval cannot invoke payload builder or release writer input.
 - Missing approval cannot enter finalization or release writer input.
 - Rejected approval cannot invoke payload builder or release writer input.
-- Non-public approved IDs and malformed fingerprint-bearing objects fail finalization preflight before current reads, payload builder, or writer release.
+- Failed approval proof cannot enter finalization or release writer input.
+- Non-public approved IDs for local notes, suggested replies, suppressed outputs, clarification requests, inline candidates, summary items, and malformed fingerprint-bearing objects fail finalization preflight before current reads, payload builder, or writer release.
+- Preflight-failed cases expose stable structured no-release evidence: no final payload, no final payload hash, no writer result, `writer_input_released=false`, and a no-public-approved-findings or approval-preflight reason code.
 - Local-notes-only dry-run calls no writer and produces no candidate payload.
 - Suggested-reply-only dry-run calls no writer, produces no candidate payload, and keeps the reply local-only.
 - Suppressed-findings-only dry-run calls no writer and produces no candidate payload.
@@ -110,6 +116,7 @@ python -m pytest -q
 - Fake top-level comment writer.
 - Real writer adapter.
 - Live GitHub writes.
+- Adding `reviewgraph.writer`, `writer_fake`, GitHub writer transport, or a fake-writer graph route.
 - Public CLI `--post`.
 - Posting non-finding, local note, suggested reply, suppressed, or clarification content.
 - Approval UI or human prompt flow.
