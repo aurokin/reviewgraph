@@ -37,7 +37,7 @@ This issue validates the MVP GitHub artifact shape. It does not implement approv
 - Writer-bound request validation includes `method=POST` and exact issue-comment endpoint `/repos/{owner}/{repo}/issues/{pr_number}/comments`, and the endpoint owner/repo/PR number must match the finalized payload `review_target`.
 - Payload validation runs before any writer adapter can receive a payload.
 - `ReviewState` and `docs/architecture/state-graph.md` use distinct candidate/final payload type names.
-- `docs/architecture/side-effects.md` and `docs/architecture/github-integration.md` must be updated to stop describing candidate payloads as having generic/final payload hashes. They should distinguish candidate visible-body/findings hash inputs from final payload hash.
+- `docs/architecture/side-effects.md`, `docs/architecture/github-integration.md`, and `docs/plans/implementation-plan.md` must be updated to stop describing candidate payloads as having generic/final payload hashes. They should distinguish candidate visible-body/findings hash inputs from final payload hash.
 - Validation failures return stable machine-readable reason codes so later finalization/writer slices can fail closed without parsing prose exceptions.
 
 ## Implementation Shape
@@ -54,7 +54,7 @@ This issue validates the MVP GitHub artifact shape. It does not implement approv
    - writer-bound endpoint target matches final payload review target,
    - rejected formal review payload dictionaries/endpoints.
 7. Add `tests/test_payload_validation.py` covering every acceptance criterion, including stable failure reason codes.
-8. Update `docs/architecture/state-graph.md`, `docs/architecture/side-effects.md`, `docs/architecture/github-integration.md`, and model contract tests so candidate/final payload fields and hash semantics are distinct.
+8. Update `docs/architecture/state-graph.md`, `docs/architecture/side-effects.md`, `docs/architecture/github-integration.md`, `docs/plans/implementation-plan.md`, and model contract tests so candidate/final payload fields and hash semantics are distinct.
 9. Update existing tests/render serialization only where required by the candidate/final split.
 
 ## Validation
