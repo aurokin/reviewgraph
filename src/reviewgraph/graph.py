@@ -130,6 +130,7 @@ def _initialize_review_state(state: _EmptyDryRunRuntimeState) -> dict[str, Any]:
         rendered_markdown=None,
         posting_plan=None,
         post_interaction_gate=None,
+        writer_release_preflight=None,
         actor_permission_gate=None,
         actor_permission_finalization_check=None,
         target_freshness_check=None,

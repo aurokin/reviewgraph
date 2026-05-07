@@ -42,7 +42,7 @@ It returns:
 {
   "approved": true,
   "mode": "post_comment",
-  "approved_finding_ids": ["finding-1", "finding-3"],
+  "approved_item_ids": ["finding-1", "finding-3"],
   "approved_final_payload_hash": "sha256:...",
   "approved_review_target_hash": "sha256:...",
   "approved_review_target": {
@@ -87,7 +87,7 @@ It returns:
 }
 ```
 
-The final GitHub payload is built deterministically from `approved_finding_ids` and the candidate payload only after preflight passes. Candidate payloads expose visible-body and findings hash inputs only; they do not carry final payload hashes and are never writer input. `approved_final_payload_hash` binds to the full final issue-comment body after item selection, including the hidden ReviewGraph marker line. The marker's own `payload` field stores a separate visible-body hash that excludes the marker, avoiding a self-referential hash. Before the writer is invoked, ReviewGraph must either show the final payload or prove that its hash equals `approved_final_payload_hash`. If approving a subset changes the final body hash, previously computed final payload hashes must be rejected.
+The final GitHub payload is built deterministically from `approved_item_ids` and the candidate payload only after preflight passes. Candidate payloads expose visible-body and findings hash inputs only; they do not carry final payload hashes and are never writer input. `approved_final_payload_hash` binds to the full final issue-comment body after item selection, including the hidden ReviewGraph marker line. The marker's own `payload` field stores a separate visible-body hash that excludes the marker, avoiding a self-referential hash. Before the writer is invoked, ReviewGraph must either show the final payload or prove that its hash equals `approved_final_payload_hash`. If approving a subset changes the final body hash, previously computed final payload hashes must be rejected.
 
 The actor and permission summary is endpoint-specific. It must identify the authenticated actor, credential principal/source, broad repo permission or endpoint-specific permission, ability to call `POST /repos/{owner}/{repo}/issues/{pr_number}/comments`, check method, checked target, checked-at time, and stable failure code when blocked. A broad repository role is not enough if the token or app cannot create the top-level issue comment.
 
@@ -137,4 +137,6 @@ Approval must be item-level. The user should be able to approve, reject, or defe
 
 `suggested_reply` is local-only in MVP. It is never eligible for candidate or final GitHub payloads, including mixed runs that also contain approved findings.
 
-If `approved_finding_ids` is empty, or the run has only local notes, suggested replies, suppressed findings, or clarification requests, the writer must not be invoked.
+If `approved_item_ids` is empty, or the run has only local notes, suggested replies, suppressed findings, or clarification requests, writer input must not be released.
+
+`writer_release_preflight` is the pre-finalization handoff for later post-mode graph work. It records whether an approved item selection is eligible to enter finalization, but it does not release writer input by itself. Failures such as disabled posting, missing approval, rejected approval, failed approval build, duplicate approved item IDs/fingerprints, unknown approved IDs, or non-public approved items leave final payload, final payload hash, and writer result unset. Dry-run output also carries `public_payload_preparation` so local-only runs can explain that no public payload was prepared without confusing that state with missing human approval.

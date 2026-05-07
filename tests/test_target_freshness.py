@@ -1,3 +1,4 @@
+import ast
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -226,6 +227,7 @@ def test_failed_target_freshness_blocks_payload_builder_and_emits_dry_run_eviden
 
     result = finalize_github_payload(
         approval=_approval(),
+        posting_plan=build_posting_plan(findings=(_finding(),)),
         approved_findings_by_id={"finding-1": _finding()},
         current_actor_permission_probe=_actor_probe(),
         current_target_probe=probe,
@@ -260,6 +262,7 @@ def test_failed_target_freshness_blocks_payload_builder_and_emits_dry_run_eviden
 def test_approval_preflight_blocks_current_reads(case: str) -> None:
     approval_updates: dict[str, object] = {}
     findings_by_id: dict[str, object] = {"finding-1": _finding()}
+    posting_plan = build_posting_plan(findings=(_finding(),))
     if case == "not_approved":
         approval_updates = {"approved": False}
     elif case == "duplicate_items":
@@ -270,13 +273,16 @@ def test_approval_preflight_blocks_current_reads(case: str) -> None:
         findings_by_id = {"finding-1": SimpleNamespace(fingerprint="")}
     else:
         approval_updates = {"approved_item_ids": ("finding-1", "finding-2")}
+        second = replace(_finding(), id="finding-2")
+        posting_plan = build_posting_plan(findings=(_finding(), second))
         findings_by_id = {
             "finding-1": _finding(),
-            "finding-2": replace(_finding(), id="finding-2"),
+            "finding-2": second,
         }
 
     result = finalize_github_payload(
         approval=replace(_approval(), **approval_updates),
+        posting_plan=posting_plan,
         approved_findings_by_id=findings_by_id,
         current_actor_permission_probe=_actor_probe(actor=None),
         current_target_probe=_target_probe(current_target=replace(_target(), head_sha="head999")),
@@ -297,6 +303,7 @@ def test_fresh_target_does_not_finalize_or_release_writer_input_before_markers()
 
     result = finalize_github_payload(
         approval=_approval(),
+        posting_plan=build_posting_plan(findings=(_finding(),)),
         approved_findings_by_id={"finding-1": _finding()},
         current_actor_permission_probe=_actor_probe(),
         current_target_probe=_target_probe(),
@@ -315,9 +322,15 @@ def test_fresh_target_does_not_finalize_or_release_writer_input_before_markers()
 
 
 def test_finalization_module_target_freshness_import_boundary() -> None:
-    source = Path("src/reviewgraph/finalization.py").read_text()
+    tree = ast.parse(Path("src/reviewgraph/finalization.py").read_text())
+    imported: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module)
     for forbidden in ("subprocess", "os", "reviewgraph.github", "reviewgraph.graph", "reviewgraph.writer", "reviewgraph.marker"):
-        assert forbidden not in source
+        assert forbidden not in imported
 
 
 def _target() -> ReviewTarget:

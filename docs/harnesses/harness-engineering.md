@@ -167,6 +167,7 @@ python -m pytest tests/test_findings.py tests/test_reviewer_json_repair.py tests
 
 - Dry-run mode never invokes the writer.
 - Rejected approval, missing approval, no approved findings, local-note-only, suggested-reply-only, suppressed-only, and clarification-only runs never invoke the writer.
+- No-approved-finding harnesses must prove `writer_release_preflight` blocks missing approval, rejected approval, failed approval build, duplicate approved IDs/fingerprints, unknown approved IDs, and non-public approved items before finalization or writer input. Local-only dry-runs expose `public_payload_preparation` so no-public-payload explanations stay separate from missing approval.
 - Required reviewer failure runs never invoke the writer: dry-run JSON must expose the graph error, failed reviewer result/status, no candidate payload, and local-only posting plan.
 - Optional reviewer failure runs remain partial local reviews: `tests/test_optional_reviewer_failure.py` proves the failed optional reviewer is recorded in partial-review metadata, other reviewer output still classifies, later stages continue, and optional failure alone does not block post eligibility.
 - Local verdict runs are private policy checks: `tests/test_verdict.py` proves ambiguity cannot become request-changes, graph errors disable post eligibility, dry-run output renders the local verdict, and GitHub payload previews remain issue comments without public request-changes wording by default.

@@ -11,16 +11,25 @@ from reviewgraph.models import (
     ActorPermissionFinalizationCheckResult,
     ActorPermissionFinalizationReasonCode,
     ApprovalDecision,
+    ApprovalDecisionBuildReasonCode,
+    ApprovalDecisionBuildResult,
     FinalIssueCommentPayload,
     FinalizationReasonCode,
     FinalizationState,
     FinalizationStatus,
     GateStatus,
+    OutputClassification,
     PayloadValidationResult,
+    PostingDestination,
+    PostingPlan,
     ReviewTarget,
     TargetFreshnessCheckResult,
     TargetFreshnessReasonCode,
     TargetFreshnessTransportSummary,
+    WriterReleaseItemDiagnostic,
+    WriterReleaseItemReasonCode,
+    WriterReleasePreflightReasonCode,
+    WriterReleasePreflightResult,
 )
 from reviewgraph.permissions import (
     DEFAULT_MAX_PROOF_AGE_SECONDS,
@@ -63,6 +72,67 @@ class FinalizeGithubPayloadResult:
     dry_run_error: dict[str, object] | None = None
     final_payload_builder_calls: int = 0
     writer_input_released: bool = False
+
+
+@dataclass(frozen=True)
+class ApprovedItemDescriptor:
+    item_id: str
+    source_classification: str
+    destination: PostingDestination
+    public_payload_eligible: bool
+    has_fingerprint: bool
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.item_id, str) or not self.item_id:
+            raise ValueError("approved item descriptor item_id is required")
+        if not isinstance(self.source_classification, str) or not self.source_classification:
+            raise ValueError("approved item descriptor source_classification is required")
+        if not isinstance(self.destination, PostingDestination):
+            raise ValueError("approved item descriptor destination must be valid")
+        if type(self.public_payload_eligible) is not bool:
+            raise ValueError("approved item descriptor public_payload_eligible must be bool")
+        if type(self.has_fingerprint) is not bool:
+            raise ValueError("approved item descriptor has_fingerprint must be bool")
+
+
+def evaluate_writer_release_preflight(
+    *,
+    post_enabled: bool,
+    approval_result: ApprovalDecisionBuildResult | ApprovalDecision | None,
+    posting_plan: PostingPlan,
+    current_items_by_id: dict[str, ApprovedItemDescriptor],
+) -> WriterReleasePreflightResult:
+    if type(post_enabled) is not bool:
+        raise ValueError("writer release preflight post_enabled must be bool")
+    if not isinstance(posting_plan, PostingPlan):
+        raise ValueError("writer release preflight posting_plan must be a PostingPlan")
+    if not isinstance(current_items_by_id, dict) or any(
+        not isinstance(key, str) or not isinstance(value, ApprovedItemDescriptor)
+        for key, value in current_items_by_id.items()
+    ):
+        raise ValueError("writer release preflight current_items_by_id must map ids to descriptors")
+    if not post_enabled:
+        return _writer_preflight_fail(WriterReleasePreflightReasonCode.POST_DISABLED)
+    if isinstance(approval_result, ApprovalDecisionBuildResult):
+        if approval_result.status != GateStatus.PASS:
+            return _writer_preflight_fail(
+                WriterReleasePreflightReasonCode.APPROVAL_BUILD_FAILED,
+                nested_reason_code=approval_result.reason_code,
+                nested_approval_proof_reason_code=approval_result.approval_proof_reason_code,
+                nested_actor_permission_reason_code=approval_result.actor_permission_reason_code,
+            )
+        approval = approval_result.approval
+    else:
+        approval = approval_result
+    if approval is None:
+        return _writer_preflight_fail(WriterReleasePreflightReasonCode.MISSING_APPROVAL)
+    if not approval.approved:
+        return _writer_preflight_fail(WriterReleasePreflightReasonCode.REJECTED_APPROVAL)
+    return _writer_preflight_for_approval(
+        approval=approval,
+        posting_plan=posting_plan,
+        current_items_by_id=current_items_by_id,
+    )
 
 
 def validate_actor_permission_snapshot_for_finalization(
@@ -265,13 +335,14 @@ def validate_target_freshness_for_finalization(
 def finalize_github_payload(
     *,
     approval: ApprovalDecision,
+    posting_plan: PostingPlan,
     approved_findings_by_id: dict[str, object],
     current_actor_permission_probe: ActorPermissionProbeResult,
     current_target_probe: TargetFreshnessProbeResult,
     evaluated_at: str,
     final_payload_builder=None,
 ) -> FinalizeGithubPayloadResult:
-    approved_preflight = _approval_preflight(approval, approved_findings_by_id)
+    approved_preflight = _approval_preflight(approval, posting_plan, approved_findings_by_id)
     if approved_preflight is not None:
         return FinalizeGithubPayloadResult(
             actor_permission_finalization_check=None,
@@ -431,25 +502,150 @@ def _target_transport_summary(
     )
 
 
-def _approval_preflight(approval: ApprovalDecision, approved_findings_by_id: dict[str, object]) -> str | None:
+def _writer_preflight_for_approval(
+    *,
+    approval: ApprovalDecision,
+    posting_plan: PostingPlan,
+    current_items_by_id: dict[str, ApprovedItemDescriptor],
+) -> WriterReleasePreflightResult:
+    duplicate = _duplicate_value(approval.approved_item_ids)
+    if duplicate is not None:
+        return _writer_preflight_fail(
+            WriterReleasePreflightReasonCode.DUPLICATE_APPROVED_ITEM,
+            item_diagnostics=(
+                WriterReleaseItemDiagnostic(
+                    item_id=duplicate,
+                    reason_code=WriterReleaseItemReasonCode.MISSING_CURRENT_ITEM,
+                ),
+            ),
+        )
+    items_by_id = {item.id: item for item in posting_plan.items}
+    diagnostics: list[WriterReleaseItemDiagnostic] = []
+    fingerprints: list[str] = []
+    for item_id in approval.approved_item_ids:
+        plan_item = items_by_id.get(item_id)
+        descriptor = current_items_by_id.get(item_id)
+        if plan_item is None or descriptor is None:
+            diagnostics.append(
+                WriterReleaseItemDiagnostic(
+                    item_id=item_id,
+                    reason_code=WriterReleaseItemReasonCode.MISSING_CURRENT_ITEM,
+                )
+            )
+            continue
+        diagnostic = _public_item_diagnostic(descriptor)
+        if diagnostic is not None:
+            diagnostics.append(diagnostic)
+            continue
+        fingerprints.append(plan_item.fingerprint or "")
+    if diagnostics:
+        reason = (
+            WriterReleasePreflightReasonCode.UNKNOWN_APPROVED_ID
+            if all(item.reason_code == WriterReleaseItemReasonCode.MISSING_CURRENT_ITEM for item in diagnostics)
+            else WriterReleasePreflightReasonCode.NON_PUBLIC_APPROVED_ITEM
+        )
+        return _writer_preflight_fail(reason, item_diagnostics=tuple(diagnostics))
+    duplicate_fingerprint = _duplicate_value(tuple(fingerprints))
+    if duplicate_fingerprint is not None:
+        return _writer_preflight_fail(WriterReleasePreflightReasonCode.DUPLICATE_APPROVED_FINGERPRINT)
+    return WriterReleasePreflightResult(
+        status=GateStatus.PASS,
+        writer_input_released=False,
+        eligible_for_finalization=True,
+        approved_item_ids=approval.approved_item_ids,
+    )
+
+
+def _writer_preflight_fail(
+    reason_code: WriterReleasePreflightReasonCode,
+    *,
+    nested_reason_code: ApprovalDecisionBuildReasonCode | None = None,
+    nested_approval_proof_reason_code=None,
+    nested_actor_permission_reason_code=None,
+    item_diagnostics: tuple[WriterReleaseItemDiagnostic, ...] = (),
+) -> WriterReleasePreflightResult:
+    return WriterReleasePreflightResult(
+        status=GateStatus.FAIL,
+        writer_input_released=False,
+        reason_code=reason_code,
+        nested_reason_code=nested_reason_code,
+        nested_approval_proof_reason_code=nested_approval_proof_reason_code,
+        nested_actor_permission_reason_code=nested_actor_permission_reason_code,
+        item_diagnostics=item_diagnostics,
+    )
+
+
+def _public_item_diagnostic(descriptor: ApprovedItemDescriptor) -> WriterReleaseItemDiagnostic | None:
+    if not descriptor.public_payload_eligible:
+        return _diagnostic(descriptor, WriterReleaseItemReasonCode.NOT_PUBLIC_PAYLOAD_ELIGIBLE)
+    if descriptor.destination != PostingDestination.REVIEW_BODY_ITEM:
+        return _diagnostic(descriptor, WriterReleaseItemReasonCode.WRONG_DESTINATION)
+    if descriptor.source_classification != OutputClassification.POSTABLE_FINDING.value:
+        return _diagnostic(descriptor, WriterReleaseItemReasonCode.WRONG_SOURCE_CLASSIFICATION)
+    if not descriptor.has_fingerprint:
+        return _diagnostic(descriptor, WriterReleaseItemReasonCode.MISSING_FINGERPRINT)
+    return None
+
+
+def _diagnostic(
+    descriptor: ApprovedItemDescriptor,
+    reason_code: WriterReleaseItemReasonCode,
+) -> WriterReleaseItemDiagnostic:
+    return WriterReleaseItemDiagnostic(
+        item_id=descriptor.item_id,
+        reason_code=reason_code,
+        destination=descriptor.destination,
+        source_classification=descriptor.source_classification,
+        public_payload_eligible=descriptor.public_payload_eligible,
+    )
+
+
+def _approval_preflight(
+    approval: ApprovalDecision,
+    posting_plan: PostingPlan,
+    approved_findings_by_id: dict[str, object],
+) -> str | None:
     if not approval.approved:
         return "approval is not approved"
     if not approval.approved_item_ids:
         return "approval has no approved item ids"
     if len(set(approval.approved_item_ids)) != len(approval.approved_item_ids):
         return "approval has duplicate approved item ids"
+    items_by_id = {item.id: item for item in posting_plan.items}
     for item_id in approval.approved_item_ids:
+        item = items_by_id.get(item_id)
+        if item is None:
+            return "approval references an unknown approved item id"
+        if (
+            item.destination != PostingDestination.REVIEW_BODY_ITEM
+            or item.source_classification != OutputClassification.POSTABLE_FINDING.value
+            or not item.public_payload_eligible
+        ):
+            return "approval references a non-public approved item"
+        if not item.fingerprint:
+            return "approved posting plan item is missing fingerprint"
         if item_id not in approved_findings_by_id:
             return "approval references an unknown approved item id"
     fingerprints: list[str] = []
     for item_id in approval.approved_item_ids:
         finding = approved_findings_by_id[item_id]
+        if not hasattr(finding, "classification") or getattr(finding, "classification") != OutputClassification.POSTABLE_FINDING:
+            return "approval references a non-public approved item"
         fingerprint = getattr(finding, "fingerprint", None)
         if not isinstance(fingerprint, str) or not fingerprint:
             return "approved finding is missing fingerprint"
         fingerprints.append(fingerprint)
     if len(set(fingerprints)) != len(fingerprints):
         return "approval has duplicate approved fingerprints"
+    return None
+
+
+def _duplicate_value(values: tuple[str, ...]) -> str | None:
+    seen: set[str] = set()
+    for value in values:
+        if value in seen:
+            return value
+        seen.add(value)
     return None
 
 

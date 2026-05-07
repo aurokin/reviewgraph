@@ -158,6 +158,25 @@ class FinalizationReasonCode(StrEnum):
     MARKER_RECONCILIATION_DEFERRED = "marker_reconciliation_deferred"
 
 
+class WriterReleasePreflightReasonCode(StrEnum):
+    POST_DISABLED = "post_disabled"
+    APPROVAL_BUILD_FAILED = "approval_build_failed"
+    MISSING_APPROVAL = "missing_approval"
+    REJECTED_APPROVAL = "rejected_approval"
+    DUPLICATE_APPROVED_ITEM = "duplicate_approved_item"
+    DUPLICATE_APPROVED_FINGERPRINT = "duplicate_approved_fingerprint"
+    UNKNOWN_APPROVED_ID = "unknown_approved_id"
+    NON_PUBLIC_APPROVED_ITEM = "non_public_approved_item"
+
+
+class WriterReleaseItemReasonCode(StrEnum):
+    MISSING_CURRENT_ITEM = "missing_current_item"
+    MISSING_FINGERPRINT = "missing_fingerprint"
+    NOT_PUBLIC_PAYLOAD_ELIGIBLE = "not_public_payload_eligible"
+    WRONG_DESTINATION = "wrong_destination"
+    WRONG_SOURCE_CLASSIFICATION = "wrong_source_classification"
+
+
 class MarkerReconciliationStatus(StrEnum):
     SAFE_TO_POST = "safe_to_post"
     RECONCILED_EXISTING = "reconciled_existing"
@@ -2523,6 +2542,7 @@ class ApprovalDecisionBuildResult:
     status: GateStatus
     approval: ApprovalDecision | None = None
     reason_code: ApprovalDecisionBuildReasonCode | None = None
+    approval_proof_reason_code: ApprovalProofReasonCode | None = None
     actor_permission_reason_code: ActorPermissionReasonCode | None = None
     actor_permission_transport_summary: ActorPermissionTransportSummary | None = None
     reason: str | None = None
@@ -2538,6 +2558,10 @@ class ApprovalDecisionBuildResult:
             self.reason_code, ApprovalDecisionBuildReasonCode
         ):
             raise ValueError("approval decision build reason_code must be valid")
+        if self.approval_proof_reason_code is not None and not isinstance(
+            self.approval_proof_reason_code, ApprovalProofReasonCode
+        ):
+            raise ValueError("approval decision build approval_proof_reason_code must be valid")
         if self.actor_permission_reason_code is not None and not isinstance(
             self.actor_permission_reason_code, ActorPermissionReasonCode
         ):
@@ -2552,7 +2576,11 @@ class ApprovalDecisionBuildResult:
         if self.status == GateStatus.PASS:
             if self.approval is None:
                 raise ValueError("approval decision build pass requires approval")
-            if self.reason_code is not None or self.actor_permission_reason_code is not None:
+            if (
+                self.reason_code is not None
+                or self.approval_proof_reason_code is not None
+                or self.actor_permission_reason_code is not None
+            ):
                 raise ValueError("approval decision build pass must not include reason codes")
             if self.actor_permission_transport_summary is not None or self.reason is not None:
                 raise ValueError("approval decision build pass must not include failure diagnostics")
@@ -2566,6 +2594,11 @@ class ApprovalDecisionBuildResult:
                 and self.actor_permission_reason_code is None
             ):
                 raise ValueError("approval decision build actor gate failure requires actor reason code")
+            if (
+                self.reason_code == ApprovalDecisionBuildReasonCode.APPROVAL_PROOF_FAILED
+                and self.approval_proof_reason_code is None
+            ):
+                raise ValueError("approval decision build approval proof failure requires proof reason code")
 
 
 @dataclass(frozen=True)
@@ -2589,6 +2622,106 @@ class GitHubWriterResult:
             raise ValueError("posted or reconciled writer result requires comment_id")
         if self.status == WriterStatus.FAILED and self.error is None:
             raise ValueError("failed writer result requires error")
+
+
+@dataclass(frozen=True)
+class WriterReleaseItemDiagnostic:
+    item_id: str
+    reason_code: WriterReleaseItemReasonCode
+    destination: PostingDestination | None = None
+    source_classification: str | None = None
+    public_payload_eligible: bool | None = None
+
+    def __post_init__(self) -> None:
+        _require_non_empty(self.item_id, "writer release item diagnostic item_id")
+        if not isinstance(self.reason_code, WriterReleaseItemReasonCode):
+            raise ValueError("writer release item diagnostic reason_code must be valid")
+        if self.destination is not None and not isinstance(self.destination, PostingDestination):
+            raise ValueError("writer release item diagnostic destination must be valid")
+        _require_optional_non_empty(
+            self.source_classification,
+            "writer release item diagnostic source_classification",
+        )
+        if self.public_payload_eligible is not None and type(self.public_payload_eligible) is not bool:
+            raise ValueError("writer release item diagnostic public_payload_eligible must be bool")
+
+
+@dataclass(frozen=True)
+class WriterReleasePreflightResult:
+    status: GateStatus
+    writer_input_released: bool
+    eligible_for_finalization: bool = False
+    approved_item_ids: tuple[str, ...] = ()
+    reason_code: WriterReleasePreflightReasonCode | None = None
+    nested_reason_code: ApprovalDecisionBuildReasonCode | None = None
+    nested_approval_proof_reason_code: ApprovalProofReasonCode | None = None
+    nested_actor_permission_reason_code: ActorPermissionReasonCode | None = None
+    item_diagnostics: tuple[WriterReleaseItemDiagnostic, ...] = ()
+    final_payload_hash: str | None = None
+    writer_result: GitHubWriterResult | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.status, GateStatus):
+            raise ValueError("writer release preflight status must be a GateStatus")
+        if self.status == GateStatus.UNKNOWN:
+            raise ValueError("writer release preflight status must be pass or fail")
+        if type(self.writer_input_released) is not bool:
+            raise ValueError("writer release preflight writer_input_released must be bool")
+        if self.writer_input_released:
+            raise ValueError("writer release preflight must not release writer input")
+        if type(self.eligible_for_finalization) is not bool:
+            raise ValueError("writer release preflight eligible_for_finalization must be bool")
+        _require_string_tuple(self.approved_item_ids, "writer release preflight approved_item_ids")
+        if self.reason_code is not None and not isinstance(self.reason_code, WriterReleasePreflightReasonCode):
+            raise ValueError("writer release preflight reason_code must be valid")
+        if self.nested_reason_code is not None and not isinstance(
+            self.nested_reason_code,
+            ApprovalDecisionBuildReasonCode,
+        ):
+            raise ValueError("writer release preflight nested_reason_code must be valid")
+        if self.nested_approval_proof_reason_code is not None and not isinstance(
+            self.nested_approval_proof_reason_code,
+            ApprovalProofReasonCode,
+        ):
+            raise ValueError("writer release preflight nested_approval_proof_reason_code must be valid")
+        if self.nested_actor_permission_reason_code is not None and not isinstance(
+            self.nested_actor_permission_reason_code,
+            ActorPermissionReasonCode,
+        ):
+            raise ValueError("writer release preflight nested_actor_permission_reason_code must be valid")
+        _require_instance_tuple(
+            self.item_diagnostics,
+            "writer release preflight item_diagnostics",
+            WriterReleaseItemDiagnostic,
+        )
+        if self.final_payload_hash is not None:
+            raise ValueError("writer release preflight must not carry final_payload_hash")
+        if self.writer_result is not None:
+            raise ValueError("writer release preflight must not carry writer_result")
+        if self.status == GateStatus.PASS:
+            if not self.eligible_for_finalization:
+                raise ValueError("writer release preflight pass requires eligible_for_finalization")
+            _require_string_tuple(
+                self.approved_item_ids,
+                "writer release preflight approved_item_ids",
+                allow_empty=False,
+            )
+            if self.reason_code is not None:
+                raise ValueError("writer release preflight pass must not include reason_code")
+            if (
+                self.nested_reason_code is not None
+                or self.nested_approval_proof_reason_code is not None
+                or self.nested_actor_permission_reason_code is not None
+                or self.item_diagnostics
+            ):
+                raise ValueError("writer release preflight pass must not include diagnostics")
+        else:
+            if self.eligible_for_finalization:
+                raise ValueError("writer release preflight failure must not be eligible")
+            if self.approved_item_ids:
+                raise ValueError("writer release preflight failure must not include approved_item_ids")
+            if self.reason_code is None:
+                raise ValueError("writer release preflight failure requires reason_code")
 
 
 @dataclass(frozen=True)
@@ -2637,6 +2770,7 @@ class ReviewState:
     rendered_markdown: str | None
     posting_plan: PostingPlan | None
     post_interaction_gate: PostInteractionGateResult | None
+    writer_release_preflight: WriterReleasePreflightResult | None
     actor_permission_gate: ActorPermissionGateResult | None
     actor_permission_finalization_check: ActorPermissionFinalizationCheckResult | None
     target_freshness_check: TargetFreshnessCheckResult | None

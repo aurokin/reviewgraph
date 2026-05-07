@@ -196,6 +196,12 @@ def _fail_closed_dry_run_result(*, outcome: FailClosedReadOutcome, writer_call_c
         "truncation": [],
         "context_budget": None,
         "candidate_payload_preview": None,
+        "public_payload_preparation": {
+            "status": "not_prepared",
+            "reason_code": "blocked_by_graph_error",
+            "public_payload_item_count": 0,
+            "candidate_payload_present": False,
+        },
         "redaction_status": outcome_data["redaction_status"],
     }
     data = _redact_json_value({
@@ -223,6 +229,7 @@ def _fail_closed_dry_run_result(*, outcome: FailClosedReadOutcome, writer_call_c
         "findings": [],
         "posting_plan": None,
         "candidate_payload_preview": None,
+        "public_payload_preparation": review_data["public_payload_preparation"],
         "side_effects": {
             "writer_called": writer_call_count > 0,
             "writer_call_count": writer_call_count,
@@ -653,6 +660,7 @@ def _routing_review_state(
         rendered_markdown=None,
         posting_plan=None,
         post_interaction_gate=None,
+        writer_release_preflight=None,
         actor_permission_gate=None,
         actor_permission_finalization_check=None,
         target_freshness_check=None,
@@ -1232,6 +1240,7 @@ def _json_envelope(
             "writer_called": writer_call_count > 0,
             "writer_call_count": writer_call_count,
         },
+        "public_payload_preparation": rendered.json_data.get("public_payload_preparation"),
         "review": rendered.json_data,
     })
 

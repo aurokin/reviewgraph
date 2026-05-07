@@ -100,6 +100,10 @@ def render_json(*, inputs: "_RenderInputs", context: "_RenderContext | None" = N
         inputs.memory_references,
         context,
     )
+    public_payload_preparation = _public_payload_preparation_json(
+        inputs=inputs,
+        candidate_preview=candidate_preview,
+    )
     return {
         "review_target": _review_target_json(inputs.review_target, context),
         "selected_reviewers": [
@@ -128,6 +132,7 @@ def render_json(*, inputs: "_RenderInputs", context: "_RenderContext | None" = N
         "truncation": [_truncation_json(notice, context) for notice in inputs.truncation_notices],
         "context_budget": _context_budget_json(inputs.context_budget, context),
         "candidate_payload_preview": candidate_preview,
+        "public_payload_preparation": public_payload_preparation,
         "redaction_status": context.status_dict(),
     }
 
@@ -244,6 +249,14 @@ def render_markdown(*, inputs: "_RenderInputs", context: "_RenderContext | None"
     lines.extend(["", "## Candidate Payload Preview"])
     if preview is None:
         lines.append("- None")
+        preparation = _public_payload_preparation_json(inputs=inputs, candidate_preview=None)
+        if preparation["reason_code"] == "no_public_postable_items":
+            lines.append("- Dry-run does not attempt GitHub writes.")
+            lines.append("- No public GitHub payload was prepared because no public postable finding items are eligible.")
+        elif preparation["reason_code"] == "blocked_by_clarification":
+            lines.append("- No public GitHub payload was prepared because clarification is required.")
+        elif preparation["reason_code"] == "blocked_by_graph_error":
+            lines.append("- No public GitHub payload was prepared because graph errors blocked posting.")
     else:
         lines.append(f"- Kind: {preview['artifact_kind']}")
         lines.append(f"- Visible body hash: {preview['visible_body_hash']}")
@@ -254,6 +267,35 @@ def render_markdown(*, inputs: "_RenderInputs", context: "_RenderContext | None"
         lines.append("```")
 
     return "\n".join(lines) + "\n"
+
+
+def _public_payload_preparation_json(
+    *,
+    inputs: "_RenderInputs",
+    candidate_preview: dict[str, Any] | None,
+) -> dict[str, Any]:
+    public_count = len(inputs.posting_plan.public_payload_items) if inputs.posting_plan is not None else 0
+    if candidate_preview is not None:
+        reason_code = "dry_run_candidate_prepared"
+        status = "prepared"
+    elif inputs.errors:
+        reason_code = "blocked_by_graph_error"
+        status = "not_prepared"
+    elif any(request.blocks_verdict for request in inputs.clarification_requests):
+        reason_code = "blocked_by_clarification"
+        status = "not_prepared"
+    elif public_count == 0:
+        reason_code = "no_public_postable_items"
+        status = "not_prepared"
+    else:
+        reason_code = None
+        status = "not_prepared"
+    return {
+        "status": status,
+        "reason_code": reason_code,
+        "public_payload_item_count": public_count,
+        "candidate_payload_present": candidate_preview is not None,
+    }
 
 
 def _private_verdict_label(verdict: ReviewVerdict | None) -> str:

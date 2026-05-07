@@ -1,3 +1,4 @@
+import ast
 import inspect
 from dataclasses import replace
 from pathlib import Path
@@ -254,10 +255,16 @@ def test_failed_finalization_check_serializes_redacted_diagnostics() -> None:
 
 
 def test_finalization_module_import_boundary() -> None:
-    source = Path("src/reviewgraph/finalization.py").read_text()
+    tree = ast.parse(Path("src/reviewgraph/finalization.py").read_text())
+    imported: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module)
 
     for forbidden in ("subprocess", "os", "reviewgraph.github", "reviewgraph.graph", "reviewgraph.writer", "reviewgraph.marker"):
-        assert forbidden not in source
+        assert forbidden not in imported
 
 
 def _target() -> ReviewTarget:

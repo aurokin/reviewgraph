@@ -15,6 +15,7 @@ from reviewgraph.models import (
     ApprovalDecision,
     ApprovalDecisionBuildReasonCode,
     ApprovalDecisionBuildResult,
+    ApprovalProofReasonCode,
     ArtifactKind,
     CandidateIssueCommentPayload,
     ClarificationAnswer,
@@ -72,6 +73,10 @@ from reviewgraph.models import (
     TargetFreshnessCheckResult,
     TargetFreshnessReasonCode,
     TargetFreshnessTransportSummary,
+    WriterReleaseItemDiagnostic,
+    WriterReleaseItemReasonCode,
+    WriterReleasePreflightReasonCode,
+    WriterReleasePreflightResult,
     WriterStatus,
     validate_priority,
 )
@@ -116,6 +121,7 @@ EXPECTED_STATE_FIELDS = (
     "rendered_markdown",
     "posting_plan",
     "post_interaction_gate",
+    "writer_release_preflight",
     "actor_permission_gate",
     "actor_permission_finalization_check",
     "target_freshness_check",
@@ -672,6 +678,35 @@ def test_side_effect_contracts_bind_approval_finalization_and_writer_metadata() 
     assert writer.status == WriterStatus.NOT_CALLED
 
 
+def test_writer_release_preflight_result_models_no_writer_input_release() -> None:
+    passed = WriterReleasePreflightResult(
+        status=GateStatus.PASS,
+        writer_input_released=False,
+        eligible_for_finalization=True,
+        approved_item_ids=("finding-1",),
+    )
+    failed = WriterReleasePreflightResult(
+        status=GateStatus.FAIL,
+        writer_input_released=False,
+        reason_code=WriterReleasePreflightReasonCode.NON_PUBLIC_APPROVED_ITEM,
+        item_diagnostics=(
+            WriterReleaseItemDiagnostic(
+                item_id="reply-1",
+                reason_code=WriterReleaseItemReasonCode.NOT_PUBLIC_PAYLOAD_ELIGIBLE,
+                destination=PostingDestination.SUGGESTED_REPLY,
+                source_classification="suggested_reply",
+                public_payload_eligible=False,
+            ),
+        ),
+    )
+
+    assert passed.writer_input_released is False
+    assert passed.eligible_for_finalization is True
+    assert failed.final_payload_hash is None
+    assert failed.writer_result is None
+    assert failed.item_diagnostics[0].item_id == "reply-1"
+
+
 def test_actor_permission_pass_requires_complete_consistent_endpoint_proof() -> None:
     target = _target()
     gate = _valid_actor_permission_gate(target)
@@ -1187,6 +1222,22 @@ def test_actionable_memory_requires_trusted_unresolved_supported_actor(kwargs: d
             GateStatus.FAIL,
             reason_code=ApprovalDecisionBuildReasonCode.ACTOR_PERMISSION_GATE_FAILED,
         ),
+        lambda: ApprovalDecisionBuildResult(
+            GateStatus.FAIL,
+            reason_code=ApprovalDecisionBuildReasonCode.APPROVAL_PROOF_FAILED,
+        ),
+        lambda: WriterReleasePreflightResult(GateStatus.UNKNOWN, writer_input_released=False),
+        lambda: WriterReleasePreflightResult(GateStatus.PASS, writer_input_released=False),
+        lambda: WriterReleasePreflightResult(
+            GateStatus.PASS,
+            writer_input_released=True,
+            eligible_for_finalization=True,
+            approved_item_ids=("finding-1",),
+        ),
+        lambda: WriterReleasePreflightResult(
+            GateStatus.FAIL,
+            writer_input_released=False,
+        ),
         lambda: ApprovalDecision(
             **{**_approval_decision_kwargs(), "approved_item_ids": ["finding-1"]}
         ),
@@ -1547,6 +1598,7 @@ def _review_state() -> ReviewState:
         rendered_markdown=None,
         posting_plan=PostingPlan(items=()),
         post_interaction_gate=None,
+        writer_release_preflight=None,
         actor_permission_gate=None,
         actor_permission_finalization_check=None,
         target_freshness_check=None,

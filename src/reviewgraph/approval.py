@@ -163,6 +163,7 @@ def build_approval_decision(
         return ApprovalDecisionBuildResult(
             status=GateStatus.FAIL,
             reason_code=ApprovalDecisionBuildReasonCode.APPROVAL_PROOF_FAILED,
+            approval_proof_reason_code=proof.reason_code,
             reason="approval proof did not pass",
         )
     if actor_permission_gate.status != GateStatus.PASS:

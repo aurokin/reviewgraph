@@ -43,6 +43,7 @@ class ReviewState(TypedDict):
     rendered_markdown: str | None
     posting_plan: PostingPlan | None
     post_interaction_gate: PostInteractionGateResult | None
+    writer_release_preflight: WriterReleasePreflightResult | None
     actor_permission_gate: ActorPermissionGateResult | None
     actor_permission_finalization_check: ActorPermissionFinalizationCheckResult | None
     target_freshness_check: TargetFreshnessCheckResult | None
@@ -266,6 +267,8 @@ Selected reviewer output may get exactly one deterministic fake repair attempt w
 ## Final payload
 
 `post_mode_interaction_gate` runs only for `run_mode=post`. It fails closed before approval input and before final payload construction when the run is CI, webhook, config-only, non-TTY, or otherwise lacks an interactive human approval surface. Dry-run runs do not evaluate or record this gate. Harnessed non-interactive post attempts render the review first, then record `post_interaction_gate`, append a `post_mode_interaction_gate` trace event, set `post_enabled=false`, and leave approval, final payload, marker reconciliation, and writer result unset.
+
+`writer_release_preflight` runs before finalization in post-mode routes that have an approval result. It is pure state: a pass means only that approved item IDs are public postable finding items and are eligible for finalization; it still records `writer_input_released=false`. Missing approval, rejected approval, failed approval-build results, disabled posting, duplicate approved IDs/fingerprints, unknown approved IDs, or non-public approved items fail before current actor reads, target freshness reads, final payload construction, marker reconciliation, or writer reachability.
 
 `approval_gate` records approved item IDs and approval metadata only, including the GitHub actor and endpoint-specific permission snapshot shown to the human approver. `ActorPermissionGateResult` must include authenticated actor, credential principal/source, repo or installation permission, issue-comment endpoint write ability, check method, checked target, checked-at time, and stable failure code when blocked.
 
