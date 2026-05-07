@@ -42,6 +42,7 @@ class ReviewState(TypedDict):
     local_verdict: ReviewVerdict | None
     rendered_markdown: str | None
     posting_plan: PostingPlan | None
+    post_interaction_gate: PostInteractionGateResult | None
     actor_permission_gate: ActorPermissionGateResult | None
     payload_validation: PayloadValidationResult | None
     marker_reconciliation: MarkerReconciliationResult | None
@@ -73,9 +74,10 @@ class ReviewState(TypedDict):
 14. `build_posting_plan`
 15. `render_review`
 16. `ingest_clarification_answer`
-17. `approval_gate`
-18. `finalize_github_payload`
-19. `post_or_emit`
+17. `post_mode_interaction_gate`
+18. `approval_gate`
+19. `finalize_github_payload`
+20. `post_or_emit`
 
 ## Routing
 
@@ -101,7 +103,10 @@ START
   -> build_posting_plan
   -> render_review
       run_mode dry_run or post_enabled false -> post_or_emit dry-run
-      run_mode post and post_enabled true -> approval_gate
+      run_mode post and post_enabled true -> post_mode_interaction_gate
+  -> post_mode_interaction_gate
+      interactive human approval available -> approval_gate
+      CI/webhook/config-only/non-TTY -> END with dry-run output and error
   -> approval_gate
       approved -> finalize_github_payload
       rejected -> END with dry-run output
@@ -115,7 +120,7 @@ START
 
 Every run is bound to an immutable review target before reviewer execution. For a GitHub PR, the target includes owner/repo, PR number, base SHA, head SHA, merge-base SHA when available, and the diff basis used for findings. Rendered output and every postable finding should reference this target.
 
-Before any GitHub write, `finalize_github_payload` must re-fetch the PR head/base/merge-base state and compare it to the approved review target. If the target changed after rendering or approval, the graph fails closed and emits a new dry-run result instead of posting. `post_or_emit` receives only an already-finalized payload or dry-run output; it does not own freshness, approval, or hash policy.
+Before any GitHub write, `finalize_github_payload` must re-fetch the PR head/base/merge-base state and compare it to the approved review target. If the target changed after rendering or approval, the graph fails closed and emits a new dry-run result instead of posting. If the re-fetch times out, is rate-limited, is forbidden, is not found, is unavailable, returns malformed data, or only has stale cached data, freshness is unknown and the graph fails closed before final payload construction or writer reachability. `post_or_emit` receives only an already-finalized payload or dry-run output; it does not own freshness, approval, or hash policy.
 
 ## Read gaps
 
@@ -255,7 +260,11 @@ Selected reviewer output may get exactly one deterministic fake repair attempt w
 
 ## Final payload
 
-`approval_gate` records approved item IDs and approval metadata only, including the GitHub actor and permission snapshot shown to the human approver. `finalize_github_payload` builds the final issue-comment body from approved item IDs, computes the final hash, verifies it matches `approval.approved_final_payload_hash`, verifies the current GitHub actor still matches the approved actor, verifies permission and full review target freshness, verifies redaction status, and only then allows `post_or_emit` to call the writer.
+`post_mode_interaction_gate` runs only for `run_mode=post`. It fails closed before approval input and before final payload construction when the run is CI, webhook, config-only, non-TTY, or otherwise lacks an interactive human approval surface.
+
+`approval_gate` records approved item IDs and approval metadata only, including the GitHub actor and endpoint-specific permission snapshot shown to the human approver. `ActorPermissionGateResult` must include authenticated actor, credential principal/source, repo or installation permission, issue-comment endpoint write ability, check method, checked target, checked-at time, and stable failure code when blocked.
+
+`finalize_github_payload` builds the final issue-comment body from approved item IDs, rejects duplicate approved finding fingerprints, computes the final hash, verifies it matches `approval.approved_final_payload_hash`, verifies the current GitHub actor still matches the approved actor, verifies current endpoint permission and full review target freshness, verifies redaction status, and only then allows `post_or_emit` to call the writer. Actor, permission, and target re-checks must use current transport results; unknown credential source, timeout, rate limit, forbidden, not found, unavailable service, malformed response, stale cached proof, or missing checked-at time fails closed with a redacted transport summary.
 
 The writer adapter receives a finalized top-level issue-comment payload plus a marker reconciliation plan. It must not perform its own policy decisions beyond transport errors and marker reconciliation.
 

@@ -169,9 +169,13 @@ python -m pytest tests/test_findings.py tests/test_reviewer_json_repair.py tests
 - Optional reviewer failure runs remain partial local reviews: `tests/test_optional_reviewer_failure.py` proves the failed optional reviewer is recorded in partial-review metadata, other reviewer output still classifies, later stages continue, and optional failure alone does not block post eligibility.
 - Local verdict runs are private policy checks: `tests/test_verdict.py` proves ambiguity cannot become request-changes, graph errors disable post eligibility, dry-run output renders the local verdict, and GitHub payload previews remain issue comments without public request-changes wording by default.
 - MVP payload kind is top-level `issue_comment`; formal PR reviews, inline comments, labels, statuses, `APPROVE`, and `REQUEST_CHANGES` are rejected.
-- Approval binds approved item IDs, review target, final full comment hash, actor, permission, and checked-at time.
-- Finalization re-checks target freshness, actor, permission, redaction, payload hash, marker reconciliation, and duplicate fingerprints before writer reachability.
-- Marker reconciliation paginates existing comments, trusts only the approved actor or configured ReviewGraph bot, and fails closed on trusted malformed or conflicting markers for the same target.
+- Non-interactive post mode fails closed before approval input and before final payload construction in CI, webhook, config-only, and non-TTY CLI contexts.
+- Approval binds approved item IDs, review target, final full comment hash, actor, endpoint-specific issue-comment permission, and checked-at time.
+- Actor/permission harnesses cover authenticated actor, credential principal/source, repo or installation permission, issue-comment endpoint write ability, role/token mismatch, stale-cache rejection, transport failures, redacted summaries, and stable reason codes.
+- Finalization re-checks target freshness, actor, endpoint permission, redaction, payload hash, marker reconciliation, and duplicate fingerprints before writer reachability.
+- Target freshness harnesses cover changed target fields plus timeout, rate limit, forbidden, not found, unavailable service, malformed response, stale-cache rejection, and proof that unknown freshness never reaches final payload construction or writer calls.
+- Marker reconciliation paginates existing comments, trusts only the approved actor or configured ReviewGraph bot, reconciles trusted identical duplicate markers without another post, and fails closed on trusted malformed or conflicting markers for the same target.
+- Writer idempotency harnesses prove retry safety for one approved run/retry sequence. Cross-process duplicate prevention is deferred unless an external lock/storage design is added.
 
 ## Tracer Bullets
 
@@ -184,7 +188,7 @@ Build these early vertical slices before expanding every policy:
 5. Quality gate: fake reviewer output splits into postable finding, local note, suggested reply, and suppressed non-finding.
 6. Allowed post proof: item-approved top-level issue-comment payload calls the fake writer once; rejected or empty approval calls it zero times.
 7. GitHub read proof: fake paginated GitHub read feeds the same graph path as fixtures.
-8. Fail-closed proof: stale target, read gap, unknown actor, unknown permission, or marker conflict prevents writer reachability.
+8. Fail-closed proof: stale target, target-read failure, read gap, unknown actor, unknown endpoint permission, permission-read failure, non-interactive post mode, or marker conflict prevents writer reachability.
 
 ## Live API Discipline
 

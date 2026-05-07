@@ -65,11 +65,15 @@ It returns:
 
 The final GitHub payload is built deterministically from `approved_finding_ids` and the candidate payload. `approved_final_payload_hash` binds to the full final issue-comment body after item selection, including the hidden ReviewGraph marker line. The marker's own `payload` field stores a separate visible-body hash that excludes the marker, avoiding a self-referential hash. Before the writer is invoked, ReviewGraph must either show the final payload or prove that its hash equals `approved_final_payload_hash`. If approving a subset changes the body hash, the old candidate hash must be rejected.
 
-`finalize_github_payload` owns the last pre-writer gate. It verifies approved hash, approved actor, current actor, current permission, full target freshness, redaction status, non-empty approved findings, and marker reconciliation plan. If any check fails, the writer adapter is unreachable and ReviewGraph emits dry-run output with the fail-closed reason.
+The actor and permission summary is endpoint-specific. It must identify the authenticated actor, credential principal/source, repo or installation permission, ability to call `POST /repos/{owner}/{repo}/issues/{pr_number}/comments`, check method, checked target, checked-at time, and stable failure code when blocked. A broad repository role is not enough if the token or app cannot create the top-level issue comment.
+
+`finalize_github_payload` owns the last pre-writer gate. It verifies approved hash, approved actor, current actor, current endpoint permission, full target freshness, redaction status, non-empty approved findings, duplicate approved fingerprints, and marker reconciliation plan. If any check fails, the writer adapter is unreachable and ReviewGraph emits dry-run output with the fail-closed reason.
+
+External read failures during approval or finalization fail closed. Timeout, rate limit, forbidden, not found, unavailable service, malformed response, unknown credential source, stale cached data, or missing checked-at timestamp cannot be treated as approval or freshness proof. These failures must emit redacted transport summaries with endpoint kind, retryability, stable failure code, and request ID when available.
 
 ## Non-interactive mode
 
-In CI or webhook mode, MVP should refuse posting unless an explicit future policy is designed. Do not infer approval from config alone.
+In CI, webhook, config-only, or non-TTY CLI mode, MVP refuses post mode before approval input and before final payload construction. Do not infer approval from config alone, environment variables, previous approvals, or automation context. This is an explicit graph routing gate between `render_review` and `approval_gate`, not a prompt convention.
 
 ## Freshness and idempotency
 
@@ -77,7 +81,11 @@ In CI or webhook mode, MVP should refuse posting unless an explicit future polic
 
 Freshness includes owner/repo, PR number, base SHA, head SHA, merge-base SHA when available, and diff basis. Unknown merge-base freshness in post mode is a failure, not a warning.
 
-Every postable finding must have a stable fingerprint, target SHA, and body hash. The writer must fetch existing ReviewGraph artifacts before posting and create at most one top-level comment for the approved payload while preserving per-finding fingerprints for reconciliation. If a network timeout occurs after GitHub accepted a write, retry must reconcile by payload hash and finding fingerprint/body hash instead of posting a duplicate.
+Every postable finding must have a stable fingerprint, target SHA, and body hash. Duplicate postable or approved finding fingerprints are rejected before marker generation, approval final-hash validation, or writer reachability.
+
+The writer must fetch existing ReviewGraph artifacts before posting and create at most one top-level comment for the approved run/retry sequence while preserving per-finding fingerprints for reconciliation. If a network timeout occurs after GitHub accepted a write, retry must reconcile by payload hash and finding fingerprint/body hash instead of posting a duplicate.
+
+This is not a global cross-process locking guarantee. Two independent approved runs can race if they both scan before either comment exists. Global duplicate prevention requires external storage or locking and is deferred. If a later scan observes multiple trusted identical markers, ReviewGraph treats the payload as reconciled, emits duplicate-marker metadata, and posts zero additional comments. Trusted marker conflicts fail closed.
 
 Embedded marker reconciliation is trusted only for comments authored by the approved GitHub actor or a configured trusted ReviewGraph bot. Markers from other authors are ignored. Malformed markers are inert unless they appear on a trusted-author comment for the same target and cannot be safely interpreted; in that case the graph fails closed rather than posting a duplicate.
 

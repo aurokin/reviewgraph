@@ -29,6 +29,7 @@ Active execution artifact for this milestone. Linear remains the durable source 
   - `AUR-250` / duplicate of hardened marker reconciliation scope
   - `AUR-251` / duplicate of non-interactive posting block scope
 - Linear descriptions for `AUR-219`, `AUR-243`, `AUR-245`, `AUR-246`, `AUR-222`, `AUR-241`, `AUR-224`, and `AUR-261` were tightened on 2026-05-07 so the high-risk side-effect guards in this plan are also represented in Linear.
+- `AUR-228` from PRD 0005 was reconciled on 2026-05-07 as already implemented, with Linear evidence showing the context-budget and omitted-context harnesses pass. It no longer leaves the prior milestone chain inconsistent before PRD 0007 begins.
 
 ## Milestone Intent
 
@@ -46,19 +47,19 @@ The product point is controlled side effects. Reviewers do not write to GitHub, 
 
 ## Execution Order
 
-1. `AUR-244` first: define canonical payload hash domains and golden tests for visible body, full final body, marker payload hash, findings hash, newline normalization, marker whitespace, target ordering, and duplicate fingerprints. Later approval, finalization, marker, and writer code must reuse these primitives.
+1. `AUR-244` first: define canonical payload hash domains and golden tests for visible body, full final body, marker payload hash, findings hash, newline normalization, marker whitespace, target ordering, and duplicate fingerprints. Duplicate postable or approved finding fingerprints are fail-closed input errors, not deduplicated lists or multisets. Later approval, finalization, marker, and writer code must reuse these primitives.
 2. `AUR-217` second: model item-level approval and final hash binding using the `AUR-244` hash primitives. Approval records approved item IDs, review target binding, final full payload hash, actor metadata placeholders, and rejects stale candidate hashes before any writer exists.
 3. `AUR-218` third: validate top-level issue-comment payloads and reject formal PR review payloads/endpoints. Candidate and final payload schemas should include marker fields and remain redacted before any side-effect adapter sees them.
-4. `AUR-219` fourth: add actor and permission discovery/gate state for write mode. Unknown actor, unknown permission, insufficient permission, or missing check timestamp blocks approval/posting.
-5. `AUR-243` fifth: bind approval to the actor/permission snapshot from `AUR-219` and require finalization to verify the current actor/permission still matches before writer reachability.
-6. `AUR-220` sixth: implement target freshness finalization gates. Head, base, merge-base, owner/repo, PR number, and diff-basis drift all fail closed with dry-run output before writer invocation.
+4. `AUR-219` fourth: add actor and permission discovery/gate state for write mode. `ActorPermissionGateResult` is endpoint-specific for top-level issue-comment posting: authenticated actor, credential principal/source, repo or installation permission, ability to call `POST /repos/{owner}/{repo}/issues/{pr_number}/comments`, check method, checked target, checked-at time, and stable failure code. Unknown actor, unknown credential source, unknown permission, insufficient endpoint permission, missing check timestamp, timeout, rate limit, forbidden, not found, unavailable, malformed response, or stale cached data blocks approval/posting with a redacted transport summary. Fake cases must include repo-role-write but token/app lacks issue-comment write ability.
+5. `AUR-243` fifth: bind approval to the actor/permission snapshot from `AUR-219` and require finalization to verify the current actor/permission still matches before writer reachability. Re-check failures use the same fail-closed transport taxonomy as `AUR-219`; cached success cannot substitute for an unknown or failed current check.
+6. `AUR-220` sixth: implement target freshness finalization gates. Head, base, merge-base, owner/repo, PR number, and diff-basis drift all fail closed with dry-run output before writer invocation. Target refetch timeout, rate limit, forbidden, not found, unavailable, malformed response, or stale cached data also fail closed with stable machine reason, retryability, request ID when available, and zero final payload construction or writer reachability.
 7. `AUR-221` seventh: implement embedded ReviewGraph marker grammar, generation, parsing, and happy-path duplicate detection. Marker recognition must be exact final-line only.
 8. `AUR-245` eighth: harden marker reconciliation for pagination, author trust, spoofed markers, malformed trusted markers, conflicting payload hashes, and duplicate fingerprints.
 9. `AUR-246` ninth: block non-interactive posting mode before any graph/CLI post path is introduced. CI, webhook, config-only, or non-TTY mode must hit a pre-approval fail-closed routing gate that returns structured output instead of blocking for input, inferring approval, or reaching final payload construction.
 10. `AUR-223` tenth: prove no writer is invoked for missing approval, rejected approval, empty approvals, local-notes-only, suggested-reply-only, suppressed-only, and clarification-only runs. Mixed runs with approved findings must keep suggested replies out of candidate/final payloads.
-11. `AUR-222` eleventh: implement the fake top-level issue-comment writer after payload, approval, finalization, freshness, marker, and non-interactive policy exist. This issue must include an end-to-end graph/CLI fake-post harness proving `run_mode=post` follows `render_review -> approval_gate -> finalize_github_payload -> post_or_emit`: dry-run writes zero times; missing/rejected approval writes zero times; approved item-level payload reaches fake writer exactly once; stale target, actor mismatch, redaction failure, marker conflict, and empty approval fail before writer reachability; graph trace/JSON records approval, finalization, payload hashes, marker reconciliation, and writer result.
-12. `AUR-241` twelfth: implement the real top-level issue-comment writer adapter. It receives only finalized payloads plus marker reconciliation plans and supports only `POST /repos/{owner}/{repo}/issues/{pr_number}/comments`. It must model outcomes such as posted, reconciled-existing, blocked/fail-closed, retryable-unknown, and transport-failed. Fake-transport tests must cover ambiguous POST timeout after GitHub may have accepted the write, followed by paginated marker rescan and zero additional POSTs. A second POST after an ambiguous accepted-write timeout is forbidden unless a complete reconciliation pass proves no accepted artifact; if the scan is unavailable, incomplete, rate-limited, timed out, or marker-empty after an ambiguous POST, the writer returns fail-closed or retryable-unknown with no additional POST.
-13. `AUR-224` thirteenth: add the manual-only live post smoke contract for disposable PRs. It must be opt-in, skipped by default, require a TTY/manual approval proof plus typed final-hash confirmation, restrict targets through an explicit allowlist and disposable PR marker convention, and prove top-level issue-comment-only behavior through the real writer with evidence of one POST max, marker seen/reconciled state, actor shown to the human, and final hash shown or matched.
+11. `AUR-222` eleventh: implement the fake top-level issue-comment writer after payload, approval, finalization, freshness, marker, and non-interactive policy exist. This issue must include an end-to-end graph/CLI fake-post harness proving `run_mode=post` follows `render_review -> post_mode_interaction_gate -> approval_gate -> finalize_github_payload -> post_or_emit`: dry-run writes zero times; non-interactive post mode, missing/rejected approval, and empty approval write zero times; approved item-level payload reaches fake writer exactly once; stale target, unknown target freshness, actor mismatch, permission re-check failure, redaction failure, and marker conflict fail before writer reachability; graph trace/JSON records interaction gate, approval, finalization, payload hashes, marker reconciliation, and writer result.
+12. `AUR-241` twelfth: implement the real top-level issue-comment writer adapter. It receives only finalized payloads plus marker reconciliation plans and supports only `POST /repos/{owner}/{repo}/issues/{pr_number}/comments`. It must model outcomes such as posted, reconciled-existing, blocked/fail-closed, retryable-unknown, and transport-failed. Fake-transport tests must cover ambiguous POST timeout after GitHub may have accepted the write, followed by paginated marker rescan and zero additional POSTs. A second POST after an ambiguous accepted-write timeout is forbidden unless a complete reconciliation pass proves no accepted artifact; if the scan is unavailable, incomplete, rate-limited, timed out, or marker-empty after an ambiguous POST, the writer returns fail-closed or retryable-unknown with no additional POST. PRD 0007 guarantees at most one POST per approved run/retry sequence, not global cross-process locking; if a later scan observes multiple trusted identical markers, it reconciles existing with a duplicate-marker note and still posts zero times. Trusted conflicting markers fail closed.
+13. `AUR-224` thirteenth: add the manual-only live post smoke contract for disposable PRs. It must be opt-in, skipped by default, require a TTY/manual approval proof plus typed final-hash confirmation, restrict targets through an explicit allowlist and disposable PR marker convention, and prove top-level issue-comment-only behavior through the real writer with evidence of one POST max, marker seen/reconciled state, actor shown to the human, and final hash shown or matched. Live post must use live read-only finalization transports immediately before approval/finalization for actor, endpoint-specific permission, current PR target, and existing-comment marker pagination; fixture or fake state cannot satisfy the manual live proof.
 14. `AUR-261` last: close the milestone only after every active implementation issue is `Done`, focused/full validation passes, durable docs explain the final side-effect contracts, Linear evidence is complete, and fresh subagent review reports no material gaps.
 
 ## Issue Workflow
@@ -80,16 +81,16 @@ For each issue:
 - `AUR-244` focused harness: payload hash domain and marker hash golden tests, likely in `tests/test_posting_hashes.py` or `tests/test_posting.py`.
 - `AUR-217` focused harness: approval model/final-hash binding tests, likely in `tests/test_approval.py`.
 - `AUR-218` focused harness: payload validation tests rejecting formal PR reviews and non-issue-comment endpoints.
-- `AUR-219` focused harness: actor/permission gate tests with fake permission transport.
+- `AUR-219` focused harness: actor/permission gate tests with fake permission transport, endpoint-specific issue-comment write ability, transport failure taxonomy, stale-cache rejection, and role/token mismatch cases.
 - `AUR-243` focused harness: approval actor/permission snapshot binding and finalization mismatch tests.
-- `AUR-220` focused harness: stale target/freshness finalization tests with fake current target transport.
+- `AUR-220` focused harness: stale target/freshness finalization tests with fake current target transport, transport failure taxonomy, stale-cache rejection, stable reason codes, and proof that final payload construction is unreachable on unknown freshness.
 - `AUR-221` focused harness: marker generation/parsing/reconciliation happy path tests.
 - `AUR-245` focused harness: marker pagination, trusted-author, spoofing, malformed marker, conflict, page cap/timeout/rate-limit, transport-summary, and duplicate-fingerprint tests.
 - `AUR-246` focused harness: non-interactive post-mode rejection tests proving final payload construction is unreachable.
 - `AUR-223` focused harness: no-approved-finding, missing/rejected approval, and local-only writer suppression tests.
 - `AUR-222` focused harness: fake writer tests for finalized top-level issue comments, idempotent retry, and `run_mode=post` graph/CLI allowed-post proof with trace/JSON state assertions.
-- `AUR-241` focused harness: real writer adapter construction and retry/reconciliation tests with fake transport; no live network in default tests.
-- `AUR-224` focused harness: manual live-post smoke contract tests skipped by default, including disposable-target preflight and typed confirmation proof.
+- `AUR-241` focused harness: real writer adapter construction and retry/reconciliation tests with fake transport, including retry-only idempotency wording, duplicate trusted identical marker observation, trusted conflict fail-closed behavior, and no live network in default tests.
+- `AUR-224` focused harness: manual live-post smoke contract tests skipped by default, including disposable-target preflight, live read-only actor/permission/target/marker finalization proof, and typed confirmation proof.
 - Full validation after shared side-effect changes:
   - `python -m pytest -q`
   - `python -m py_compile src/reviewgraph/*.py`
@@ -103,7 +104,9 @@ For each issue:
 - Candidate payloads are not final payloads and are not writer inputs.
 - Approval is item-level and binds to the final full issue-comment body hash after approved item selection.
 - Approval is also bound to the review target, actor, permission, and checked-at time shown to the human.
+- Actor and permission are endpoint-specific for top-level issue-comment posting, not a vague repository role string. Unknown credential source, missing endpoint write ability, failed transport, stale cached proof, or mismatched actor/permission blocks approval/posting.
 - `finalize_github_payload` owns the last pre-writer gate: final hash, actor, permission, target freshness, redaction, non-empty approved findings, and marker reconciliation.
+- External read failures during finalization fail closed. Timeout, rate limit, forbidden, not found, unavailable, malformed response, or stale cached data cannot fall back to an earlier success.
 - The writer receives only finalized payloads plus marker reconciliation plan; it must not own approval/freshness/policy decisions.
 - MVP writer supports only top-level `issue_comment` payloads to `POST /repos/{owner}/{repo}/issues/{pr_number}/comments`.
 - Formal PR reviews, inline comments, replies, labels, statuses, approvals, and request-changes writes are rejected or deferred.
@@ -116,6 +119,8 @@ For each issue:
 - Non-interactive mode cannot infer approval from config, CI, webhook context, or non-TTY execution.
 - Non-interactive post attempts fail closed before approval prompt/input and before final payload construction.
 - Live post smoke is manual-only, allowlisted-disposable-PR-only, typed-final-hash-confirmed, one-POST-max, and skipped by default.
+- Live post smoke must prove actor, endpoint-specific permission, target freshness, and marker pagination came from live read-only finalization transports immediately before approval/finalization.
+- Idempotency is retry-safe per approved run/retry sequence. Cross-process duplicate prevention requires external locking or storage and is deferred; later duplicate trusted identical markers reconcile without another POST, while trusted conflicts fail closed.
 
 ## Documentation Work
 
@@ -132,15 +137,19 @@ Update the narrowest durable docs alongside behavior:
 The milestone is complete when ReviewGraph proves:
 
 - Payload hash domains are canonical and covered by golden tests.
+- Duplicate postable or approved finding fingerprints are rejected before marker generation, approval final-hash validation, or writer reachability.
 - Approval stores approved item IDs, target binding, final full payload hash, actor, permission, checked-at time, approver, timestamp, and public-verdict choice.
 - Approving a subset changes the final payload hash and stale candidate hashes are rejected.
 - Top-level issue-comment payloads are the only MVP GitHub artifact accepted.
 - Formal PR review payloads, `/pulls/{pr}/reviews`, `COMMENT`, `APPROVE`, `REQUEST_CHANGES`, labels, statuses, inline comments, and replies are rejected or deferred.
 - Actor/permission discovery is shown before approval and blocks approval/posting when unknown or insufficient.
+- Actor/permission discovery proves endpoint-specific issue-comment write ability and fails closed for transport failures, stale cached proof, unknown credential source, or role/token mismatches.
 - Finalization fails closed if actor, permission, target, redaction, payload hash, marker reconciliation, or approved finding set is invalid.
+- Finalization also fails closed if current actor/permission or target freshness cannot be re-read from the required transport with a current, redacted, stable result.
 - Marker generation/parsing/reconciliation is exact, paginated, author-aware, idempotent, and fail-closed on trusted conflicts.
 - No-approved-finding and local-only paths never invoke writer code.
 - Fake writer proves approved finalized top-level comments create at most one fake comment and reconcile retries.
+- Writer idempotency is scoped to one approved run/retry sequence; concurrent independent runs are documented as deferred global-locking scope.
 - Non-interactive post mode cannot approve or post by config alone.
 - Graph/CLI post mode proves the real side-effect route with fake writer: dry-run and blocked paths call writer zero times, approved item-level payload calls fake writer once, and state/trace records approval, finalization, hashes, marker reconciliation, and writer result.
 - Real writer adapter supports only finalized top-level issue comments and reconciles ambiguous accepted-write timeouts by rescanning markers before retrying.
