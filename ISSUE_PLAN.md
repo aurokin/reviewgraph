@@ -1,114 +1,114 @@
-# ISSUE PLAN: AUR-217 Model Item-Level Approval And Final Hash
+# ISSUE PLAN: AUR-219 Gate Posting On Actor And Permission
 
-Active issue plan for `AUR-217` / `RG-028: Model Item-Level Approval And Final Hash`.
+Active issue plan for `AUR-219` / `RG-030: Gate Posting On Actor And Permission`.
 
-Linear is the durable source for status, blockers, and handoff. Durable behavior comes from `docs/architecture/side-effects.md`, `docs/architecture/state-graph.md`, `docs/architecture/github-integration.md`, and `docs/prds/0007-side-effects.md`.
+Linear is the durable source for status, blockers, and handoff. Durable behavior comes from `docs/architecture/side-effects.md`, `docs/architecture/state-graph.md`, `docs/architecture/github-integration.md`, and `docs/harnesses/harness-engineering.md`.
 
 ## Linear Snapshot
 
 - Project: `ReviewGraph`
 - Team: `Aurokin`
 - Milestone: `PRD 0007: Side Effects`
-- Issue: `AUR-217`
-- Title: `RG-028: Model Item-Level Approval And Final Hash`
+- Issue: `AUR-219`
+- Title: `RG-030: Gate Posting On Actor And Permission`
 - Status when planned: `In Progress`
 - Linear comments fetched on 2026-05-07: none
-- Upstream blockers complete: `AUR-244` hash domains and `AUR-218` candidate/final payload validation.
+- Upstream blockers complete: `AUR-244`, `AUR-218`, and `AUR-217`.
 
 ## Objective
 
-Add the pure approval-proof slice that binds item-level approved findings to the deterministic final issue-comment body hash before any writer-shaped final payload, actor/permission gate, target freshness gate, marker reconciliation scan, or graph post mode exists.
+Add a pure pre-approval actor/permission gate contract and fake transport harness so write mode can show the authenticated GitHub identity and endpoint-specific issue-comment permission before any human approval can proceed.
 
-This issue models approval and final hash binding only. It may add deterministic final-body proof helpers needed to compute the approved final hash, but it must not introduce a writer-shaped `FinalIssueCommentPayload`, `GitHubIssueCommentRequest`, writer adapter, live GitHub calls, post-mode routing, actor/permission discovery, current-target refetch, marker reconciliation against existing comments, or approval prompts.
+This issue does not implement final approval snapshot binding, pre-finalization re-checks, target freshness, writer adapters, live GitHub permission calls, post-mode CLI prompting, or graph writer reachability. It defines and tests the gate result and fake-transport discovery behavior that later approval/finalization slices must consume.
 
 ## Contracts To Preserve
 
-- Dry-run remains default; no code path posts to GitHub.
-- Approval is item-level and stores approved finding IDs.
-- Approval is target-bound and stores the full `ReviewTarget` plus `approved_review_target_hash`.
-- Approval stores or returns `approved_final_payload_hash` for the post-selection final issue-comment body proof.
-- Approved final hash uses AUR-244 hash domains: marker `payload` equals visible-body hash excluding the marker, and `approved_final_payload_hash` equals the full final body hash including the exact marker line.
-- Approval binding uses AUR-218 candidate/final split. Candidate payloads have no final marker, no final payload hash, and are never writer/final input.
-- Approving a subset changes the final body and final hash when the selected item set changes.
-- Stale candidate-visible hash inputs are rejected: approval/final-hash proof must rebuild the final body proof from current posting plan, current findings, current candidate payload binding, selected approved IDs, target, and run ID.
-- Empty approved finding sets are rejected when `approved=True`. A rejected approval may carry no approved IDs, but it must not carry a writer-reachable final payload proof.
-- Duplicate approved finding fingerprints fail closed before final marker/hash construction.
-- For this slice, only approved `review_body_item` findings can enter the final body proof. `top_level_summary_item` is explicitly deferred or rejected for approval inputs until the renderer has a durable summary-body contract.
-- Suggested replies, local notes, suppressed outputs, clarification requests, inline candidates, unknown IDs, summary IDs, and any other non-`review_body_item` destination remain local-only and cannot enter the final issue-comment body proof.
-- The final body proof must redact before computing marker payload hash and approved final hash.
-- Public request-changes wording remains excluded unless a later issue explicitly supports it; this issue does not submit GitHub `REQUEST_CHANGES` or approvals.
-- Actor/permission snapshot storage is deferred to `AUR-219`/`AUR-243`. Do not populate fake actor/permission proof to satisfy the existing `ApprovalDecision` shape.
-- Add a separate non-writer `ApprovalProofResult` contract for this issue. Keep `ApprovalDecision` unchanged until actor/permission binding work, and do not use it to represent rejected/no-proof proof states in AUR-217.
-- `ApprovalProofResult` owns pass/fail proof state: `status`, typed `reason_code`, approved IDs, review target/hash, approved final payload hash, final visible body hash, marker payload hash, findings hash, exact marker line, final redaction status, include-public-verdict flag, approved-by, and timestamp. Proof/hash fields are present only on pass.
-- `ApprovalDecision` or approval proof should not be sufficient by itself to reach a writer. Later finalization must still validate actor/permission, target freshness, redaction, marker reconciliation, payload validation, and writer request shape.
-- Any current posting plan containing `top_level_summary_item` fails closed in AUR-217 with `summary_item_deferred`, even if the approved ID set does not include `summary`. Summary approval can be reintroduced only after there is a durable summary-body contract.
-- `approved_by` and `timestamp` are explicit inputs to the pure helper. The approval module must not read the environment, clock, TTY, GitHub, or config to infer them.
+- The gate is endpoint-specific for MVP top-level issue-comment posting: `POST /repos/{owner}/{repo}/issues/{pr_number}/comments`.
+- A passing gate records authenticated actor, credential principal/source, repo or installation permission, issue-comment endpoint write ability, check method, checked target, checked-at time, and redacted transport summary.
+- Unknown actor blocks approval/posting.
+- Unknown credential source blocks approval/posting.
+- Unknown permission blocks approval/posting.
+- Repo-level write/admin role is insufficient when the token/app lacks issue-comment write ability.
+- Timeout, rate limit, forbidden, not found, unavailable service, malformed response, or stale cached proof blocks approval/posting with stable reason code and retryability.
+- Transport summaries record endpoint kind, retryability, stable failure code, and request ID when available.
+- Transport summaries must not log tokens, raw stderr, or unredacted response bodies.
+- The gate result is included in dry-run/read output when present.
+- Final approval snapshot persistence and finalization re-checks are deferred to `AUR-243`.
+- No GitHub write, approval prompt, final payload construction, marker reconciliation, or writer module becomes reachable in this issue.
 
-## Stable Approval Reason Codes
+## Stable Permission Reason Codes
 
-The initial approval proof failure code set is:
+The initial failure code set is:
 
-- `empty_approval`
-- `unknown_approved_id`
-- `non_public_destination`
-- `summary_item_deferred`
-- `candidate_binding_mismatch`
-- `duplicate_approved_fingerprint`
-- `final_redaction_failed`
-- `invalid_run_id`
-- `request_changes_public_text_deferred`
+- `unknown_actor`
+- `unknown_credential_source`
+- `unknown_permission`
+- `insufficient_endpoint_permission`
+- `timeout`
+- `rate_limited`
+- `forbidden`
+- `not_found`
+- `unavailable`
+- `malformed_response`
+- `stale_cached_proof`
 
 ## Implementation Shape
 
-1. Add `src/reviewgraph/approval.py` as a pure module with no GitHub transport, writer, graph post-mode, or live IO imports.
-2. Define approval helper/result contracts:
-   - approved item selection validation,
-   - deterministic final issue-comment body proof/preview from current posting inputs,
-   - `ApprovalProofResult` plus an `ApprovalProofReasonCode` enum containing the stable code set above.
-3. Reuse `build_candidate_issue_comment_payload` or AUR-218 validation to prove the supplied candidate matches current posting inputs before computing final payload proof.
-4. Build final issue-comment body proofs from approved `review_body_item` findings only. Include exact ReviewGraph v1 marker line/components, but do not return `FinalIssueCommentPayload` or `GitHubIssueCommentRequest` in this issue.
-5. Use AUR-244 helpers for visible body hash, marker payload hash, findings hash, review target hash, and final payload hash.
-6. Require a run ID for marker generation and keep it within the AUR-244 marker grammar.
-7. Keep `ApprovalDecision` unchanged in this issue unless a narrow model import update is necessary. Use `ApprovalProofResult` for all new pass/fail proof behavior so this issue does not invent actor/permission values.
-8. Add `tests/test_approval.py` for:
-   - approving all findings stores approved IDs, target hash/target, and final payload hash,
-   - approving a subset changes final body/hash and findings hash,
-   - stale/tampered candidate payload with recomputed candidate hashes is rejected,
-   - candidate payload cannot be used as final/writer input,
-   - empty approved finding set is rejected for `approved=True`,
-   - duplicate approved fingerprints fail closed,
-   - any posting plan containing `top_level_summary_item` fails closed with `summary_item_deferred`,
-   - unknown IDs, local-only IDs, inline-candidate IDs, suggested-reply IDs, and summary IDs are rejected as approved inputs,
-   - final body proof redacts before marker payload hash and approved final hash computation,
-   - `ApprovalProofResult` carries final `redaction_status` on pass and stable typed `reason_code` on fail,
-   - `approved_by` and `timestamp` are caller-supplied and no clock/environment lookup is used,
-   - final payload marker fields and final hash match AUR-244 helpers,
-   - approval module import-boundary proof.
-9. Update narrow durable docs only if implementation clarifies behavior beyond existing side-effect docs.
+1. Add or expand typed model contracts in `src/reviewgraph/models.py` while keeping it a leaf module:
+   - `ActorPermissionReasonCode`
+   - `GitHubCredentialSource` or string-constrained source field
+   - `ActorPermissionTransportSummary`
+   - richer `ActorPermissionGateResult`
+2. Preserve existing serialized fields (`status`, `actor`, `permission`, `checked_at`, `reason`) for compatibility, and add endpoint-specific fields without breaking current read serialization tests.
+3. Add `src/reviewgraph/permissions.py` as a pure/fake-discovery module. It may define protocol-like fake input/result dataclasses but must not import live GitHub clients, shell, subprocess, writer, finalization, approval, or graph post mode.
+4. Gate evaluation should accept explicit fake transport result data and expected `ReviewTarget`; it should not call network or inspect environment.
+5. Passing gate requires:
+   - actor,
+   - credential principal,
+   - credential source,
+   - repo or installation permission,
+   - `issue_comment_write=true`,
+   - check method,
+   - checked target matching the expected target,
+   - checked-at time.
+6. Failing gate returns `GateStatus.FAIL`, stable reason code, no approval-pass proof, and a redacted transport summary.
+7. Include a dry-run/read serialization update so `GitHubReadResult.to_dict()` includes the richer actor/permission gate when present.
+8. Add `tests/test_permissions.py` for:
+   - passing endpoint-specific gate,
+   - unknown actor,
+   - unknown credential source,
+   - unknown permission,
+   - repo-role-write but missing issue-comment write ability,
+   - timeout, rate limit, forbidden, not found, unavailable, malformed response, and stale cached proof,
+   - redacted summaries exclude tokens/raw stderr/response bodies while preserving request ID/retryability,
+   - checked target mismatch fails closed,
+   - module import-boundary proof.
+9. Update existing `tests/test_github_fake_read.py` serialization expectations as needed.
+10. Update narrow durable docs only if implementation clarifies the actor/permission result shape beyond current docs.
 
 ## Validation
 
 Focused:
 
 ```bash
-python -m pytest tests/test_approval.py -q
+python -m pytest tests/test_permissions.py -q
 ```
 
 Regression:
 
 ```bash
-python -m pytest tests/test_approval.py tests/test_payload_validation.py tests/test_payload_hashes.py tests/test_posting.py tests/test_models.py tests/test_render.py tests/test_cli.py -q
+python -m pytest tests/test_permissions.py tests/test_models.py tests/test_github_fake_read.py tests/test_redaction.py tests/test_cli.py -q
 python scripts/check_docs.py
 git diff --check
+python -m py_compile src/reviewgraph/*.py
 ```
 
-Run the full suite because approval contracts touch shared models and side-effect guardrails.
+Run the full suite because the gate result touches shared models and GitHub read serialization.
 
 ## Out Of Scope
 
-- Actor/permission discovery or binding (`AUR-219`, `AUR-243`).
-- Target freshness refetch/finalization gate (`AUR-220`).
-- Marker reconciliation against existing GitHub comments (`AUR-221`, `AUR-245`).
+- Approval snapshot persistence or actor/permission binding into `ApprovalProofResult` (`AUR-243`).
+- Pre-finalization actor/permission re-checks (`AUR-243`).
+- Target freshness (`AUR-220`).
 - Non-interactive post-mode gate (`AUR-246`).
-- Suppressing writer calls for no approved findings in graph/fake-writer paths (`AUR-223`).
-- Fake writer, real writer, live post smoke, or GitHub write adapters.
+- Fake writer, real writer, live post smoke, or any GitHub mutation.
