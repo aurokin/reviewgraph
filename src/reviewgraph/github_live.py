@@ -470,6 +470,16 @@ def _blocked(
     pr_ref: dict[str, object] | None = None,
     message: str | None = None,
 ) -> LiveReadSmokeArtifact:
+    redaction_status = _empty_redaction_status()
+    redacted_message: str | None = None
+    if message:
+        redaction = redact_text(message)
+        redacted_message = redaction.text
+        redaction_status = {
+            "redacted": redaction.redacted,
+            "replacement_count": redaction.replacement_count,
+            "categories": list(redaction.categories),
+        }
     return LiveReadSmokeArtifact(
         status="blocked",
         reason=reason,
@@ -477,9 +487,9 @@ def _blocked(
         command_summary={
             "transport": "gh_api_rest",
             "live_read_opt_in": env.get(LIVE_READ_OPT_IN_ENV) == "1",
-            "message": message,
+            "message": redacted_message,
         },
-        redaction_status=_empty_redaction_status(),
+        redaction_status=redaction_status,
     )
 
 

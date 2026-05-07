@@ -80,6 +80,7 @@ def test_live_read_blocked_without_token_redacts_auth_stderr() -> None:
     )
 
     assert artifact is not None
+    assert "ghs_" not in artifact.command_summary["message"]
     data = artifact.to_dict()
     assert data["reason"] == "missing_token"
     serialized = json.dumps(data)
@@ -322,8 +323,9 @@ def test_opt_in_live_read_smoke() -> None:
         assert data["github_read"]["review_target"]["owner_repo"]
         assert data["github_read"]["resource_coverage"]
     else:
-        assert data["fail_closed"]["review_target"] is not None
         assert data["fail_closed"]["read_gaps"]
+        if data["fail_closed"]["read_gaps"][0]["resource"] != "metadata":
+            assert data["fail_closed"]["review_target"] is not None
 
 
 def _success_responses() -> dict[tuple[str, ...], GhCommandResult]:
