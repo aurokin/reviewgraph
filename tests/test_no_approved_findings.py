@@ -125,6 +125,89 @@ def test_writer_release_preflight_passes_public_findings_without_releasing_write
     assert "Draft reply must stay local." not in candidate.body
 
 
+def test_writer_release_preflight_rejects_unknown_approved_id_before_finalization() -> None:
+    result = evaluate_writer_release_preflight(
+        post_enabled=True,
+        approval_result=replace(_approval(), approved_item_ids=("missing-finding",)),
+        posting_plan=_plan(),
+        current_items_by_id=_descriptors(_plan()),
+    )
+
+    assert result.status == GateStatus.FAIL
+    assert result.reason_code == WriterReleasePreflightReasonCode.UNKNOWN_APPROVED_ID
+    assert result.writer_input_released is False
+    assert result.item_diagnostics
+    assert result.item_diagnostics[0].item_id == "missing-finding"
+    assert result.item_diagnostics[0].reason_code == WriterReleaseItemReasonCode.MISSING_CURRENT_ITEM
+
+
+def test_writer_release_preflight_prioritizes_unknown_id_over_non_public_items() -> None:
+    plan = PostingPlan(
+        items=(
+            PostingPlanItem("note-1", "local_note", PostingDestination.LOCAL_ONLY, False),
+        )
+    )
+
+    result = evaluate_writer_release_preflight(
+        post_enabled=True,
+        approval_result=replace(_approval(), approved_item_ids=("missing-finding", "note-1")),
+        posting_plan=plan,
+        current_items_by_id=_descriptors(plan),
+    )
+
+    assert result.status == GateStatus.FAIL
+    assert result.reason_code == WriterReleasePreflightReasonCode.UNKNOWN_APPROVED_ID
+    assert [item.item_id for item in result.item_diagnostics] == ["missing-finding", "note-1"]
+
+
+def test_writer_release_preflight_rejects_duplicate_approved_item_ids() -> None:
+    result = evaluate_writer_release_preflight(
+        post_enabled=True,
+        approval_result=replace(_approval(), approved_item_ids=("finding-1", "finding-1")),
+        posting_plan=_plan(),
+        current_items_by_id=_descriptors(_plan()),
+    )
+
+    assert result.status == GateStatus.FAIL
+    assert result.reason_code == WriterReleasePreflightReasonCode.DUPLICATE_APPROVED_ITEM
+    assert result.writer_input_released is False
+    assert result.item_diagnostics
+    assert result.item_diagnostics[0].item_id == "finding-1"
+
+
+def test_writer_release_preflight_rejects_duplicate_approved_fingerprints() -> None:
+    plan = PostingPlan(
+        items=(
+            PostingPlanItem(
+                "finding-1",
+                OutputClassification.POSTABLE_FINDING.value,
+                PostingDestination.REVIEW_BODY_ITEM,
+                True,
+                "fp-duplicate",
+            ),
+            PostingPlanItem(
+                "finding-2",
+                OutputClassification.POSTABLE_FINDING.value,
+                PostingDestination.REVIEW_BODY_ITEM,
+                True,
+                "fp-duplicate",
+            ),
+        )
+    )
+
+    result = evaluate_writer_release_preflight(
+        post_enabled=True,
+        approval_result=replace(_approval(), approved_item_ids=("finding-1", "finding-2")),
+        posting_plan=plan,
+        current_items_by_id=_descriptors(plan),
+    )
+
+    assert result.status == GateStatus.FAIL
+    assert result.reason_code == WriterReleasePreflightReasonCode.DUPLICATE_APPROVED_FINGERPRINT
+    assert result.item_diagnostics == ()
+    assert result.writer_input_released is False
+
+
 @pytest.mark.parametrize(
     "plan",
     [

@@ -111,8 +111,7 @@ START
       interactive human approval available -> approval_gate
       CI/webhook/config-only/non-TTY -> END with dry-run output and error
   -> approval_gate
-      approved -> writer_release_preflight
-      rejected -> END with dry-run output
+      approval result -> writer_release_preflight
   -> writer_release_preflight
       eligible for finalization -> finalize_github_payload
       missing/rejected/invalid/non-public approval -> END with dry-run output and no writer input

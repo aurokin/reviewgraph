@@ -545,7 +545,7 @@ def _writer_preflight_for_approval(
     if diagnostics:
         reason = (
             WriterReleasePreflightReasonCode.UNKNOWN_APPROVED_ID
-            if all(item.reason_code == WriterReleaseItemReasonCode.MISSING_CURRENT_ITEM for item in diagnostics)
+            if any(item.reason_code == WriterReleaseItemReasonCode.MISSING_CURRENT_ITEM for item in diagnostics)
             else WriterReleasePreflightReasonCode.NON_PUBLIC_APPROVED_ITEM
         )
         return _writer_preflight_fail(reason, item_diagnostics=tuple(diagnostics))
