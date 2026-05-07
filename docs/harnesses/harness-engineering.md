@@ -114,9 +114,11 @@ Golden tests should protect product behavior without freezing incidental wording
 ### GitHub Read
 
 - Fake GitHub read is the first adapter proof. `tests/test_github_fake_read.py` covers `owner/repo#number` and GitHub PR URL parsing, metadata/files reads, `ReviewTarget` parity, metadata extras, resource coverage, required read gaps for out-of-scope resources, changed-line metadata, anchor-unavailable metadata, redacted result serialization, and read-only transport calls.
+- `tests/test_github_read_gaps.py` covers required and optional GitHub read gaps, stable failure classification, targetless pre-metadata fetch failure rendering, graph error generation, read-gap versus truncation separation, descriptor-only later-page gap fixtures, and redacted dry-run output.
 - The metadata/files-only result is not graph-complete context. Comments, reviews, review comments, and thread state must be fetched and paginated by later PRD 0006 harnesses before GitHub PR dry-run can be treated as complete.
 - Changed-line metadata from GitHub reads must satisfy the same structural protocol used by quality and diff-anchor code. Parseable modified, added, and renamed patches expose target hunk ranges when the hunk has target-side additions; unsupported or unavailable patches degrade explicitly instead of producing false ranges.
 - GitHub-read boundary tests must prove the fake read adapter does not directly or transitively import live network clients, approval/finalization code, posting payload builders, or writer modules.
+- Read-gap policy tests must stay descriptor-only until pagination is implemented. AUR-247 may prove that omitted page-2 content would have affected routing, trust, or redaction, but it must not implement real page traversal.
 
 ### Reviewer Boundaries
 

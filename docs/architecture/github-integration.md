@@ -43,6 +43,10 @@ The first GitHub read implementation is fake and read-only. It accepts `owner/re
 
 The metadata/files-only result is adapter-contract-ready, not graph-complete PRD 0006 context. Comments, reviews, review comments, and thread state remain `not_fetched_in_scope` until later slices fetch and paginate them. A later graph integration must not treat metadata/files-only coverage as a complete review context.
 
+Required GitHub read gaps fail closed before review. `forbidden`, `not_found`, `rate_limited`, `timeout`, `unavailable`, `pagination_incomplete`, `thread_state_unknown`, and `not_fetched_in_scope` are stable machine reasons; retryable status is part of the gap. Pagination failure should preserve the underlying failure class and page/resource metadata rather than flattening everything to a generic partial-read message.
+
+If metadata cannot be fetched, ReviewGraph may only know the parsed PR ref. That targetless read failure renders local dry-run evidence with no `ReviewTarget`, no reviewers, no findings, no candidate payload, and no side effects.
+
 Patch-derived changed ranges are deliberately conservative target hunk ranges for the diff-anchor protocol. Parseable modified, added, and renamed files with target-side additions can produce anchor metadata; renamed files preserve `previous_path`. Deleted files, binary or unavailable patches, oversized patches, unsupported hunk headers, malformed hunk body lines, target-empty hunks, or hunks without target-side additions produce anchor-unavailable metadata instead of false changed ranges.
 
 Raw typed PR context may exist in memory for graph use. Anything serialized for logs, traces, markdown, JSON, errors, or local notes must use the adapter's redacted serialization/status path.

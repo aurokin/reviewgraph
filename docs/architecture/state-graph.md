@@ -117,6 +117,16 @@ Every run is bound to an immutable review target before reviewer execution. For 
 
 Before any GitHub write, `finalize_github_payload` must re-fetch the PR head/base/merge-base state and compare it to the approved review target. If the target changed after rendering or approval, the graph fails closed and emits a new dry-run result instead of posting. `post_or_emit` receives only an already-finalized payload or dry-run output; it does not own freshness, approval, or hash policy.
 
+## Read gaps
+
+GitHub read gaps are graph-owned state, not missing prompt context. Required read gaps produce deterministic `GraphError` entries with code `github_read_gap`, set `post_enabled=false`, suppress candidate payloads, and emit the trace event `github_read_gap_fail_closed`. Once the GitHub dry-run path is wired, this stop happens before conversation memory, reviewer selection, reviewer execution, quality classification, or posting can rely on partial context.
+
+A pre-metadata GitHub fetch failure is targetless: it may have only a parsed PR ref, not a `ReviewTarget`. That path renders a targetless read-failure envelope instead of inventing placeholder SHAs or weakening the non-null `ReviewState.review_target` contract.
+
+Optional read gaps are visible-only state. They do not create graph errors by themselves, but they cannot support reviewer routing, finding evidence, approval input, or public payload text unless a later policy explicitly proves the missing resource is safe to ignore.
+
+Read gaps are distinct from context truncation. Pagination and read failures happen before context budgeting and use `ReadGap`; configured file, patch, memory, reviewer, or live-call limits use `TruncationNotice`.
+
 ## Context budget
 
 `calculate_context_budget` runs before reviewer fanout. It applies limits to changed-file count, patch bytes, conversation-memory bytes, reviewer count, and planned live calls. The output is durable graph state, not hidden prompt text.

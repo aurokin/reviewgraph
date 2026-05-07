@@ -97,11 +97,35 @@ def test_github_fake_read_adapter_does_not_import_live_or_write_boundaries() -> 
     assert not (imports & forbidden_reviewgraph_modules)
 
 
+def test_read_gap_policy_does_not_import_live_or_write_boundaries() -> None:
+    forbidden_roots = {
+        "github",
+        "httpx",
+        "openai",
+        "requests",
+        "socket",
+        "subprocess",
+    }
+    forbidden_reviewgraph_modules = {
+        "reviewgraph.approval",
+        "reviewgraph.finalization",
+        "reviewgraph.llm",
+        "reviewgraph.posting",
+        "reviewgraph.writer",
+    }
+
+    imports = _imports(Path("src/reviewgraph/read_gaps.py"))
+
+    assert not ({name.split(".", 1)[0] for name in imports} & forbidden_roots)
+    assert not (imports & forbidden_reviewgraph_modules)
+
+
 def test_github_fake_read_adapter_does_not_transitively_load_live_or_write_boundaries() -> None:
     script = """
 import json
 import sys
 import reviewgraph.github
+import reviewgraph.read_gaps
 forbidden = sorted(
     name for name in sys.modules
     if name.startswith(('reviewgraph.approval', 'reviewgraph.finalization', 'reviewgraph.llm', 'reviewgraph.posting', 'reviewgraph.writer'))

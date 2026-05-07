@@ -11,6 +11,8 @@ from reviewgraph.models import (
     LocalNote,
     MemoryReference,
     OmittedContextMarker,
+    GraphError,
+    ReadGap,
     RedactionStatus,
     ReviewTarget,
     ReviewVerdict,
@@ -56,6 +58,8 @@ def render_review(
     candidate_payload: CandidateIssueCommentPayload | None = None,
     memory_references: Iterable[MemoryReference] = (),
     truncation_notices: Iterable[TruncationNotice] = (),
+    read_gaps: Iterable[ReadGap] = (),
+    errors: Iterable[GraphError] = (),
     context_budget: ContextBudget | None = None,
 ) -> RenderedReview:
     context = _RenderContext()
@@ -72,8 +76,11 @@ def render_review(
         candidate_payload=candidate_payload,
         memory_references=tuple(memory_references),
         truncation_notices=tuple(truncation_notices),
+        read_gaps=tuple(read_gaps),
+        errors=tuple(errors),
         context_budget=context_budget,
     )
+    _validate_read_gap_inputs(inputs)
     json_data = render_json(inputs=inputs, context=context)
     markdown = render_markdown(inputs=inputs, context=context)
     json_data["redaction_status"] = context.status_dict()
@@ -117,6 +124,8 @@ def render_json(*, inputs: "_RenderInputs", context: "_RenderContext | None" = N
         "local_verdict": inputs.local_verdict.value if inputs.local_verdict is not None else None,
         "posting_plan": _posting_plan_json(inputs.posting_plan, context),
         "memory": [_memory_json(memory, context) for memory in inputs.memory_references],
+        "read_gaps": [_read_gap_json(gap, context) for gap in inputs.read_gaps],
+        "errors": [_graph_error_json(error, context) for error in inputs.errors],
         "truncation": [_truncation_json(notice, context) for notice in inputs.truncation_notices],
         "context_budget": _context_budget_json(inputs.context_budget, context),
         "candidate_payload_preview": candidate_preview,
@@ -185,6 +194,26 @@ def render_markdown(*, inputs: "_RenderInputs", context: "_RenderContext | None"
     if not inputs.memory_references:
         lines.append("- None")
 
+    lines.extend(["", "## Read Gaps"])
+    if inputs.read_gaps:
+        for gap in inputs.read_gaps:
+            lines.append(
+                f"- {context.redact(gap.resource)}: required={str(gap.required).lower()}, "
+                f"retryable={str(gap.retryable).lower()} - {context.redact(gap.reason)}"
+            )
+    else:
+        lines.append("- None")
+
+    lines.extend(["", "## Graph Errors"])
+    if inputs.errors:
+        for error in inputs.errors:
+            lines.append(
+                f"- {context.redact(error.code)}: {context.redact(error.message)} "
+                f"(retryable={str(error.retryable).lower()})"
+            )
+    else:
+        lines.append("- None")
+
     lines.extend(["", "## Truncation"])
     if inputs.truncation_notices:
         for notice in inputs.truncation_notices:
@@ -235,6 +264,41 @@ def _private_verdict_label(verdict: ReviewVerdict | None) -> str:
     if verdict == ReviewVerdict.REQUEST_CHANGES:
         return "private local blocking recommendation"
     return verdict.value
+
+
+def _validate_read_gap_inputs(inputs: "_RenderInputs") -> None:
+    required_gaps = tuple(gap for gap in inputs.read_gaps if gap.required)
+    if not required_gaps:
+        return
+    if inputs.selected_reviewers:
+        raise RenderError("required read gaps suppress reviewer execution")
+    if inputs.findings:
+        raise RenderError("required read gaps suppress findings")
+    if inputs.posting_plan is not None:
+        raise RenderError("required read gaps suppress posting plan")
+    if not _has_required_read_gap_errors(required_gaps, inputs.errors):
+        raise RenderError("required read gaps require github_read_gap errors")
+    if inputs.candidate_payload is not None:
+        raise RenderError("required read gaps suppress candidate payload")
+
+
+def _has_required_read_gap_errors(
+    required_gaps: tuple[ReadGap, ...],
+    errors: tuple[GraphError, ...],
+) -> bool:
+    expected = {
+        (
+            f"Required GitHub read gap for {gap.resource}: {gap.reason}",
+            gap.retryable,
+        )
+        for gap in required_gaps
+    }
+    actual = {
+        (error.message, error.retryable)
+        for error in errors
+        if error.code == "github_read_gap"
+    }
+    return expected <= actual
 
 
 def _markdown_items(items: Iterable[tuple[str, str]], context: "_RenderContext") -> list[str]:
@@ -494,6 +558,24 @@ def _truncation_json(notice: TruncationNotice, context: "_RenderContext") -> dic
     }
 
 
+def _read_gap_json(gap: ReadGap, context: "_RenderContext") -> dict[str, Any]:
+    return {
+        "resource": context.redact(gap.resource),
+        "required": gap.required,
+        "reason": context.redact(gap.reason),
+        "retryable": gap.retryable,
+        "usage": "required_fail_closed" if gap.required else "visible_only_not_routing_evidence_or_public_payload",
+    }
+
+
+def _graph_error_json(error: GraphError, context: "_RenderContext") -> dict[str, Any]:
+    return {
+        "code": context.redact(error.code),
+        "message": context.redact(error.message),
+        "retryable": error.retryable,
+    }
+
+
 def _context_budget_json(budget: ContextBudget | None, context: "_RenderContext") -> dict[str, Any] | None:
     if budget is None:
         return None
@@ -573,6 +655,8 @@ class _RenderInputs:
     candidate_payload: CandidateIssueCommentPayload | None
     memory_references: tuple[MemoryReference, ...]
     truncation_notices: tuple[TruncationNotice, ...]
+    read_gaps: tuple[ReadGap, ...]
+    errors: tuple[GraphError, ...]
     context_budget: ContextBudget | None
 
 
