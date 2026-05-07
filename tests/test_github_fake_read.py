@@ -12,15 +12,15 @@ from reviewgraph.github import (
     read_github_pr_with_fake_transport,
 )
 from reviewgraph.models import (
-    ActorPermissionGateResult,
+    ActorPermissionReasonCode,
     ClassifiedFinding,
     Confidence,
-    GateStatus,
     PullRequestContext,
     ReadGap,
     ReviewTarget,
     Severity,
 )
+from reviewgraph.permissions import ActorPermissionProbeResult, evaluate_actor_permission_gate, issue_comment_endpoint
 
 
 class FakeGitHubTransport:
@@ -92,14 +92,25 @@ def test_actor_permission_snapshot_serializes_when_present() -> None:
         ),
         "acme/widgets#42",
     )
-    result = result.with_actor_permission(
-        ActorPermissionGateResult(
-            status=GateStatus.PASS,
+    actor_permission = evaluate_actor_permission_gate(
+        ActorPermissionProbeResult(
             actor="octocat",
-            permission="write",
+            credential_principal="gh-user:octocat",
+            credential_source="pat",
+            repo_permission="write",
+            issue_comment_write=True,
+            check_method="fake_issue_comment_permission_probe",
+            endpoint_method="POST",
+            checked_target=result.review_target,
             checked_at="2026-05-06T00:00:00Z",
-        )
+            endpoint=issue_comment_endpoint(result.review_target),
+            endpoint_kind="issue_comment",
+            request_id="REQ-1",
+        ),
+        expected_target=result.review_target,
+        evaluated_at="2026-05-06T00:01:00Z",
     )
+    result = result.with_actor_permission(actor_permission)
 
     data = result.to_dict()
 
@@ -109,6 +120,90 @@ def test_actor_permission_snapshot_serializes_when_present() -> None:
         "permission": "write",
         "checked_at": "2026-05-06T00:00:00Z",
         "reason": None,
+        "reason_code": None,
+        "credential_principal": "gh-user:octocat",
+        "credential_source": "pat",
+        "repo_permission": "write",
+        "installation_permission": None,
+        "endpoint_permission": None,
+        "issue_comment_write": True,
+        "check_method": "fake_issue_comment_permission_probe",
+        "endpoint_method": "POST",
+        "checked_target": result.review_target.to_ordered_dict(),
+        "checked_target_hash": result.review_target.target_hash(),
+        "endpoint": "/repos/acme/widgets/issues/42/comments",
+        "endpoint_kind": "issue_comment",
+        "transport_summary": {
+            "endpoint_kind": "issue_comment_permission",
+            "retryable": False,
+            "reason_code": None,
+            "request_id": "REQ-1",
+        },
+    }
+
+
+def test_actor_permission_fail_closed_snapshot_serializes_with_reason_code() -> None:
+    result = read_github_pr_with_fake_transport(
+        FakeGitHubTransport(
+            pr=_pr_payload(),
+            files=[
+                {
+                    "path": "src/cache.py",
+                    "status": "modified",
+                    "patch": "@@ -1 +1 @@\n+new\n",
+                }
+            ],
+        ),
+        "acme/widgets#42",
+    )
+    actor_permission = evaluate_actor_permission_gate(
+        ActorPermissionProbeResult(
+            actor="octocat",
+            credential_principal="gh-user:octocat",
+            credential_source="pat",
+            repo_permission="write",
+            issue_comment_write=True,
+            check_method="fake_issue_comment_permission_probe",
+            endpoint_method="POST",
+            checked_target=result.review_target,
+            checked_at="2026-05-06T00:00:00Z",
+            endpoint=issue_comment_endpoint(result.review_target),
+            endpoint_kind="issue_comment",
+            transport_reason_code=ActorPermissionReasonCode.RATE_LIMITED,
+            request_id="REQ-2",
+        ),
+        expected_target=result.review_target,
+        evaluated_at="2026-05-06T00:01:00Z",
+    )
+    result = result.with_actor_permission(actor_permission)
+
+    data = result.to_dict()
+
+    assert data["actor_permission"] == {
+        "status": "fail",
+        "actor": "octocat",
+        "permission": "write",
+        "checked_at": "2026-05-06T00:00:00Z",
+        "reason": "permission probe failed: rate_limited",
+        "reason_code": "rate_limited",
+        "credential_principal": "gh-user:octocat",
+        "credential_source": "pat",
+        "repo_permission": "write",
+        "installation_permission": None,
+        "endpoint_permission": None,
+        "issue_comment_write": True,
+        "check_method": "fake_issue_comment_permission_probe",
+        "endpoint_method": "POST",
+        "checked_target": result.review_target.to_ordered_dict(),
+        "checked_target_hash": result.review_target.target_hash(),
+        "endpoint": "/repos/acme/widgets/issues/42/comments",
+        "endpoint_kind": "issue_comment",
+        "transport_summary": {
+            "endpoint_kind": "issue_comment_permission",
+            "retryable": True,
+            "reason_code": "rate_limited",
+            "request_id": "REQ-2",
+        },
     }
 
 

@@ -8,6 +8,8 @@ import pytest
 
 from reviewgraph.models import (
     ActorPermissionGateResult,
+    ActorPermissionReasonCode,
+    ActorPermissionTransportSummary,
     ApprovalDecision,
     ArtifactKind,
     CandidateIssueCommentPayload,
@@ -612,6 +614,20 @@ def test_side_effect_contracts_bind_approval_finalization_and_writer_metadata() 
         actor="reviewgraph-bot",
         permission="write",
         checked_at="2026-05-06T01:00:00Z",
+        credential_principal="gh-user:reviewgraph-bot",
+        credential_source="pat",
+        repo_permission="write",
+        issue_comment_write=True,
+        check_method="fake_issue_comment_permission_probe",
+        endpoint_method="POST",
+        checked_target=target.to_ordered_dict(),
+        checked_target_hash=target.target_hash(),
+        endpoint="/repos/acme/widgets/issues/42/comments",
+        endpoint_kind="issue_comment",
+        transport_summary=ActorPermissionTransportSummary(
+            endpoint_kind="issue_comment_permission",
+            retryable=False,
+        ),
     )
     interaction_gate = PostInteractionGateResult(status=GateStatus.PASS, interactive=True)
     validation = PayloadValidationResult(
@@ -646,6 +662,98 @@ def test_side_effect_contracts_bind_approval_finalization_and_writer_metadata() 
     assert reconciliation.trusted_actor == "reviewgraph-bot"
     assert finalization.state == FinalizationState.FINALIZED
     assert writer.status == WriterStatus.NOT_CALLED
+
+
+def test_actor_permission_pass_requires_complete_consistent_endpoint_proof() -> None:
+    target = _target()
+    gate = _valid_actor_permission_gate(target)
+
+    assert gate.status == GateStatus.PASS
+
+    invalid_cases = (
+        lambda: ActorPermissionGateResult(
+            **{**_actor_permission_gate_kwargs(target), "permission": "read"}
+        ),
+        lambda: ActorPermissionGateResult(
+            **{**_actor_permission_gate_kwargs(target), "actor": "ghp_abcdefghijklmnopqrstuvwxyz123456"}
+        ),
+        lambda: ActorPermissionGateResult(
+            **{
+                **_actor_permission_gate_kwargs(target),
+                "credential_principal": "raw-token-ghp_abcdefghijklmnopqrstuvwxyz123456",
+            }
+        ),
+        lambda: ActorPermissionGateResult(
+            **{**_actor_permission_gate_kwargs(target), "checked_at": "not-a-time"}
+        ),
+        lambda: ActorPermissionGateResult(
+            **{**_actor_permission_gate_kwargs(target), "checked_at": "2026-99-99T99:99:99Z"}
+        ),
+        lambda: ActorPermissionGateResult(
+            **{**_actor_permission_gate_kwargs(target), "checked_at": "2026-02-31T00:00:00Z"}
+        ),
+        lambda: ActorPermissionGateResult(
+            **{**_actor_permission_gate_kwargs(target), "credential_source": "mystery"}
+        ),
+        lambda: ActorPermissionGateResult(
+            **{**_actor_permission_gate_kwargs(target), "check_method": "anything"}
+        ),
+        lambda: ActorPermissionGateResult(
+            **{**_actor_permission_gate_kwargs(target), "endpoint_method": "GET"}
+        ),
+        lambda: ActorPermissionGateResult(
+            **{**_actor_permission_gate_kwargs(target), "endpoint_kind": "pull_request_review"}
+        ),
+        lambda: ActorPermissionGateResult(
+            **{**_actor_permission_gate_kwargs(target), "endpoint": "/repos/acme/widgets/issues/43/comments"}
+        ),
+        lambda: ActorPermissionGateResult(
+            **{**_actor_permission_gate_kwargs(target), "checked_target_hash": "sha256:wrong"}
+        ),
+        lambda: ActorPermissionGateResult(
+            **{
+                **_actor_permission_gate_kwargs(target),
+                "checked_target": {
+                    "owner_repo": "acme/widgets",
+                    "pr_number": 42,
+                },
+                "checked_target_hash": "sha256:9b73d2cef2e94efaf9b9fa27c159ae25fcbcb94f45b77dc004fe64eaa0d0852e",
+            }
+        ),
+        lambda: ActorPermissionGateResult(
+            **{**_actor_permission_gate_kwargs(target), "repo_permission": None}
+        ),
+        lambda: ActorPermissionGateResult(
+            **{
+                **_actor_permission_gate_kwargs(target),
+                "repo_permission": "write",
+                "endpoint_permission": "issues:write",
+            }
+        ),
+        lambda: ActorPermissionGateResult(
+            **{
+                **_actor_permission_gate_kwargs(target),
+                "transport_summary": ActorPermissionTransportSummary(
+                    endpoint_kind="other_permission",
+                    retryable=False,
+                ),
+            }
+        ),
+        lambda: ActorPermissionGateResult(
+            **{
+                **_actor_permission_gate_kwargs(target),
+                "transport_summary": ActorPermissionTransportSummary(
+                    endpoint_kind="issue_comment_permission",
+                    retryable=True,
+                    reason_code=ActorPermissionReasonCode.TIMEOUT,
+                ),
+            }
+        ),
+    )
+
+    for build in invalid_cases:
+        with pytest.raises(ValueError):
+            build()
 
 
 @pytest.mark.parametrize(
@@ -843,8 +951,144 @@ def test_actionable_memory_requires_trusted_unresolved_supported_actor(kwargs: d
             redaction_status=RedactionStatus(redacted=False, replacement_count=0),
         ),
         lambda: ActorPermissionGateResult(GateStatus.PASS, None, "write", "2026-05-06T01:00:00Z"),
+        lambda: ActorPermissionGateResult(GateStatus.PASS, "reviewgraph-bot", "write", "2026-05-06T01:00:00Z"),
         lambda: ActorPermissionGateResult("pass", "reviewgraph-bot", "write", "2026-05-06T01:00:00Z"),
         lambda: ActorPermissionGateResult(GateStatus.FAIL, "", None, None),
+        lambda: ActorPermissionGateResult(GateStatus.FAIL, None, None, None),
+        lambda: ActorPermissionGateResult(
+            GateStatus.FAIL,
+            "ghp_abcdefghijklmnopqrstuvwxyz123456",
+            None,
+            None,
+            reason_code=ActorPermissionReasonCode.UNKNOWN_ACTOR,
+            transport_summary=ActorPermissionTransportSummary(
+                endpoint_kind="issue_comment_permission",
+                retryable=False,
+            ),
+        ),
+        lambda: ActorPermissionGateResult(
+            GateStatus.FAIL,
+            None,
+            None,
+            None,
+            reason="raw stderr ghp_abcdefghijklmnopqrstuvwxyz123456",
+            reason_code=ActorPermissionReasonCode.UNKNOWN_ACTOR,
+            transport_summary=ActorPermissionTransportSummary(
+                endpoint_kind="issue_comment_permission",
+                retryable=False,
+            ),
+        ),
+        lambda: ActorPermissionGateResult(GateStatus.UNKNOWN, None, None, None),
+        lambda: ActorPermissionGateResult(
+            GateStatus.PASS,
+            "reviewgraph-bot",
+            "write",
+            "2026-05-06T01:00:00Z",
+            reason_code=ActorPermissionReasonCode.UNKNOWN_ACTOR,
+        ),
+        lambda: ActorPermissionTransportSummary("issue_comment_permission", "false"),
+        lambda: ActorPermissionTransportSummary("issue_comment_permission", False, request_id="ghp_secret"),
+        lambda: ActorPermissionTransportSummary(
+            "issue_comment_permission",
+            False,
+            "unknown_actor",
+        ),
+        lambda: ActorPermissionGateResult(
+            GateStatus.FAIL,
+            None,
+            None,
+            None,
+            reason_code=ActorPermissionReasonCode.UNKNOWN_ACTOR,
+            transport_summary=ActorPermissionTransportSummary(
+                endpoint_kind="issue_comment_permission",
+                retryable=False,
+                reason_code=ActorPermissionReasonCode.UNKNOWN_ACTOR,
+            ),
+        ),
+        lambda: ActorPermissionGateResult(
+            GateStatus.FAIL,
+            None,
+            None,
+            None,
+            reason_code=ActorPermissionReasonCode.TIMEOUT,
+            transport_summary=ActorPermissionTransportSummary(
+                endpoint_kind="issue_comment_permission",
+                retryable=False,
+                reason_code=ActorPermissionReasonCode.TIMEOUT,
+            ),
+        ),
+        lambda: ActorPermissionGateResult(
+            GateStatus.FAIL,
+            None,
+            None,
+            None,
+            reason_code=ActorPermissionReasonCode.FORBIDDEN,
+            transport_summary=ActorPermissionTransportSummary(
+                endpoint_kind="issue_comment_permission",
+                retryable=True,
+                reason_code=ActorPermissionReasonCode.FORBIDDEN,
+            ),
+        ),
+        lambda: ActorPermissionGateResult(
+            GateStatus.FAIL,
+            None,
+            "owner",
+            None,
+            reason_code=ActorPermissionReasonCode.UNKNOWN_PERMISSION,
+            repo_permission="owner",
+            transport_summary=ActorPermissionTransportSummary(
+                endpoint_kind="issue_comment_permission",
+                retryable=False,
+            ),
+        ),
+        lambda: ActorPermissionGateResult(
+            GateStatus.FAIL,
+            None,
+            None,
+            "not-a-time",
+            reason_code=ActorPermissionReasonCode.MALFORMED_RESPONSE,
+            transport_summary=ActorPermissionTransportSummary(
+                endpoint_kind="issue_comment_permission",
+                retryable=False,
+            ),
+        ),
+        lambda: ActorPermissionGateResult(
+            GateStatus.FAIL,
+            None,
+            None,
+            None,
+            reason_code=ActorPermissionReasonCode.UNKNOWN_CREDENTIAL_SOURCE,
+            credential_source="raw token",
+            transport_summary=ActorPermissionTransportSummary(
+                endpoint_kind="issue_comment_permission",
+                retryable=False,
+            ),
+        ),
+        lambda: ActorPermissionGateResult(
+            GateStatus.FAIL,
+            None,
+            None,
+            None,
+            reason_code=ActorPermissionReasonCode.TARGET_MISMATCH,
+            check_method="other_probe",
+            transport_summary=ActorPermissionTransportSummary(
+                endpoint_kind="issue_comment_permission",
+                retryable=False,
+            ),
+        ),
+        lambda: ActorPermissionGateResult(
+            GateStatus.FAIL,
+            None,
+            None,
+            None,
+            reason_code=ActorPermissionReasonCode.TARGET_MISMATCH,
+            endpoint="/repos/acme/widgets/issues/42/comments?token=secret",
+            transport_summary=ActorPermissionTransportSummary(
+                endpoint_kind="issue_comment_permission",
+                retryable=False,
+            ),
+        ),
+        lambda: ActorPermissionTransportSummary("raw_issue_comment_permission", False),
         lambda: PostInteractionGateResult(GateStatus.PASS, False),
         lambda: PostInteractionGateResult("pass", True),
         lambda: PayloadValidationResult(GateStatus.PASS, None, "sha256:target"),
@@ -1086,6 +1330,34 @@ def _target() -> ReviewTarget:
         merge_base_sha="merge789",
         diff_basis="merge_base",
     )
+
+
+def _valid_actor_permission_gate(target: ReviewTarget | None = None) -> ActorPermissionGateResult:
+    review_target = target or _target()
+    return ActorPermissionGateResult(**_actor_permission_gate_kwargs(review_target))
+
+
+def _actor_permission_gate_kwargs(target: ReviewTarget) -> dict[str, object]:
+    return {
+        "status": GateStatus.PASS,
+        "actor": "reviewgraph-bot",
+        "permission": "write",
+        "checked_at": "2026-05-06T01:00:00Z",
+        "credential_principal": "gh-user:reviewgraph-bot",
+        "credential_source": "pat",
+        "repo_permission": "write",
+        "issue_comment_write": True,
+        "check_method": "fake_issue_comment_permission_probe",
+        "endpoint_method": "POST",
+        "checked_target": target.to_ordered_dict(),
+        "checked_target_hash": target.target_hash(),
+        "endpoint": "/repos/acme/widgets/issues/42/comments",
+        "endpoint_kind": "issue_comment",
+        "transport_summary": ActorPermissionTransportSummary(
+            endpoint_kind="issue_comment_permission",
+            retryable=False,
+        ),
+    }
 
 
 def _final_payload(

@@ -1173,15 +1173,39 @@ def _with_current_redaction_status(result: GitHubReadResult) -> GitHubReadResult
     )
 
 
-def _actor_permission_dict(value: ActorPermissionGateResult | None) -> dict[str, str | None] | None:
+def _actor_permission_dict(value: ActorPermissionGateResult | None) -> dict[str, object] | None:
     if value is None:
         return None
+    transport_summary = None
+    if value.transport_summary is not None:
+        transport_summary = {
+            "endpoint_kind": value.transport_summary.endpoint_kind,
+            "retryable": value.transport_summary.retryable,
+            "reason_code": None
+            if value.transport_summary.reason_code is None
+            else value.transport_summary.reason_code.value,
+            "request_id": value.transport_summary.request_id,
+        }
     return {
         "status": value.status.value,
         "actor": value.actor,
         "permission": value.permission,
         "checked_at": value.checked_at,
         "reason": value.reason,
+        "reason_code": None if value.reason_code is None else value.reason_code.value,
+        "credential_principal": value.credential_principal,
+        "credential_source": value.credential_source,
+        "repo_permission": value.repo_permission,
+        "installation_permission": value.installation_permission,
+        "endpoint_permission": value.endpoint_permission,
+        "issue_comment_write": value.issue_comment_write,
+        "check_method": value.check_method,
+        "endpoint_method": value.endpoint_method,
+        "checked_target": None if value.checked_target is None else dict(value.checked_target),
+        "checked_target_hash": value.checked_target_hash,
+        "endpoint": value.endpoint,
+        "endpoint_kind": value.endpoint_kind,
+        "transport_summary": transport_summary,
     }
 
 

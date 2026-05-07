@@ -93,6 +93,7 @@ Golden tests should protect product behavior without freezing incidental wording
 - Config rejects unknown trigger fields, `triggers.stages`, unsupported MVP capabilities, and `verdict_power: approve`.
 - `ReviewState` includes explicit gate state for read gaps, redaction, actor/permission, payload validation, marker reconciliation, finalization, approval, and writer result.
 - Reviewer output cannot self-declare postability, blocking, final priority, or GitHub destination.
+- Actor/permission gate harnesses must prove endpoint-specific issue-comment write ability with fake permission probes, canonical `ReviewTarget` binding, deterministic checked-at freshness, stable fail-closed reason codes, output-only compatibility permission derivation, and redacted transport summaries. They must also prove the permission module does not import live GitHub, approval, finalization, graph post-mode, posting, or writer boundaries.
 
 ### Graph Cursor
 

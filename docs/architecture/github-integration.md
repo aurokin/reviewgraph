@@ -59,6 +59,8 @@ Patch-derived changed ranges are deliberately conservative target hunk ranges fo
 
 Raw typed PR context may exist in memory for graph use. Anything serialized for logs, traces, markdown, JSON, errors, or local notes must use the adapter's redacted serialization/status path.
 
+Actor/permission snapshots are serialized as structured, redacted data when present. The snapshot includes `status`, authenticated actor, derived display permission, checked-at timestamp, machine `reason_code`, credential principal/source, repo permission, GitHub App installation permission, normalized endpoint permission, issue-comment write ability, check method, `POST` endpoint method, canonical checked target and target hash, issue-comment endpoint path/kind, and an allowlisted transport summary. The transport summary records the permission-probe endpoint kind, retryability, stable reason code when a transport failure occurred, and request ID when available; it must not carry tokens, raw stderr, request headers, or unredacted response bodies.
+
 Live read smoke artifacts use a stable local JSON shape:
 
 - `status`: `blocked`, `skipped`, `succeeded`, or `fail_closed`

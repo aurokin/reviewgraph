@@ -103,6 +103,25 @@ class ApprovalProofReasonCode(StrEnum):
     REQUEST_CHANGES_PUBLIC_TEXT_DEFERRED = "request_changes_public_text_deferred"
 
 
+class ActorPermissionReasonCode(StrEnum):
+    UNKNOWN_ACTOR = "unknown_actor"
+    UNKNOWN_CREDENTIAL_SOURCE = "unknown_credential_source"
+    UNKNOWN_PERMISSION = "unknown_permission"
+    INSUFFICIENT_ENDPOINT_PERMISSION = "insufficient_endpoint_permission"
+    MISSING_CREDENTIAL_PRINCIPAL = "missing_credential_principal"
+    MISSING_CHECK_METHOD = "missing_check_method"
+    MISSING_CHECKED_TARGET = "missing_checked_target"
+    MISSING_CHECKED_AT = "missing_checked_at"
+    TARGET_MISMATCH = "target_mismatch"
+    TIMEOUT = "timeout"
+    RATE_LIMITED = "rate_limited"
+    FORBIDDEN = "forbidden"
+    NOT_FOUND = "not_found"
+    UNAVAILABLE = "unavailable"
+    MALFORMED_RESPONSE = "malformed_response"
+    STALE_CACHED_PROOF = "stale_cached_proof"
+
+
 class FinalizationState(StrEnum):
     NOT_READY = "not_ready"
     FINALIZED = "finalized"
@@ -137,6 +156,40 @@ ALLOWED_REVIEWER_CAPABILITIES = frozenset({"none", "diff_context"})
 ALLOWED_REVIEWER_VERDICT_POWERS = frozenset({"comment", "request_changes"})
 ALLOWED_RAW_FINDING_EVIDENCE_SOURCES = frozenset({"diff", "trusted_memory"})
 INERT_REVIEWER_TOOL_PREFIX = "future-"
+ALLOWED_ACTOR_PERMISSION_CREDENTIAL_SOURCES = frozenset(
+    {"pat", "fine_grained_pat", "github_app_installation", "github_app_user"}
+)
+ALLOWED_ACTOR_PERMISSION_REPO_PERMISSIONS = frozenset({"read", "triage", "write", "maintain", "admin"})
+WRITE_ACTOR_PERMISSION_REPO_PERMISSIONS = frozenset({"write", "maintain", "admin"})
+ALLOWED_ACTOR_PERMISSION_ENDPOINT_PERMISSIONS = frozenset(
+    {"issues:read", "issues:write", "pull_requests:read", "pull_requests:write"}
+)
+WRITE_ACTOR_PERMISSION_ENDPOINT_PERMISSIONS = frozenset({"issues:write", "pull_requests:write"})
+ALLOWED_ACTOR_PERMISSION_REQUEST_ID_CHARS = frozenset(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._:/#-"
+)
+SECRET_ACTOR_PERMISSION_REQUEST_ID_FRAGMENTS = ("token", "ghp_", "github_pat_", "gho_", "ghs_", "ghu_")
+TRANSPORT_ACTOR_PERMISSION_REASON_CODES = frozenset(
+    {
+        ActorPermissionReasonCode.TIMEOUT,
+        ActorPermissionReasonCode.RATE_LIMITED,
+        ActorPermissionReasonCode.FORBIDDEN,
+        ActorPermissionReasonCode.NOT_FOUND,
+        ActorPermissionReasonCode.UNAVAILABLE,
+        ActorPermissionReasonCode.MALFORMED_RESPONSE,
+    }
+)
+RETRYABLE_ACTOR_PERMISSION_REASON_CODES = frozenset(
+    {
+        ActorPermissionReasonCode.TIMEOUT,
+        ActorPermissionReasonCode.RATE_LIMITED,
+        ActorPermissionReasonCode.UNAVAILABLE,
+    }
+)
+ACTOR_PERMISSION_CHECK_METHOD = "fake_issue_comment_permission_probe"
+ACTOR_PERMISSION_ENDPOINT_KIND = "issue_comment"
+ACTOR_PERMISSION_ENDPOINT_METHOD = "POST"
+ACTOR_PERMISSION_TRANSPORT_ENDPOINT_KIND = "issue_comment_permission"
 
 
 def validate_priority(priority: int) -> int:
@@ -216,6 +269,166 @@ def _parse_reviewgraph_marker(marker_line: str) -> dict[str, str] | None:
         except ValueError:
             return None
     return fields
+
+
+def _is_rfc3339_utc_z(value: str) -> bool:
+    if not isinstance(value, str) or len(value) < 20 or not value.endswith("Z"):
+        return False
+    date_time = value[:-1]
+    if "T" not in date_time:
+        return False
+    date, time = date_time.split("T", 1)
+    if len(date) != 10 or date[4] != "-" or date[7] != "-":
+        return False
+    if len(time) < 8 or time[2] != ":" or time[5] != ":":
+        return False
+    year = date[0:4]
+    month = date[5:7]
+    day = date[8:10]
+    hour = time[0:2]
+    minute = time[3:5]
+    second = time[6:8]
+    if not all(part.isdecimal() for part in (year, month, day, hour, minute, second)):
+        return False
+    remainder = time[8:]
+    if not remainder:
+        return True
+    return (
+        len(remainder) > 1
+        and remainder[0] == "."
+        and all(char.isdecimal() for char in remainder[1:])
+    )
+
+
+def _is_realistic_rfc3339_utc_z(value: str) -> bool:
+    if not _is_rfc3339_utc_z(value):
+        return False
+    date_time = value[:-1]
+    date, time = date_time.split("T", 1)
+    year = int(date[0:4])
+    month = int(date[5:7])
+    day = int(date[8:10])
+    hour = int(time[0:2])
+    minute = int(time[3:5])
+    second = int(time[6:8])
+    if not (1 <= month <= 12 and 1 <= day <= 31 and hour <= 23 and minute <= 59 and second <= 59):
+        return False
+    days_by_month = (31, 29 if _is_leap_year(year) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+    return day <= days_by_month[month - 1]
+
+
+def _is_leap_year(year: int) -> bool:
+    return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
+
+
+def _is_safe_actor_permission_identity(value: str) -> bool:
+    if not isinstance(value, str) or not value:
+        return False
+    if len(value) > 128:
+        return False
+    allowed = ALLOWED_ACTOR_PERMISSION_REQUEST_ID_CHARS | frozenset("[]@")
+    if any(char not in allowed for char in value):
+        return False
+    return not any(
+        secret in value.casefold() for secret in SECRET_ACTOR_PERMISSION_REQUEST_ID_FRAGMENTS
+    )
+
+
+def _is_safe_actor_permission_reason(value: str) -> bool:
+    if not isinstance(value, str) or not value:
+        return False
+    if len(value) > 256:
+        return False
+    if any(secret in value.casefold() for secret in SECRET_ACTOR_PERMISSION_REQUEST_ID_FRAGMENTS):
+        return False
+    return all(char in "\n\r\t" or 32 <= ord(char) <= 126 for char in value)
+
+
+def _actor_permission_expected_endpoint(checked_target: Mapping[str, object]) -> str | None:
+    if tuple(checked_target) != ("owner_repo", "pr_number", "base_sha", "head_sha", "merge_base_sha", "diff_basis"):
+        return None
+    owner_repo = checked_target.get("owner_repo")
+    pr_number = checked_target.get("pr_number")
+    base_sha = checked_target.get("base_sha")
+    head_sha = checked_target.get("head_sha")
+    merge_base_sha = checked_target.get("merge_base_sha")
+    diff_basis = checked_target.get("diff_basis")
+    if not isinstance(owner_repo, str) or "/" not in owner_repo:
+        return None
+    if type(pr_number) is not int or pr_number <= 0:
+        return None
+    if not isinstance(base_sha, str) or not base_sha:
+        return None
+    if not isinstance(head_sha, str) or not head_sha:
+        return None
+    if merge_base_sha is not None and not isinstance(merge_base_sha, str):
+        return None
+    if not isinstance(diff_basis, str) or not diff_basis:
+        return None
+    owner, repo = owner_repo.split("/", 1)
+    return f"/repos/{owner}/{repo}/issues/{pr_number}/comments"
+
+
+def _actor_permission_derived_permission(
+    *,
+    credential_source: str | None,
+    repo_permission: str | None,
+    installation_permission: str | None,
+    endpoint_permission: str | None,
+) -> str | None:
+    if credential_source not in ALLOWED_ACTOR_PERMISSION_CREDENTIAL_SOURCES:
+        return None
+    if repo_permission is not None and repo_permission not in ALLOWED_ACTOR_PERMISSION_REPO_PERMISSIONS:
+        return None
+    if (
+        installation_permission is not None
+        and installation_permission not in ALLOWED_ACTOR_PERMISSION_ENDPOINT_PERMISSIONS
+    ):
+        return None
+    if endpoint_permission is not None and endpoint_permission not in ALLOWED_ACTOR_PERMISSION_ENDPOINT_PERMISSIONS:
+        return None
+    if credential_source == "pat":
+        if installation_permission is not None or endpoint_permission is not None:
+            return None
+        permission = repo_permission
+    elif credential_source == "fine_grained_pat":
+        if repo_permission is not None or installation_permission is not None:
+            return None
+        permission = endpoint_permission
+    elif credential_source == "github_app_installation":
+        if repo_permission is not None or installation_permission is None:
+            return None
+        if endpoint_permission is not None and endpoint_permission != installation_permission:
+            return None
+        permission = installation_permission
+    elif credential_source == "github_app_user":
+        if repo_permission is not None or installation_permission is not None:
+            return None
+        permission = endpoint_permission
+    else:
+        return None
+    if permission in WRITE_ACTOR_PERMISSION_REPO_PERMISSIONS:
+        return permission
+    if permission in WRITE_ACTOR_PERMISSION_ENDPOINT_PERMISSIONS:
+        return permission
+    return None
+
+
+def _actor_permission_failure_permission(
+    repo_permission: str | None,
+    installation_permission: str | None,
+    endpoint_permission: str | None,
+) -> str | None:
+    if repo_permission is not None and repo_permission in ALLOWED_ACTOR_PERMISSION_REPO_PERMISSIONS:
+        return repo_permission
+    if (
+        installation_permission is not None
+        and installation_permission in ALLOWED_ACTOR_PERMISSION_ENDPOINT_PERMISSIONS
+    ):
+        return installation_permission
+    if endpoint_permission is not None and endpoint_permission in ALLOWED_ACTOR_PERMISSION_ENDPOINT_PERMISSIONS:
+        return endpoint_permission
+    return None
 
 
 def _require_non_negative_int(value: int, field_name: str) -> None:
@@ -1449,24 +1662,202 @@ class PostInteractionGateResult:
 
 
 @dataclass(frozen=True)
+class ActorPermissionTransportSummary:
+    endpoint_kind: str
+    retryable: bool
+    reason_code: ActorPermissionReasonCode | None = None
+    request_id: str | None = None
+
+    def __post_init__(self) -> None:
+        _require_non_empty(self.endpoint_kind, "actor permission transport summary endpoint_kind")
+        if self.endpoint_kind != ACTOR_PERMISSION_TRANSPORT_ENDPOINT_KIND:
+            raise ValueError("actor permission transport summary endpoint_kind must be issue_comment_permission")
+        if not isinstance(self.retryable, bool):
+            raise ValueError("actor permission transport summary retryable must be a bool")
+        if self.reason_code is not None and not isinstance(self.reason_code, ActorPermissionReasonCode):
+            raise ValueError("actor permission transport summary reason_code must be an ActorPermissionReasonCode")
+        _require_optional_non_empty(self.request_id, "actor permission transport summary request_id")
+        if self.request_id is not None:
+            if len(self.request_id) > 128 or any(
+                char not in ALLOWED_ACTOR_PERMISSION_REQUEST_ID_CHARS for char in self.request_id
+            ):
+                raise ValueError("actor permission transport summary request_id must be allowlisted")
+            if any(
+                secret in self.request_id.casefold()
+                for secret in SECRET_ACTOR_PERMISSION_REQUEST_ID_FRAGMENTS
+            ):
+                raise ValueError("actor permission transport summary request_id must not contain secrets")
+
+
+@dataclass(frozen=True)
 class ActorPermissionGateResult:
     status: GateStatus
     actor: str | None
     permission: str | None
     checked_at: str | None
     reason: str | None = None
+    reason_code: ActorPermissionReasonCode | None = None
+    credential_principal: str | None = None
+    credential_source: str | None = None
+    repo_permission: str | None = None
+    installation_permission: str | None = None
+    endpoint_permission: str | None = None
+    issue_comment_write: bool | None = None
+    check_method: str | None = None
+    endpoint_method: str | None = None
+    checked_target: Mapping[str, object] | None = None
+    checked_target_hash: str | None = None
+    endpoint: str | None = None
+    endpoint_kind: str | None = None
+    transport_summary: ActorPermissionTransportSummary | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.status, GateStatus):
             raise ValueError("actor permission gate status must be a GateStatus")
+        if self.status == GateStatus.UNKNOWN:
+            raise ValueError("actor permission gate status must be pass or fail")
         _require_optional_non_empty(self.actor, "actor permission gate actor")
         _require_optional_non_empty(self.permission, "actor permission gate permission")
         _require_optional_non_empty(self.checked_at, "actor permission gate checked_at")
         _require_optional_non_empty(self.reason, "actor permission gate reason")
+        if self.actor is not None and not _is_safe_actor_permission_identity(self.actor):
+            raise ValueError("actor permission gate actor must be allowlisted")
+        if self.credential_principal is not None and not _is_safe_actor_permission_identity(
+            self.credential_principal
+        ):
+            raise ValueError("actor permission gate credential_principal must be allowlisted")
+        if self.reason is not None and not _is_safe_actor_permission_reason(self.reason):
+            raise ValueError("actor permission gate reason must be allowlisted")
+        if self.reason_code is not None and not isinstance(self.reason_code, ActorPermissionReasonCode):
+            raise ValueError("actor permission gate reason_code must be an ActorPermissionReasonCode")
+        _require_optional_non_empty(self.credential_principal, "actor permission gate credential_principal")
+        _require_optional_non_empty(self.credential_source, "actor permission gate credential_source")
+        _require_optional_non_empty(self.repo_permission, "actor permission gate repo_permission")
+        _require_optional_non_empty(self.installation_permission, "actor permission gate installation_permission")
+        _require_optional_non_empty(self.endpoint_permission, "actor permission gate endpoint_permission")
+        if self.issue_comment_write is not None and not isinstance(self.issue_comment_write, bool):
+            raise ValueError("actor permission gate issue_comment_write must be a bool")
+        _require_optional_non_empty(self.check_method, "actor permission gate check_method")
+        _require_optional_non_empty(self.endpoint_method, "actor permission gate endpoint_method")
+        if self.checked_target is not None:
+            if not isinstance(self.checked_target, Mapping):
+                raise ValueError("actor permission gate checked_target must be a mapping")
+            if not all(isinstance(key, str) for key in self.checked_target):
+                raise ValueError("actor permission gate checked_target keys must be strings")
+            object.__setattr__(self, "checked_target", MappingProxyType(dict(self.checked_target)))
+        _require_optional_hash_like(self.checked_target_hash, "actor permission gate checked_target_hash")
+        _require_optional_non_empty(self.endpoint, "actor permission gate endpoint")
+        _require_optional_non_empty(self.endpoint_kind, "actor permission gate endpoint_kind")
+        if self.transport_summary is not None and not isinstance(
+            self.transport_summary, ActorPermissionTransportSummary
+        ):
+            raise ValueError("actor permission gate transport_summary must be an ActorPermissionTransportSummary")
         if self.status == GateStatus.PASS:
-            for name in ("actor", "permission", "checked_at"):
+            for name in (
+                "actor",
+                "permission",
+                "checked_at",
+                "credential_principal",
+                "credential_source",
+                "check_method",
+                "endpoint_method",
+                "checked_target",
+                "checked_target_hash",
+                "endpoint",
+                "endpoint_kind",
+                "transport_summary",
+            ):
                 if getattr(self, name) is None:
                     raise ValueError(f"actor permission gate pass requires {name}")
+            if self.issue_comment_write is not True:
+                raise ValueError("actor permission gate pass requires issue_comment_write")
+            if self.reason_code is not None:
+                raise ValueError("actor permission gate pass must not include reason_code")
+            if self.reason is not None:
+                raise ValueError("actor permission gate pass must not include reason")
+            if self.permission in {"read", "triage", "issues:read", "pull_requests:read"}:
+                raise ValueError("actor permission gate pass requires write permission")
+            derived_permission = _actor_permission_derived_permission(
+                credential_source=self.credential_source,
+                repo_permission=self.repo_permission,
+                installation_permission=self.installation_permission,
+                endpoint_permission=self.endpoint_permission,
+            )
+            if derived_permission is None or self.permission != derived_permission:
+                raise ValueError("actor permission gate pass permission proof is inconsistent")
+            if self.check_method != ACTOR_PERMISSION_CHECK_METHOD:
+                raise ValueError("actor permission gate pass requires permission check_method")
+            if self.endpoint_method != ACTOR_PERMISSION_ENDPOINT_METHOD:
+                raise ValueError("actor permission gate pass requires POST endpoint_method")
+            if self.endpoint_kind != ACTOR_PERMISSION_ENDPOINT_KIND:
+                raise ValueError("actor permission gate pass requires issue_comment endpoint_kind")
+            if self.checked_at is not None and not _is_realistic_rfc3339_utc_z(self.checked_at):
+                raise ValueError("actor permission gate pass requires UTC RFC3339 checked_at")
+            if self.checked_target is not None:
+                expected_endpoint = _actor_permission_expected_endpoint(self.checked_target)
+                if expected_endpoint is None or self.endpoint != expected_endpoint:
+                    raise ValueError("actor permission gate pass endpoint does not match checked_target")
+                if self.checked_target_hash != _domain_json_hash(
+                    "reviewgraph.review_target.v1", dict(self.checked_target)
+                ):
+                    raise ValueError("actor permission gate pass checked_target_hash mismatch")
+            if self.transport_summary is not None:
+                if self.transport_summary.endpoint_kind != ACTOR_PERMISSION_TRANSPORT_ENDPOINT_KIND:
+                    raise ValueError("actor permission gate pass transport summary endpoint_kind mismatch")
+                if self.transport_summary.reason_code is not None:
+                    raise ValueError("actor permission gate pass transport summary must not include reason_code")
+                if self.transport_summary.retryable:
+                    raise ValueError("actor permission gate pass transport summary must not be retryable")
+        if self.status == GateStatus.FAIL and self.reason_code is None:
+            raise ValueError("actor permission gate failure requires reason_code")
+        if self.status == GateStatus.FAIL and self.transport_summary is None:
+            raise ValueError("actor permission gate failure requires transport_summary")
+        if self.status == GateStatus.FAIL and self.transport_summary is not None and self.reason_code is not None:
+            if self.permission is not None and self.permission != _actor_permission_failure_permission(
+                self.repo_permission,
+                self.installation_permission,
+                self.endpoint_permission,
+            ):
+                raise ValueError("actor permission gate failure permission proof is unsafe")
+            if self.checked_at is not None and not _is_realistic_rfc3339_utc_z(self.checked_at):
+                raise ValueError("actor permission gate failure checked_at must be validated")
+            if self.credential_source is not None and self.credential_source not in ALLOWED_ACTOR_PERMISSION_CREDENTIAL_SOURCES:
+                raise ValueError("actor permission gate failure credential_source is unsafe")
+            if self.repo_permission is not None and self.repo_permission not in ALLOWED_ACTOR_PERMISSION_REPO_PERMISSIONS:
+                raise ValueError("actor permission gate failure repo_permission is unsafe")
+            if (
+                self.installation_permission is not None
+                and self.installation_permission not in ALLOWED_ACTOR_PERMISSION_ENDPOINT_PERMISSIONS
+            ):
+                raise ValueError("actor permission gate failure installation_permission is unsafe")
+            if (
+                self.endpoint_permission is not None
+                and self.endpoint_permission not in ALLOWED_ACTOR_PERMISSION_ENDPOINT_PERMISSIONS
+            ):
+                raise ValueError("actor permission gate failure endpoint_permission is unsafe")
+            if self.check_method is not None and self.check_method != ACTOR_PERMISSION_CHECK_METHOD:
+                raise ValueError("actor permission gate failure check_method is unsafe")
+            if self.endpoint_method is not None and self.endpoint_method != ACTOR_PERMISSION_ENDPOINT_METHOD:
+                raise ValueError("actor permission gate failure endpoint_method is unsafe")
+            if self.endpoint_kind is not None and self.endpoint_kind != ACTOR_PERMISSION_ENDPOINT_KIND:
+                raise ValueError("actor permission gate failure endpoint_kind is unsafe")
+            if self.endpoint is not None:
+                if self.checked_target is None:
+                    raise ValueError("actor permission gate failure endpoint requires checked_target")
+                expected_endpoint = _actor_permission_expected_endpoint(self.checked_target)
+                if expected_endpoint is None or self.endpoint != expected_endpoint:
+                    raise ValueError("actor permission gate failure endpoint is unsafe")
+            transport_reason_code = self.transport_summary.reason_code
+            if transport_reason_code is not None:
+                if transport_reason_code not in TRANSPORT_ACTOR_PERMISSION_REASON_CODES:
+                    raise ValueError("actor permission gate transport summary reason_code must be transport failure")
+                if transport_reason_code != self.reason_code:
+                    raise ValueError("actor permission gate transport summary reason_code mismatch")
+            elif self.reason_code in TRANSPORT_ACTOR_PERMISSION_REASON_CODES - {ActorPermissionReasonCode.MALFORMED_RESPONSE}:
+                if transport_reason_code != self.reason_code:
+                    raise ValueError("actor permission gate transport summary reason_code mismatch")
+            if self.transport_summary.retryable != (transport_reason_code in RETRYABLE_ACTOR_PERMISSION_REASON_CODES):
+                raise ValueError("actor permission gate transport summary retryable mismatch")
 
 
 @dataclass(frozen=True)
