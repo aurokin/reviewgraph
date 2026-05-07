@@ -30,6 +30,7 @@ def build_conversation_memory(
                 resolved_status="unresolved",
                 trusted_operator_authors=trusted_operator_authors,
                 trusted_bot_authors=trusted_bot_authors,
+                thread_id=None,
             )
         )
     for review in pr.reviews:
@@ -52,6 +53,7 @@ def build_conversation_memory(
                     passive_reason=None if thread_actionable else _passive_thread_reason(thread),
                     force_passive=not thread_actionable,
                     fallback_path=thread.path,
+                    thread_id=thread.id,
                 )
             )
 
@@ -67,8 +69,9 @@ def _memory_from_comment(
     passive_reason: str | None = None,
     force_passive: bool = False,
     fallback_path: str | None = None,
+    thread_id: str | None = None,
 ) -> MemoryReference:
-    trusted = comment.trust_label == "trusted" and _is_trusted(
+    trusted = _is_trust_eligible(comment.trust_label, comment.source_provider) and _is_trusted(
         comment.author,
         comment.author_association,
         comment.author_type,
@@ -76,8 +79,17 @@ def _memory_from_comment(
         trusted_bot_authors,
     )
     actionable = trusted and not force_passive and resolved_status == "unresolved"
+    source_provider = _memory_source_provider(comment.source_provider)
+    source_id = comment.id if source_provider is not None else None
+    memory_thread_id = thread_id if source_provider is not None else None
+    memory_id = _memory_id(
+        source_provider=source_provider,
+        source_type=comment.source_type,
+        source_id=comment.id,
+        thread_id=memory_thread_id,
+    )
     return MemoryReference(
-        id=comment.id,
+        id=memory_id,
         trust_label="trusted" if trusted else "untrusted",
         resolved_status=resolved_status,
         source_type=comment.source_type,
@@ -91,6 +103,9 @@ def _memory_from_comment(
         line=comment.line,
         actionable=actionable,
         passive_reason=None if actionable else passive_reason or _passive_reason(trusted, resolved_status),
+        source_provider=source_provider,
+        source_id=source_id,
+        thread_id=memory_thread_id,
     )
 
 
@@ -100,15 +115,22 @@ def _memory_from_review(
     trusted_operator_authors: set[str],
     trusted_bot_authors: set[str],
 ) -> MemoryReference:
-    trusted = review.trust_label == "trusted" and _is_trusted(
+    trusted = _is_trust_eligible(review.trust_label, review.source_provider) and _is_trusted(
         review.author,
         review.author_association,
         review.author_type,
         trusted_operator_authors,
         trusted_bot_authors,
     )
+    source_provider = _memory_source_provider(review.source_provider)
+    source_id = review.id if source_provider is not None else None
     return MemoryReference(
-        id=review.id,
+        id=_memory_id(
+            source_provider=source_provider,
+            source_type=review.source_type,
+            source_id=review.id,
+            thread_id=None,
+        ),
         trust_label="trusted" if trusted else "untrusted",
         resolved_status="unresolved",
         source_type=review.source_type,
@@ -122,6 +144,8 @@ def _memory_from_review(
         passive_reason="review summary is passive until a later node interprets it"
         if trusted
         else "untrusted author",
+        source_provider=source_provider,
+        source_id=source_id,
     )
 
 
@@ -139,6 +163,32 @@ def _is_trusted(
         return False
     association = author_association.upper()
     return author in trusted_operator_authors or association in TRUSTED_ASSOCIATIONS
+
+
+def _is_trust_eligible(trust_label: str, source_provider: str) -> bool:
+    if source_provider == "github":
+        return True
+    if source_provider == "fixture":
+        return trust_label == "trusted"
+    return False
+
+
+def _memory_source_provider(source_provider: str) -> str | None:
+    return source_provider if source_provider != "fixture" else None
+
+
+def _memory_id(
+    *,
+    source_provider: str | None,
+    source_type: str,
+    source_id: str,
+    thread_id: str | None,
+) -> str:
+    if source_provider != "github":
+        return source_id
+    if source_type == "review_thread" and thread_id is not None:
+        return f"github:{source_type}:{thread_id}:{source_id}"
+    return f"github:{source_type}:{source_id}"
 
 
 def _thread_is_actionable(thread: PullRequestReviewThread) -> bool:

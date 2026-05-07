@@ -49,7 +49,7 @@ If metadata cannot be fetched, ReviewGraph may only know the parsed PR ref. That
 
 The paginated fake read path extends the adapter contract to files, issue comments, review comments, reviews, and thread state. Successful pagination returns complete resource coverage, no stale metadata/files-only read gaps, and `thread_state.available=true`. Expected page failures return fail-closed read state instead of partial PR context; page/cursor diagnostics are serialized through the redacted read-gap surface.
 
-Review comments are attached to review threads only when matching thread state was fetched. A fetched review comment without matching thread state is a required `thread_state_unknown` gap. Until GitHub trust policy is implemented, GitHub-derived comments and reviews default to `untrusted`.
+Review comments are attached to review threads only when matching thread state was fetched. A fetched review comment without matching thread state is a required `thread_state_unknown` gap. GitHub transport payloads cannot self-declare trust or provenance: inbound `trust_label` and `source_provider` fields are ignored, adapter-created comments and reviews are marked with `source_provider="github"`, and conversation memory derives final trust only from GitHub actor policy.
 
 Patch-derived changed ranges are deliberately conservative target hunk ranges for the diff-anchor protocol. Parseable modified, added, and renamed files with target-side additions can produce anchor metadata; renamed files preserve `previous_path`. Deleted files, binary or unavailable patches, oversized patches, unsupported hunk headers, malformed hunk body lines, target-empty hunks, or hunks without target-side additions produce anchor-unavailable metadata instead of false changed ranges.
 
@@ -63,8 +63,10 @@ Actionable review feedback should be filtered more carefully than passive memory
 
 - Trust explicit human authors with GitHub owner/member/collaborator associations, plus configured authenticated operators.
 - Trust only approved review bots by configuration.
-- Preserve seen comment/review IDs so already-processed feedback is not reprocessed.
+- Preserve namespaced GitHub memory IDs, raw `source_id`, and review-thread `thread_id` so already-processed feedback is not reprocessed or confused across resources.
 - Treat resolved review threads as non-actionable unless new unresolved follow-up appears.
+- Treat GitHub review summaries as passive until a later node interprets them.
+- Treat untrusted, resolved, unknown-thread, and review-summary memory as metadata-only: their bodies cannot become prompt instructions, reviewer prompt body data, verdict pressure, approval input, or public payload text.
 - Do not post replies to human-authored comments automatically. MVP may produce a local suggested reply for the human operator, but `suggested_reply` items are never included in ReviewGraph-created GitHub payloads.
 
 Adapters must paginate files, comments, review comments, and reviews. If ReviewGraph truncates changed files, patches, or conversation memory because of configured limits, it must surface that fact as a local note and avoid postable findings that depend on omitted context.

@@ -148,7 +148,7 @@ Oversized context should be retained as marker-only metadata when possible. Revi
 
 The package must not include the full reviewer config map, GitHub transports, approval state, finalization state, posting payload builders, writer clients, repository checkout handles, provider clients, process handles, or ambient tool callables. Tool names in reviewer config are inert metadata until a later explicit tool policy exists.
 
-Prompt input built from the package separates instructions from context data. PR conversation memory is labeled data; trusted actionable memory may include body text, while passive or untrusted memory is metadata-only in MVP. Passive or untrusted memory cannot become instructions, reviewer prompt body data, routing evidence, verdict pressure, approval input, or public payload text. Provider-bound previews are non-live harness artifacts: they serialize minimized package data, apply redaction, record redaction status, and keep raw-provider and raw-trace opt-ins disabled by default.
+Prompt input built from the package separates instructions from context data. PR conversation memory is labeled data; trusted actionable memory may include body text, while passive or untrusted memory is metadata-only in MVP. GitHub-derived memory also carries provider provenance (`source_provider`), raw resource identity (`source_id`), and review-thread identity (`thread_id`) when applicable so seen-state and citations do not rely on rendered prose. Passive or untrusted memory cannot become instructions, reviewer prompt body data, routing evidence, verdict pressure, approval input, or public payload text. Provider-bound previews are non-live harness artifacts: they serialize minimized package data, apply redaction, record redaction status, and keep raw-provider and raw-trace opt-ins disabled by default.
 
 ## Staged reviewer introduction
 
@@ -186,6 +186,8 @@ Reviewer selection may happen more than once as state changes. Examples:
 - `clarification_review`: reviewers that raised material ambiguity can ask a human for context before making a mergeability recommendation.
 
 Each selected reviewer must record the stage and trigger reasons in state.
+
+GitHub-derived actionable memory is not allowed to satisfy positive `conversation_patterns` routing until the later routing policy explicitly accounts for GitHub provenance, seen-state, and quote handling. Fixture trusted memory can still exercise conversation-pattern routing in deterministic harnesses.
 
 `select_reviewers` must use `ReviewerRunKey` for idempotence and resume safety:
 

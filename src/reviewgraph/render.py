@@ -401,7 +401,7 @@ def _is_unsafe_memory(memory: MemoryReference) -> bool:
 
 
 def _can_render_memory_body(memory: MemoryReference) -> bool:
-    return memory.trust_label == "trusted"
+    return memory.actionable
 
 
 def _public_finding_text(posting_plan: PostingPlan | None, findings: tuple[ClassifiedFinding, ...]) -> str:
@@ -525,7 +525,7 @@ def _posting_plan_item_json(item: PostingPlanItem, context: "_RenderContext") ->
 
 
 def _memory_json(memory: MemoryReference, context: "_RenderContext") -> dict[str, Any]:
-    return {
+    data: dict[str, Any] = {
         "id": context.redact(memory.id),
         "trust_label": context.redact(memory.trust_label),
         "resolved_status": context.redact(memory.resolved_status),
@@ -544,6 +544,13 @@ def _memory_json(memory: MemoryReference, context: "_RenderContext") -> dict[str
         "actionable": memory.actionable,
         "passive_reason": context.redact(memory.passive_reason) if memory.passive_reason is not None else None,
     }
+    if memory.source_provider is not None:
+        data["source_provider"] = context.redact(memory.source_provider)
+    if memory.source_id is not None:
+        data["source_id"] = context.redact(memory.source_id)
+    if memory.thread_id is not None:
+        data["thread_id"] = context.redact(memory.thread_id)
+    return data
 
 
 def _truncation_json(notice: TruncationNotice, context: "_RenderContext") -> dict[str, Any]:

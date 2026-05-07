@@ -251,7 +251,7 @@ def _capability_policy_dict(policy: ReviewerCapabilityPolicy) -> dict[str, Any]:
 
 
 def _memory_trace_dict(memory: MemoryReference) -> dict[str, Any]:
-    return {
+    data: dict[str, Any] = {
         "id": memory.id,
         "trust_label": memory.trust_label,
         "resolved_status": memory.resolved_status,
@@ -260,10 +260,12 @@ def _memory_trace_dict(memory: MemoryReference) -> dict[str, Any]:
         "passive_reason": memory.passive_reason,
         "body_included": memory.actionable and memory.body is not None,
     }
+    _add_optional_memory_provenance(data, memory)
+    return data
 
 
 def _prompt_memory_dict(memory: MemoryReference) -> dict[str, Any]:
-    return {
+    data: dict[str, Any] = {
         "id": memory.id,
         "role": "trusted_actionable_data" if memory.actionable else "passive_data",
         "trust_label": memory.trust_label,
@@ -275,6 +277,17 @@ def _prompt_memory_dict(memory: MemoryReference) -> dict[str, Any]:
         "body": memory.body if memory.actionable else None,
         "passive_reason": memory.passive_reason,
     }
+    _add_optional_memory_provenance(data, memory)
+    return data
+
+
+def _add_optional_memory_provenance(data: dict[str, Any], memory: MemoryReference) -> None:
+    if memory.source_provider is not None:
+        data["source_provider"] = memory.source_provider
+    if memory.source_id is not None:
+        data["source_id"] = memory.source_id
+    if memory.thread_id is not None:
+        data["thread_id"] = memory.thread_id
 
 
 def _changed_file_dict(changed_file: PullRequestChangedFile) -> dict[str, Any]:

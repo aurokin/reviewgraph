@@ -102,12 +102,14 @@ def test_paginated_fake_read_fetches_all_resources_before_truncation() -> None:
     assert "sk_live" not in str(serialized)
     assert "[REDACTED]" in str(serialized)
     memory = build_conversation_memory(result.pr)
-    page_two_comment = next(entry for entry in memory.entries if entry.id == "issue-comment-2")
-    page_two_thread = next(entry for entry in memory.entries if entry.id == "review-comment-2")
-    assert page_two_comment.trust_label == "untrusted"
-    assert page_two_comment.actionable is False
-    assert page_two_thread.trust_label == "untrusted"
-    assert page_two_thread.actionable is False
+    page_two_comment = next(entry for entry in memory.entries if entry.id == "github:issue_comment:issue-comment-2")
+    page_two_thread = next(
+        entry for entry in memory.entries if entry.id == "github:review_thread:thread-2:review-comment-2"
+    )
+    assert page_two_comment.trust_label == "trusted"
+    assert page_two_comment.actionable is True
+    assert page_two_thread.trust_label == "trusted"
+    assert page_two_thread.actionable is True
 
 
 def test_paginated_github_conversation_ignores_inbound_trust_labels() -> None:
@@ -117,6 +119,8 @@ def test_paginated_github_conversation_ignores_inbound_trust_labels() -> None:
                 "items": [
                     {
                         **_issue_comment("issue-comment-1", "Trusted-looking page payload."),
+                        "author": "external",
+                        "author_association": "CONTRIBUTOR",
                         "trust_label": "trusted",
                         "url": None,
                     }
@@ -129,6 +133,8 @@ def test_paginated_github_conversation_ignores_inbound_trust_labels() -> None:
                 "items": [
                     {
                         **_review_comment("review-comment-1", "thread-1", "src/cache.py", 10, "Trusted-looking thread."),
+                        "author": "external",
+                        "author_association": "CONTRIBUTOR",
                         "trust_label": "trusted",
                         "url": None,
                     }
@@ -141,6 +147,8 @@ def test_paginated_github_conversation_ignores_inbound_trust_labels() -> None:
                 "items": [
                     {
                         **_review("review-1", "COMMENTED", "Trusted-looking review."),
+                        "author": "external",
+                        "author_association": "CONTRIBUTOR",
                         "trust_label": "trusted",
                         "url": None,
                     }

@@ -249,6 +249,7 @@ class GitHubReadResult:
                         "source_type": review.source_type,
                         "body": review.body,
                         "url": review.url,
+                        "source_provider": review.source_provider,
                     }
                     for review in self.pr.reviews
                 ],
@@ -775,6 +776,7 @@ def _comment_from_payload(payload: dict[str, object], *, source_type: str) -> Pu
         side=_optional_str(payload, "side", "pull request comment"),
         commit_sha=_optional_str(payload, "commit_sha", "pull request comment"),
         position=_optional_positive_int(payload, "position", "pull request comment"),
+        source_provider="github",
     )
 
 
@@ -787,9 +789,10 @@ def _review_from_payload(payload: dict[str, object]) -> PullRequestReview:
         state=_required_str(payload, "state", "pull request review"),
         created_at=_required_str(payload, "created_at", "pull request review"),
         trust_label="untrusted",
-        source_type=_optional_str(payload, "source_type", "pull request review") or "review",
+        source_type="review",
         body=_optional_text(payload, "body", "pull request review"),
         url=_optional_str(payload, "url", "pull request review"),
+        source_provider="github",
     )
 
 
@@ -975,6 +978,7 @@ def _pull_request_comment_dict(comment: PullRequestComment) -> dict[str, object]
         "side": comment.side,
         "commit_sha": comment.commit_sha,
         "position": comment.position,
+        "source_provider": comment.source_provider,
     }
 
 

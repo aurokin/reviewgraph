@@ -797,12 +797,26 @@ class MemoryReference:
     line: int | None = None
     actionable: bool = False
     passive_reason: str | None = None
+    source_provider: str | None = None
+    source_id: str | None = None
+    thread_id: str | None = None
 
     def __post_init__(self) -> None:
         for name in ("id", "trust_label", "resolved_status", "source_type"):
             if not getattr(self, name):
                 raise ValueError(f"{name} is required")
-        for name in ("author", "author_association", "author_type", "created_at", "url", "path", "passive_reason"):
+        for name in (
+            "author",
+            "author_association",
+            "author_type",
+            "created_at",
+            "url",
+            "path",
+            "passive_reason",
+            "source_provider",
+            "source_id",
+            "thread_id",
+        ):
             _require_optional_non_empty(getattr(self, name), f"memory {name}")
         _require_optional_positive_int(self.line, "memory line")
         if type(self.actionable) is not bool:
@@ -834,6 +848,7 @@ class PullRequestComment:
     side: str | None = None
     commit_sha: str | None = None
     position: int | None = None
+    source_provider: str = "fixture"
 
     def __post_init__(self) -> None:
         for name in (
@@ -845,6 +860,7 @@ class PullRequestComment:
             "trust_label",
             "source_type",
             "author_type",
+            "source_provider",
         ):
             _require_non_empty(getattr(self, name), f"pull request comment {name}")
         for name in ("url", "path", "side", "commit_sha"):
@@ -865,6 +881,7 @@ class PullRequestReview:
     source_type: str
     body: str | None = None
     url: str | None = None
+    source_provider: str = "fixture"
 
     def __post_init__(self) -> None:
         for name in (
@@ -876,6 +893,7 @@ class PullRequestReview:
             "trust_label",
             "source_type",
             "author_type",
+            "source_provider",
         ):
             _require_non_empty(getattr(self, name), f"pull request review {name}")
         _require_optional_non_empty(self.body, "pull request review body")

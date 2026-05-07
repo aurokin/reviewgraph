@@ -188,7 +188,11 @@ def _trigger_reasons(
     for label in triggers.labels:
         if label.casefold() in labels:
             selector_reasons.append(f"{stage} triggers.labels={label}")
-    trusted_memory = "\n".join(memory.body or "" for memory in memory_references if memory.actionable).casefold()
+    trusted_memory = "\n".join(
+        memory.body or ""
+        for memory in memory_references
+        if memory.actionable and memory.source_provider != "github"
+    ).casefold()
     for pattern in triggers.conversation_patterns:
         if pattern.casefold() in trusted_memory:
             selector_reasons.append(f"{stage} triggers.conversation_patterns={pattern}")
