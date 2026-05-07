@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -53,6 +53,7 @@ from reviewgraph.models import (
     SelectedReviewer,
     TruncationNotice,
     RedactionStatus,
+    PostInteractionGateResult,
 )
 from reviewgraph.posting import (
     CandidateIssueCommentPayload,
@@ -61,6 +62,11 @@ from reviewgraph.posting import (
     PostingPlanItem,
     build_candidate_issue_comment_payload,
     build_posting_plan,
+)
+from reviewgraph.post_interaction import (
+    NON_INTERACTIVE_POST_MODE_ERROR_CODE,
+    PostModeInteractionContext,
+    evaluate_post_mode_interaction_gate,
 )
 from reviewgraph.quality import classify_review_quality
 from reviewgraph.redaction import redact_data
@@ -130,6 +136,40 @@ def run_fixture_dry_run(
         writer_sentinel=writer_sentinel,
         clarification_answers=clarification_answers,
     )
+
+
+def run_fixture_non_interactive_post_attempt(
+    *,
+    fixture_ref: str,
+    reviewer_config_path: str | None = None,
+    writer_sentinel: object | None = None,
+    non_interactive_reason: str = "non_tty_cli",
+    approval_prompt: Callable[[], object] | None = None,
+    final_payload_builder: Callable[[], object] | None = None,
+) -> DryRunResult:
+    del approval_prompt
+    del final_payload_builder
+    dry_run = run_fixture_dry_run(
+        fixture_ref=fixture_ref,
+        reviewer_config_path=reviewer_config_path,
+        writer_sentinel=writer_sentinel,
+    )
+    gate = evaluate_post_mode_interaction_gate(
+        PostModeInteractionContext(
+            run_mode=RunMode.POST,
+            interactive=False,
+            reason=non_interactive_reason,
+        )
+    )
+    error = GraphError(
+        code=NON_INTERACTIVE_POST_MODE_ERROR_CODE,
+        message=(
+            "Non-interactive post mode requires a future explicit approval policy; "
+            "CI, webhook, config-only, and non-TTY CLI contexts cannot approve or post by configuration alone."
+        ),
+        retryable=False,
+    )
+    return _non_interactive_post_result(dry_run=dry_run, gate=gate, error=error)
 
 
 def _fail_closed_dry_run_result(*, outcome: FailClosedReadOutcome, writer_call_count: int) -> DryRunResult:
@@ -1030,6 +1070,88 @@ def _fail_closed_markdown(data: dict[str, Any]) -> str:
     if lines[-1] == "## Graph Errors":
         lines.append("- None")
     return "\n".join(lines) + "\n"
+
+
+def _non_interactive_post_result(
+    *,
+    dry_run: DryRunResult,
+    gate: PostInteractionGateResult,
+    error: GraphError,
+) -> DryRunResult:
+    graph_trace = list(dry_run.json_data.get("graph_trace", []))
+    graph_trace.append({"event": "render_review", "status": "completed"})
+    graph_trace.append(
+        {
+            "event": "post_mode_interaction_gate",
+            "status": gate.status.value,
+            "interactive": gate.interactive,
+            "reason": gate.reason,
+        }
+    )
+    errors = [
+        item
+        for item in dry_run.json_data.get("errors", [])
+        if isinstance(item, Mapping)
+    ]
+    errors.append(
+        {
+            "code": error.code,
+            "message": error.message,
+            "retryable": error.retryable,
+        }
+    )
+    side_effects = {
+        "writer_called": dry_run.writer_call_count > 0,
+        "writer_call_count": dry_run.writer_call_count,
+    }
+    post_interaction_gate = {
+        "status": gate.status.value,
+        "interactive": gate.interactive,
+        "reason": gate.reason,
+    }
+    data = {
+        **dry_run.json_data,
+        "run_mode": RunMode.POST.value,
+        "post_enabled": False,
+        "post_interaction_gate": post_interaction_gate,
+        "graph_trace": graph_trace,
+        "errors": errors,
+        "approval": None,
+        "final_github_payload": None,
+        "final_payload_hash": None,
+        "marker_reconciliation": None,
+        "writer_result": None,
+        "side_effects": side_effects,
+    }
+    markdown = _append_non_interactive_post_markdown(
+        markdown=dry_run.markdown,
+        gate=gate,
+        error=error,
+    )
+    redacted_data = _redact_json_value(data)
+    return DryRunResult(
+        markdown=markdown,
+        json_data=redacted_data,
+        rendered=replace(dry_run.rendered, markdown=markdown),
+        writer_call_count=dry_run.writer_call_count,
+    )
+
+
+def _append_non_interactive_post_markdown(
+    *,
+    markdown: str,
+    gate: PostInteractionGateResult,
+    error: GraphError,
+) -> str:
+    return (
+        markdown.rstrip()
+        + "\n\n"
+        + "## Post Mode Interaction Gate\n"
+        + f"- Status: {gate.status.value}\n"
+        + f"- Interactive approval surface: {str(gate.interactive).lower()}\n"
+        + f"- Reason: {gate.reason}\n"
+        + f"- Error: {error.message}\n"
+    )
 
 
 def _json_envelope(

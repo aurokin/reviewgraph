@@ -265,7 +265,7 @@ Selected reviewer output may get exactly one deterministic fake repair attempt w
 
 ## Final payload
 
-`post_mode_interaction_gate` runs only for `run_mode=post`. It fails closed before approval input and before final payload construction when the run is CI, webhook, config-only, non-TTY, or otherwise lacks an interactive human approval surface.
+`post_mode_interaction_gate` runs only for `run_mode=post`. It fails closed before approval input and before final payload construction when the run is CI, webhook, config-only, non-TTY, or otherwise lacks an interactive human approval surface. Dry-run runs do not evaluate or record this gate. Harnessed non-interactive post attempts render the review first, then record `post_interaction_gate`, append a `post_mode_interaction_gate` trace event, set `post_enabled=false`, and leave approval, final payload, marker reconciliation, and writer result unset.
 
 `approval_gate` records approved item IDs and approval metadata only, including the GitHub actor and endpoint-specific permission snapshot shown to the human approver. `ActorPermissionGateResult` must include authenticated actor, credential principal/source, repo or installation permission, issue-comment endpoint write ability, check method, checked target, checked-at time, and stable failure code when blocked.
 

@@ -111,6 +111,8 @@ External read failures during approval or finalization fail closed. Timeout, rat
 
 In CI, webhook, config-only, or non-TTY CLI mode, MVP refuses post mode before approval input and before final payload construction. Do not infer approval from config alone, environment variables, previous approvals, or automation context. This is an explicit graph routing gate between `render_review` and `approval_gate`, not a prompt convention.
 
+The policy input is explicit state, not ambient process inspection. Harnesses pass `run_mode=post`, `interactive=false`, and a concrete reason such as `ci`, `webhook`, `config_only`, or `non_tty_cli`; the gate records `post_interaction_gate.status=fail`, `post_enabled=false`, and a `non_interactive_post_mode` graph error. Dry-run mode bypasses this gate entirely and remains renderable in non-interactive contexts.
+
 ## Freshness and idempotency
 
 `finalize_github_payload` must fail closed when the PR head/base/merge-base state no longer matches the approved review target. `post_or_emit` must only receive finalized payloads that already passed freshness checks.
