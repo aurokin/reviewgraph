@@ -28,52 +28,63 @@ This issue must prove that marker scans paginate existing comments, restrict mar
 - Marker parsing/generation remains exact v1 grammar and final-line only.
 - AUR-221 trust-neutral helpers continue to be usable in pure tests.
 - Marker trust is narrower than conversation memory trust:
-  - trusted marker author = approved GitHub actor with `author_type=user`
+  - trusted marker author = exact approved GitHub actor with supported `author_type` of `user` or `bot`
   - or configured trusted ReviewGraph bot with `author_type=bot`
   - not every owner/member/collaborator and not every trusted PR commenter
 - Untrusted/spoofed markers are ignored and cannot block or reconcile a post.
 - Trusted same-target/same-findings/same-payload markers reconcile with no post.
 - Trusted same-target/same-findings/different-payload markers fail closed.
-- Trusted malformed ReviewGraph-looking final-line markers fail closed when they reference the expected target or when duplicate safety cannot be proven.
-- Existing comment scans must either fully paginate within explicit page/comment caps or fail closed before any writer can post.
-- Timeout, rate limit, forbidden, not found, unavailable, malformed page shape, pagination loop, page cap, comment cap, and stale/incomplete scan states must produce stable fail-closed reason codes.
-- Transport summaries are redacted structured data only: endpoint kind, pages scanned, comments scanned, markers scanned, retryability, stable reason code, and allowlisted GitHub request ID. They must not include tokens, raw stderr, raw comment bodies, or payload bodies.
+- Trusted malformed ReviewGraph-looking final-line markers fail closed whenever the exact parser cannot prove a safe different target/findings/payload result; AUR-245 uses the stricter rule that any trusted final-line `<!-- reviewgraph:` parse failure fails closed.
+- Existing comment scans must either fully paginate within explicit page/comment caps before any terminal result or fail closed before any writer can post. A match on page one cannot reconcile if page two later contains a trusted conflict, malformed trusted marker, or pagination failure.
+- Timeout, rate limit, forbidden, not found, unavailable, malformed page shape, incomplete pagination, repeated cursor, page cap, comment cap, and unknown transport failure states must produce stable fail-closed reason codes.
+- Transport summaries are redacted structured data on every outcome, including reconciled, no-match, ignored-spoof, and fail-closed outcomes. They contain endpoint kind, pages scanned, comments scanned, markers scanned, retryability, stable reason code, and one allowlisted GitHub request ID. On failure this is the failure page request ID; on pass/no-match this is the last safe page request ID. They must not include tokens, raw stderr, raw comment bodies, or payload bodies.
 - Duplicate approved finding fingerprints inside one final payload fail before posting. If this is already covered by approval/finalization preflight, this issue adds an adversarial regression harness rather than inventing a second policy.
 
 ## Implementation Shape
 
-1. Extend `src/reviewgraph/markers.py` with hardened reconciliation types:
-   - reason-code enum for marker scan failures and conflicts
+1. Add a durable marker reconciliation handoff model used by the hardened scanner:
+   - status enum with `RECONCILED_EXISTING`, `SCAN_COMPLETE_NO_MATCH`, and `FAILED_CLOSED`
+   - reason-code enum with `pagination_incomplete`, `repeated_cursor`, `page_cap_exceeded`, `comment_cap_exceeded`, `malformed_page`, `timeout`, `rate_limited`, `forbidden`, `not_found`, `unavailable`, `transport_unknown`, `trusted_marker_conflict`, and `trusted_marker_malformed`
    - transport-summary dataclass with endpoint kind, page count, comment count, marker count, retryable, reason code, and request ID
    - author/provenance dataclass for existing comments
    - scan policy dataclass for page/comment caps and trusted bot authors
-   - hardened reconciliation result that can express pass/reconciled, no-match, and fail-closed states without releasing writer input
+   - hardened reconciliation result that can express reconciled, scan-complete/no-match, and fail-closed states without releasing writer input
+   - duplicate matching comment IDs and marker metadata, without retaining raw comment bodies
+   - prefer expanding `src/reviewgraph/models.py` if this result is graph state; otherwise document a concrete conversion from the hardened result into `ReviewState.marker_reconciliation` for AUR-222/AUR-241
 2. Keep the new marker code pure:
    - no live GitHub client
    - no writer adapter
    - no graph imports
    - no shell, environment, subprocess, or clock reads
 3. Add a fake paginated comment-scan adapter surface:
-   - accept a deterministic fake transport that returns issue-comment pages
-   - page shape includes comments, `next_cursor`, completion marker, optional request ID
+   - accept a deterministic fake transport that returns issue-comment pages with cursor start `None`
+   - page shape is concrete and validated: comments tuple, optional `next_cursor`, boolean `completed`, optional request ID
+   - exactly one of `completed=True` or non-empty `next_cursor` is allowed; `completed=True` requires `next_cursor=None`
+   - empty completed pages are valid; empty non-completed pages are valid only if the cursor advances
    - failures are injected as structured transport failures, not real exceptions from network code
-   - scan all pages before deciding `NO_MATCH`; partial scans fail closed
+   - scan all pages before deciding any terminal status; partial scans fail closed even when an earlier page contained a match
+   - call order and cursor progression are asserted in the harness
 4. Add explicit caps and failure taxonomy:
-   - max pages and max comments are required positive values
-   - repeated cursor, malformed page, page cap exceeded, comment cap exceeded, timeout, rate limit, forbidden, not found, unavailable, and unknown transport failure all fail closed
-   - timeout/rate-limit/unavailable are retryable; conflicts/malformed trusted markers/spoofing policy failures are non-retryable
+   - default policy is explicit: `max_pages=20`, `max_comments=1000`
+   - exactly-at-cap scans can pass; cap-plus-one scans fail closed
+   - repeated cursor, malformed page, page cap exceeded, comment cap exceeded, timeout, rate limit, forbidden, not found, unavailable, incomplete pagination, and unknown transport failure all fail closed
+   - timeout/rate-limit/unavailable/transport_unknown are retryable; conflicts and malformed trusted markers are non-retryable
+   - untrusted/spoofed markers are ignored and never fail the scan unless the transport/page itself is invalid
 5. Add marker author trust policy:
-   - compare exact approved actor for user-authored comments
+   - compare exact approved actor for supported user- or bot-authored comments
    - compare configured trusted ReviewGraph bot authors for bot-authored comments
    - ignore other authors, even if GitHub association is owner/member/collaborator
-   - reject unknown or malformed author identity only for trust; do not let it become trusted
+   - reject unknown/missing author identity only for trust; do not let it become trusted
+   - actor comparisons are exact and case-sensitive
 6. Compose with AUR-221 marker semantics:
    - only final-line exact markers count
    - body-middle markers are inert
    - same target/findings/payload trusted marker reconciles
    - same target/findings/different payload trusted marker fails closed
-   - trusted malformed final-line ReviewGraph marker with the expected target fails closed
-   - multiple trusted identical matching markers reconcile but record duplicate marker metadata if the result type supports it
+   - trusted malformed final-line ReviewGraph marker fails closed
+   - multiple trusted identical matching markers reconcile but record duplicate marker metadata
+   - conflict/malformed trusted markers found on any later page override an earlier exact match
+   - a page/cap/transport failure after an earlier exact match still fails closed because scan completeness was not proven
 7. Prove duplicate-fingerprint preflight:
    - add a focused regression that duplicate approved finding fingerprints fail before marker reconciliation can release writer input
    - reuse existing `finalize_github_payload` or approval preflight when possible instead of duplicating finalization policy
@@ -86,28 +97,36 @@ This issue must prove that marker scans paginate existing comments, restrict mar
 
 Create `tests/test_marker_hardening.py` covering:
 
-- Paginated scan reads all pages before returning no-match.
-- Matching trusted marker on a later page reconciles and posts zero in the fake retry helper.
+- Paginated scan reads all pages before returning no-match or reconciled.
+- Matching trusted marker on a later page reconciles without releasing writer input.
+- Early matching trusted marker plus later trusted conflict fails closed.
+- Early matching trusted marker plus later malformed trusted marker fails closed.
+- Early matching trusted marker plus later page failure fails closed.
+- Trusted conflict before or after an exact marker fails closed.
+- Exactly-at-page-cap and exactly-at-comment-cap scans can pass.
+- Page-cap-plus-one and comment-cap-plus-one scans fail closed.
+- Empty completed pages can pass; missing completion marker and cursor-without-progress fail closed.
 - Page cap exceeded fails closed with stable reason code and no writer release.
 - Comment cap exceeded fails closed with stable reason code and no writer release.
 - Repeated cursor/incomplete pagination fails closed.
 - Timeout, rate limit, forbidden, not found, unavailable, malformed response, and unknown transport failure classify to stable reason code, retryability, and redacted summary.
-- Transport summary includes endpoint kind, page count, comment count, marker count, retryability, reason code, and safe request ID.
+- Transport summary exists on every outcome and includes endpoint kind, page count, comment count, marker count, retryability, reason code, and safe request ID.
 - Transport summary rejects or drops token-looking request IDs and never exposes raw stderr, comment body, payload body, or token fragments.
-- Markers from unapproved users, unconfigured bots, and owner/member/collaborator commenters that are not the approved actor are ignored.
-- Approved actor marker and configured trusted ReviewGraph bot marker are trusted.
+- Markers from unapproved users, unconfigured bots, missing authors, unknown author types, differently cased authors, and owner/member/collaborator commenters that are not the approved actor are ignored.
+- Approved actor user marker, approved actor bot marker, and configured trusted ReviewGraph bot marker are trusted.
+- Configured bot name with `author_type=user` is not trusted through bot policy.
 - Trusted same-target/same-findings/different-payload marker fails closed.
-- Trusted malformed ReviewGraph-looking final-line marker for the expected target fails closed.
+- Trusted malformed ReviewGraph-looking final-line marker with missing, malformed, reordered, or unreadable target fields fails closed.
 - Spoofed malformed marker from an untrusted author is ignored.
 - Body-middle copied marker remains inert.
-- Multiple trusted identical matching markers reconcile with duplicate metadata and no extra post.
+- Multiple trusted identical matching markers reconcile with duplicate metadata and `writer_input_released=False`.
 - Duplicate approved finding fingerprints fail before marker reconciliation/writer release.
 - Import-boundary proof for `src/reviewgraph/markers.py`.
 
 Update existing tests as needed:
 
 - `tests/test_markers.py` if the trust-neutral result or marker comment model gains fields.
-- `tests/test_finalization.py` if duplicate-fingerprint preflight gets a narrower regression there.
+- `tests/test_target_freshness.py` if duplicate-fingerprint preflight gets a narrower regression near current finalization tests.
 - `tests/test_models.py` if marker reconciliation model fields move into shared models.
 
 ## Validation
@@ -121,7 +140,7 @@ python -m pytest tests/test_marker_hardening.py -q
 Regression:
 
 ```bash
-python -m pytest tests/test_marker_hardening.py tests/test_markers.py tests/test_payload_hashes.py tests/test_payload_validation.py tests/test_approval.py tests/test_target_freshness.py tests/test_finalization.py -q
+python -m pytest tests/test_marker_hardening.py tests/test_markers.py tests/test_payload_hashes.py tests/test_payload_validation.py tests/test_approval.py tests/test_target_freshness.py tests/test_models.py -q
 python scripts/check_docs.py
 git diff --check
 python -m py_compile src/reviewgraph/*.py
