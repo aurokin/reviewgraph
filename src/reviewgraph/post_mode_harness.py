@@ -7,6 +7,7 @@ from reviewgraph.approval import build_approval_decision, build_approval_proof
 from reviewgraph.final_payload import build_approved_final_issue_comment
 from reviewgraph.finalization import (
     ApprovedItemDescriptor,
+    BoundMarkerReconciliationResult,
     FinalizeGithubPayloadResult,
     TargetFreshnessProbeResult,
     evaluate_writer_release_preflight,
@@ -14,6 +15,7 @@ from reviewgraph.finalization import (
 )
 from reviewgraph.markers import (
     MarkerCommentPage,
+    MarkerScanTransportFailure,
     PaginatedMarkerComment,
     build_final_issue_comment_payload,
     reconcile_paginated_trusted_markers,
@@ -26,6 +28,7 @@ from reviewgraph.models import (
     FinalizationState,
     GateStatus,
     GitHubWriterResult,
+    MarkerReconciliationReasonCode,
     MarkerReconciliationStatus,
     OutputClassification,
     PostingDestination,
@@ -92,6 +95,23 @@ class _StaticMarkerTransport:
             completed=True,
             request_id="REQ-static",
         )
+
+
+class _PagesMarkerTransport:
+    def __init__(self, pages: dict[object | None, object], failures: dict[object | None, MarkerReconciliationReasonCode] | None = None) -> None:
+        self.pages = pages
+        self.failures = failures or {}
+
+    def get_issue_comments_page(
+        self,
+        owner_repo: str,
+        pr_number: int,
+        cursor: object | None,
+        timeout_seconds: int,
+    ):
+        if cursor in self.failures:
+            raise MarkerScanTransportFailure(self.failures[cursor], request_id="REQ-marker-failure")
+        return self.pages.get(cursor, MarkerCommentPage(comments=(), completed=True, request_id="REQ-pages"))
 
 
 def run_fixture_fake_post_attempt(
@@ -196,14 +216,76 @@ def run_fixture_fake_post_attempt(
             redaction_status=RedactionStatus(redacted=False, replacement_count=0),
         )
         transport = _StaticMarkerTransport(conflict.body)
+    elif case == "marker_malformed":
+        transport = _StaticMarkerTransport(
+            f"ReviewGraph approved findings\n<!-- reviewgraph:v1 run_id=bad target={target.target_hash()} -->\n"
+        )
+    elif case == "marker_incomplete":
+        transport = _PagesMarkerTransport({None: MarkerCommentPage(comments=(), completed=False, next_cursor=None)})
+    elif case == "marker_malformed_page":
+        transport = _PagesMarkerTransport({None: object()})
+    elif case in {
+        "marker_timeout",
+        "marker_rate_limited",
+        "marker_forbidden",
+        "marker_not_found",
+        "marker_unavailable",
+    }:
+        reason_by_case = {
+            "marker_timeout": MarkerReconciliationReasonCode.TIMEOUT,
+            "marker_rate_limited": MarkerReconciliationReasonCode.RATE_LIMITED,
+            "marker_forbidden": MarkerReconciliationReasonCode.FORBIDDEN,
+            "marker_not_found": MarkerReconciliationReasonCode.NOT_FOUND,
+            "marker_unavailable": MarkerReconciliationReasonCode.UNAVAILABLE,
+        }
+        transport = _PagesMarkerTransport({}, failures={None: reason_by_case[case]})
 
     def marker_reconciler(payload):
-        return reconcile_paginated_trusted_markers(
-            transport=transport,
+        active_transport = transport
+        if case == "marker_duplicate_matching":
+            active_transport = _PagesMarkerTransport(
+                {
+                    None: MarkerCommentPage(
+                        comments=(
+                            PaginatedMarkerComment(
+                                comment_id="existing-one",
+                                body=payload.body,
+                                author_login="reviewgraph-bot",
+                                author_type="Bot",
+                                source_provider="github",
+                            ),
+                            PaginatedMarkerComment(
+                                comment_id="existing-two",
+                                body=payload.body,
+                                author_login="reviewgraph-bot",
+                                author_type="Bot",
+                                source_provider="github",
+                            ),
+                        ),
+                        completed=True,
+                        request_id="REQ-duplicates",
+                    )
+                }
+            )
+        reconciliation = reconcile_paginated_trusted_markers(
+            transport=active_transport,
             owner_repo=target.owner_repo,
             pr_number=target.pr_number,
             approved_actor=approval_result.approved_github_actor,
             trusted_bot_authors=("reviewgraph-bot",),
+            expected_target_hash=payload.marker_target_hash,
+            expected_payload_hash=payload.marker_payload_hash,
+            expected_findings_hash=payload.marker_findings_hash,
+        )
+        if case == "marker_binding_mismatch":
+            return BoundMarkerReconciliationResult(
+                result=reconciliation,
+                expected_target_hash=payload.marker_target_hash,
+                expected_payload_hash="sha256:" + "0" * 64,
+                expected_findings_hash=payload.marker_findings_hash,
+            )
+        return BoundMarkerReconciliationResult(
+            result=reconciliation,
             expected_target_hash=payload.marker_target_hash,
             expected_payload_hash=payload.marker_payload_hash,
             expected_findings_hash=payload.marker_findings_hash,
@@ -256,7 +338,15 @@ def _post_or_emit(
     writer: FakeIssueCommentWriter,
 ) -> GitHubWriterResult | None:
     marker = finalization.marker_reconciliation
-    if marker is not None and marker.status == MarkerReconciliationStatus.RECONCILED_EXISTING:
+    if (
+        marker is not None
+        and marker.status == MarkerReconciliationStatus.RECONCILED_EXISTING
+        and finalization.finalization_status.state == FinalizationState.NOT_READY
+        and finalization.finalization_status.reason_code is not None
+        and finalization.finalization_status.reason_code.value == "marker_reconciled_existing"
+        and not finalization.writer_input_released
+        and finalization.final_payload is None
+    ):
         return GitHubWriterResult(
             status=WriterStatus.RECONCILED,
             artifact_kind=ArtifactKind.ISSUE_COMMENT,
@@ -288,6 +378,10 @@ def _post_or_emit_reason(
         return writer_result.status.value
     if finalization is None:
         return "not_finalized"
+    if finalization.dry_run_error is not None:
+        reason_code = finalization.dry_run_error.get("reason_code")
+        if isinstance(reason_code, str):
+            return reason_code
     if finalization.marker_reconciliation is not None:
         return finalization.marker_reconciliation.reason_code.value
     if finalization.finalization_status.reason_code is not None:

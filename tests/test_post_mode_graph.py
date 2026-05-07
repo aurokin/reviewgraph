@@ -60,12 +60,21 @@ def test_retry_after_stored_fake_comment_reconciles_without_second_post() -> Non
         ("rejected_approval", "rejected_approval"),
         ("empty_approval", "approval_build_failed"),
         ("non_public_approval", "non_public_approved_item"),
-        ("stale_target", "target_freshness_failed"),
-        ("unknown_target_freshness", "target_freshness_failed"),
+        ("stale_target", "target_mismatch"),
+        ("unknown_target_freshness", "unknown_freshness"),
         ("actor_mismatch", "actor_permission_failed"),
         ("permission_failure", "actor_permission_failed"),
         ("payload_validation_failure", "payload_validation_failed"),
         ("marker_conflict", "trusted_marker_conflict"),
+        ("marker_malformed", "trusted_marker_malformed"),
+        ("marker_incomplete", "pagination_incomplete"),
+        ("marker_timeout", "timeout"),
+        ("marker_rate_limited", "rate_limited"),
+        ("marker_forbidden", "forbidden"),
+        ("marker_not_found", "not_found"),
+        ("marker_unavailable", "unavailable"),
+        ("marker_malformed_page", "malformed_page"),
+        ("marker_binding_mismatch", "marker_reconciliation_binding_mismatch"),
     ],
 )
 def test_blocked_post_mode_paths_call_fake_writer_zero_times(case: str, expected_reason: str) -> None:
@@ -75,6 +84,17 @@ def test_blocked_post_mode_paths_call_fake_writer_zero_times(case: str, expected
     assert result.writer.comments == ()
     assert result.json_data["side_effects"] == {"writer_called": False, "writer_call_count": 0}
     assert result.json_data["post_or_emit"]["reason_code"] == expected_reason
+
+
+def test_duplicate_matching_markers_reconcile_without_new_fake_post() -> None:
+    result = run_fixture_fake_post_attempt(case="marker_duplicate_matching")
+
+    assert result.writer_call_count == 0
+    assert result.writer.comments == ()
+    assert result.json_data["marker_reconciliation"]["status"] == "reconciled_existing"
+    assert result.json_data["marker_reconciliation"]["existing_comment_id"] == "existing-one"
+    assert result.writer_result is not None
+    assert result.writer_result.status == WriterStatus.RECONCILED
 
 
 def test_post_or_emit_defensively_rejects_inconsistent_final_payload_state() -> None:
@@ -131,6 +151,34 @@ def test_post_or_emit_defensively_rejects_non_safe_marker_state() -> None:
     assert writer_result is None
     assert approved.writer_call_count == 1
     assert len(approved.writer.comments) == 1
+
+
+@pytest.mark.parametrize("state", [FinalizationState.FAILED_CLOSED, FinalizationState.FINALIZED])
+def test_post_or_emit_does_not_report_reconciled_for_inconsistent_reconciled_state(
+    state: FinalizationState,
+) -> None:
+    first = run_fixture_fake_post_attempt(case="approved")
+    reconciled = run_fixture_fake_post_attempt(case="approved", writer=first.writer)
+    finalization = reconciled.finalization
+    assert finalization is not None
+    inconsistent = replace(
+        finalization,
+        finalization_status=FinalizationStatus(
+            state,
+            first.finalization.finalization_status.final_payload_hash if state == FinalizationState.FINALIZED else None,
+            finalization.finalization_status.target_hash,
+            None if state == FinalizationState.FINALIZED else FinalizationReasonCode.MARKER_RECONCILIATION_FAILED,
+        ),
+    )
+
+    writer_result = _post_or_emit(
+        finalization=inconsistent,
+        approval=_approval_from_success(first),
+        writer=first.writer,
+    )
+
+    assert writer_result is None
+    assert first.writer_call_count == 1
 
 
 def test_finalization_rejects_unbound_precomputed_marker_reconciliation() -> None:

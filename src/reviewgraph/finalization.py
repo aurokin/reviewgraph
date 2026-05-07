@@ -81,6 +81,22 @@ class FinalizeGithubPayloadResult:
 
 
 @dataclass(frozen=True)
+class BoundMarkerReconciliationResult:
+    result: MarkerReconciliationResult
+    expected_target_hash: str
+    expected_payload_hash: str
+    expected_findings_hash: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.result, MarkerReconciliationResult):
+            raise ValueError("bound marker reconciliation result must wrap MarkerReconciliationResult")
+        for name in ("expected_target_hash", "expected_payload_hash", "expected_findings_hash"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.startswith("sha256:"):
+                raise ValueError(f"bound marker reconciliation {name} must be a hash")
+
+
+@dataclass(frozen=True)
 class ApprovedItemDescriptor:
     item_id: str
     source_classification: str
@@ -347,7 +363,7 @@ def finalize_github_payload(
     current_target_probe: TargetFreshnessProbeResult,
     evaluated_at: str,
     final_payload_builder=None,
-    marker_reconciler: Callable[[FinalIssueCommentPayload], MarkerReconciliationResult] | None = None,
+    marker_reconciler: Callable[[FinalIssueCommentPayload], BoundMarkerReconciliationResult] | None = None,
 ) -> FinalizeGithubPayloadResult:
     if marker_reconciler is not None and not callable(marker_reconciler):
         raise ValueError("marker_reconciler must be callable")
@@ -445,9 +461,31 @@ def finalize_github_payload(
                     final_payload_builder_calls=builder_calls,
                     dry_run_error=_dry_run_error("payload_validation_failed", False, "final_payload", None, ()),
                 )
-            marker_reconciliation = marker_reconciler(payload)
-            if not isinstance(marker_reconciliation, MarkerReconciliationResult):
-                raise ValueError("marker_reconciler must return MarkerReconciliationResult")
+            bound_marker = marker_reconciler(payload)
+            if not isinstance(bound_marker, BoundMarkerReconciliationResult):
+                raise ValueError("marker_reconciler must return BoundMarkerReconciliationResult")
+            marker_reconciliation = bound_marker.result
+            if (
+                bound_marker.expected_target_hash != payload.marker_target_hash
+                or bound_marker.expected_payload_hash != payload.marker_payload_hash
+                or bound_marker.expected_findings_hash != payload.marker_findings_hash
+            ):
+                return FinalizeGithubPayloadResult(
+                    actor_permission_finalization_check=actor_check,
+                    target_freshness_check=target_check,
+                    finalization_status=FinalizationStatus(
+                        state=FinalizationState.FAILED_CLOSED,
+                        final_payload_hash=None,
+                        target_hash=approval.approved_review_target_hash,
+                        reason_code=FinalizationReasonCode.MARKER_RECONCILIATION_FAILED,
+                        reason="marker reconciliation binding mismatch",
+                    ),
+                    payload_validation=payload_validation,
+                    marker_reconciliation=marker_reconciliation,
+                    final_payload_builder_calls=builder_calls,
+                    dry_run_error=_dry_run_error("marker_reconciliation_binding_mismatch", False, "issue_comments", None, ()),
+                    writer_input_released=False,
+                )
             if marker_reconciliation.status == MarkerReconciliationStatus.SAFE_TO_POST:
                 return FinalizeGithubPayloadResult(
                     actor_permission_finalization_check=actor_check,
