@@ -103,7 +103,7 @@ Actor/permission re-checks have their own explicit preflight state, `actor_permi
 
 Target freshness re-checks have their own explicit preflight state, `target_freshness_check`. The check consumes a current target probe and explicit evaluation time, rejects cached success from before approval, and compares owner/repo, PR number, base SHA, head SHA, merge-base SHA, and diff basis against the approved target. Missing merge-base freshness, unknown freshness, stale cache, future timestamps, transport failures, or target drift fail closed with stable reason code, retryability, request ID when available, and allowlisted mismatch fields. A passing target freshness check still does not release writer input while marker reconciliation is deferred.
 
-Only after preflight passes may finalization build the final issue-comment body, compute the final hash, validate redaction status, reconcile markers, and release writer input.
+Only after preflight passes may finalization build the final issue-comment body, compute the final hash, validate redaction status, reconcile markers, and release writer input. Marker reconciliation has three durable outcomes: `SAFE_TO_POST`, `RECONCILED_EXISTING`, and `FAILED_CLOSED`. Only `SAFE_TO_POST` can later release a finalized payload to the writer. `RECONCILED_EXISTING` is a terminal no-post result tied to a trusted existing comment, and `FAILED_CLOSED` leaves final payload and writer input unset.
 
 External read failures during approval or finalization fail closed. Timeout, rate limit, forbidden, not found, unavailable service, malformed response, unknown credential source, stale cached data, or missing checked-at timestamp cannot be treated as approval or freshness proof. These failures must emit redacted transport summaries with endpoint kind, retryability, stable failure code, and request ID when available.
 
@@ -119,11 +119,11 @@ Freshness includes owner/repo, PR number, base SHA, head SHA, merge-base SHA whe
 
 Every postable finding must have a stable fingerprint, target SHA, and body hash. Duplicate postable or approved finding fingerprints are rejected before marker generation, approval final-hash validation, or writer reachability.
 
-The writer must fetch existing ReviewGraph artifacts before posting and create at most one top-level comment for the approved run/retry sequence while preserving per-finding fingerprints for reconciliation. A no-post marker match requires target hash, findings hash, and payload hash equality. If a network timeout occurs after GitHub accepted a write, retry must reconcile by payload hash and finding fingerprint/body hash instead of posting a duplicate.
+The writer must fetch existing ReviewGraph artifacts before posting and create at most one top-level comment for the approved run/retry sequence while preserving per-finding fingerprints for reconciliation. A no-post marker match requires target hash, findings hash, payload hash equality, trusted marker author, and complete paginated scan. If a network timeout occurs after GitHub accepted a write, retry must reconcile by payload hash and finding fingerprint/body hash instead of posting a duplicate.
 
 This is not a global cross-process locking guarantee. Two independent approved runs can race if they both scan before either comment exists. Global duplicate prevention requires external storage or locking and is deferred. If a later scan observes multiple trusted identical markers, ReviewGraph treats the payload as reconciled, emits duplicate-marker metadata, and posts zero additional comments. Trusted marker conflicts fail closed.
 
-Embedded marker reconciliation is trusted only for comments authored by the approved GitHub actor or a configured trusted ReviewGraph bot. Markers from other authors are ignored. Malformed markers are inert unless they appear on a trusted-author comment for the same target and cannot be safely interpreted; in that case the graph fails closed rather than posting a duplicate.
+Embedded marker reconciliation is trusted only for comments authored by the exact approved GitHub actor or a configured trusted ReviewGraph bot. Markers from other authors are ignored even when the author is an owner, member, collaborator, or trusted conversation-memory author. Malformed markers are inert for untrusted authors. A trusted final-line `<!-- reviewgraph:` marker that fails the exact parser fails closed rather than posting a duplicate.
 
 ## GitHub Artifact Discipline
 

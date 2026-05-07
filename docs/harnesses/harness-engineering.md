@@ -92,7 +92,7 @@ Golden tests should protect product behavior without freezing incidental wording
 
 - Config rejects unknown trigger fields, `triggers.stages`, unsupported MVP capabilities, and `verdict_power: approve`.
 - `ReviewState` includes explicit gate state for read gaps, redaction, actor/permission, payload validation, marker reconciliation, finalization, approval, and writer result.
-- Marker harnesses prove exact final-line grammar, hidden marker generation, parser rejection of malformed markers, inert copied markers outside the final line, and trust-neutral no-post matching only when target, findings, and payload hashes all match.
+- Marker harnesses prove exact final-line grammar, hidden marker generation, parser rejection of malformed markers, inert copied markers outside the final line, and trust-neutral no-post matching only when target, findings, and payload hashes all match. Hardened marker harnesses prove complete pagination before any terminal result, explicit page/comment/timeout caps, stable fail-closed reason codes, redacted transport summaries, trusted-author filtering restricted to the approved actor or configured ReviewGraph bot, trusted conflict/malformed-marker fail-closed behavior, duplicate trusted match metadata, and duplicate-fingerprint rejection before marker scan or writer reachability.
 - Reviewer output cannot self-declare postability, blocking, final priority, or GitHub destination.
 - Actor/permission gate harnesses must prove endpoint-specific issue-comment write ability with fake permission probes, canonical `ReviewTarget` binding, deterministic checked-at freshness, stable fail-closed reason codes, output-only compatibility permission derivation, and redacted transport summaries. They must also prove the permission module does not import live GitHub, approval, finalization, graph post-mode, posting, or writer boundaries.
 
@@ -178,7 +178,7 @@ python -m pytest tests/test_findings.py tests/test_reviewer_json_repair.py tests
 - Target freshness finalization preflight re-evaluates the current PR target from a raw probe and explicit evaluated-at time, rejects proofs from before approval, fails closed on unknown or missing merge-base freshness, records redacted transport summaries, and blocks final payload construction/writer reachability on stale or unknown targets.
 - Finalization re-checks target freshness, actor, endpoint permission, redaction, payload hash, marker reconciliation, and duplicate fingerprints before writer reachability.
 - Target freshness harnesses cover changed target fields plus timeout, rate limit, forbidden, not found, unavailable service, malformed response, stale-cache rejection, and proof that unknown freshness never reaches final payload construction or writer calls.
-- Marker reconciliation paginates existing comments, trusts only the approved actor or configured ReviewGraph bot, reconciles trusted identical duplicate markers without another post, and fails closed on trusted malformed or conflicting markers for the same target.
+- Marker reconciliation paginates existing comments, trusts only the exact approved actor or configured ReviewGraph bot, reconciles trusted identical duplicate markers without another post, and fails closed on incomplete scans, caps, transport failures, trusted malformed markers, or trusted conflicting markers for the same target/findings.
 - Writer idempotency harnesses prove retry safety for one approved run/retry sequence. Cross-process duplicate prevention is deferred unless an external lock/storage design is added.
 
 ## Tracer Bullets
