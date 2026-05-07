@@ -256,7 +256,7 @@ def test_failed_finalization_check_serializes_redacted_diagnostics() -> None:
 def test_finalization_module_import_boundary() -> None:
     source = Path("src/reviewgraph/finalization.py").read_text()
 
-    for forbidden in ("subprocess", "os", "reviewgraph.github", "reviewgraph.graph", "reviewgraph.writer", "marker"):
+    for forbidden in ("subprocess", "os", "reviewgraph.github", "reviewgraph.graph", "reviewgraph.writer", "reviewgraph.marker"):
         assert forbidden not in source
 
 

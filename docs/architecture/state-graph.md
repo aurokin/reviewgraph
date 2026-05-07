@@ -45,6 +45,7 @@ class ReviewState(TypedDict):
     post_interaction_gate: PostInteractionGateResult | None
     actor_permission_gate: ActorPermissionGateResult | None
     actor_permission_finalization_check: ActorPermissionFinalizationCheckResult | None
+    target_freshness_check: TargetFreshnessCheckResult | None
     payload_validation: PayloadValidationResult | None
     marker_reconciliation: MarkerReconciliationResult | None
     finalization_status: FinalizationStatus | None
@@ -116,13 +117,15 @@ START
   -> END
 ```
 
-`actor_permission_finalization_check` is a preflight result inside `finalize_github_payload`, not proof that the full payload is finalized. It records whether the current actor/permission probe still matches the approved snapshot before later target freshness, marker reconciliation, redaction, and payload-hash checks can release writer input.
+`actor_permission_finalization_check` and `target_freshness_check` are preflight results inside `finalize_github_payload`, not proof that the full payload is finalized. They record whether current actor/permission and PR target probes still match the approved snapshot before later redaction, payload-hash, marker reconciliation, and writer-release checks can release writer input.
 
 ## Review target
 
 Every run is bound to an immutable review target before reviewer execution. For a GitHub PR, the target includes owner/repo, PR number, base SHA, head SHA, merge-base SHA when available, and the diff basis used for findings. Rendered output and every postable finding should reference this target.
 
 Before any GitHub write, `finalize_github_payload` must re-fetch the PR head/base/merge-base state and compare it to the approved review target. If the target changed after rendering or approval, the graph fails closed and emits a new dry-run result instead of posting. If the re-fetch times out, is rate-limited, is forbidden, is not found, is unavailable, returns malformed data, or only has stale cached data, freshness is unknown and the graph fails closed before final payload construction or writer reachability. `post_or_emit` receives only an already-finalized payload or dry-run output; it does not own freshness, approval, or hash policy.
+
+Target freshness proof must be checked after approval. In post/finalization mode, unknown merge-base freshness is a failure even if both approved and current targets have `merge_base_sha=None`. A fresh target preflight can move finalization to a non-final marker-reconciliation-deferred state, but it must not set `FinalizationState.FINALIZED`, `final_github_payload`, `final_payload_hash`, or writer input until marker reconciliation exists and passes.
 
 ## Read gaps
 

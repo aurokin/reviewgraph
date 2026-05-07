@@ -134,6 +134,30 @@ class ActorPermissionFinalizationReasonCode(StrEnum):
     ACTOR_PERMISSION_CHECKED_AT_REGRESSED = "actor_permission_checked_at_regressed"
 
 
+class TargetFreshnessReasonCode(StrEnum):
+    TARGET_MISMATCH = "target_mismatch"
+    MISSING_MERGE_BASE = "missing_merge_base"
+    MISSING_CHECKED_AT = "missing_checked_at"
+    STALE_CACHED_TARGET = "stale_cached_target"
+    FUTURE_CHECKED_AT = "future_checked_at"
+    CHECKED_AT_BEFORE_APPROVAL = "checked_at_before_approval"
+    UNKNOWN_FRESHNESS = "unknown_freshness"
+    TIMEOUT = "timeout"
+    RATE_LIMITED = "rate_limited"
+    FORBIDDEN = "forbidden"
+    NOT_FOUND = "not_found"
+    UNAVAILABLE = "unavailable"
+    MALFORMED_RESPONSE = "malformed_response"
+
+
+class FinalizationReasonCode(StrEnum):
+    APPROVAL_PREFLIGHT_FAILED = "approval_preflight_failed"
+    ACTOR_PERMISSION_FAILED = "actor_permission_failed"
+    TARGET_FRESHNESS_FAILED = "target_freshness_failed"
+    PAYLOAD_VALIDATION_FAILED = "payload_validation_failed"
+    MARKER_RECONCILIATION_DEFERRED = "marker_reconciliation_deferred"
+
+
 class FinalizationState(StrEnum):
     NOT_READY = "not_ready"
     FINALIZED = "finalized"
@@ -202,6 +226,28 @@ ACTOR_PERMISSION_CHECK_METHOD = "fake_issue_comment_permission_probe"
 ACTOR_PERMISSION_ENDPOINT_KIND = "issue_comment"
 ACTOR_PERMISSION_ENDPOINT_METHOD = "POST"
 ACTOR_PERMISSION_TRANSPORT_ENDPOINT_KIND = "issue_comment_permission"
+TARGET_FRESHNESS_TRANSPORT_ENDPOINT_KIND = "pull_request_target"
+TARGET_FRESHNESS_CHECK_METHOD = "fake_pull_request_target_probe"
+TARGET_FRESHNESS_MISMATCH_FIELDS = frozenset(
+    {"owner_repo", "pr_number", "base_sha", "head_sha", "merge_base_sha", "diff_basis", "checked_at"}
+)
+TARGET_FRESHNESS_TRANSPORT_REASON_CODES = frozenset(
+    {
+        TargetFreshnessReasonCode.TIMEOUT,
+        TargetFreshnessReasonCode.RATE_LIMITED,
+        TargetFreshnessReasonCode.FORBIDDEN,
+        TargetFreshnessReasonCode.NOT_FOUND,
+        TargetFreshnessReasonCode.UNAVAILABLE,
+        TargetFreshnessReasonCode.MALFORMED_RESPONSE,
+    }
+)
+TARGET_FRESHNESS_RETRYABLE_REASON_CODES = frozenset(
+    {
+        TargetFreshnessReasonCode.TIMEOUT,
+        TargetFreshnessReasonCode.RATE_LIMITED,
+        TargetFreshnessReasonCode.UNAVAILABLE,
+    }
+)
 ACTOR_PERMISSION_FINALIZATION_MISMATCH_FIELDS = frozenset(
     {
         "actor",
@@ -2104,10 +2150,116 @@ class ActorPermissionFinalizationCheckResult:
 
 
 @dataclass(frozen=True)
+class TargetFreshnessTransportSummary:
+    endpoint_kind: str
+    retryable: bool
+    reason_code: TargetFreshnessReasonCode | None = None
+    request_id: str | None = None
+
+    def __post_init__(self) -> None:
+        _require_non_empty(self.endpoint_kind, "target freshness transport summary endpoint_kind")
+        if self.endpoint_kind != TARGET_FRESHNESS_TRANSPORT_ENDPOINT_KIND:
+            raise ValueError("target freshness transport summary endpoint_kind must be pull_request_target")
+        if not isinstance(self.retryable, bool):
+            raise ValueError("target freshness transport summary retryable must be a bool")
+        if self.reason_code is not None and not isinstance(self.reason_code, TargetFreshnessReasonCode):
+            raise ValueError("target freshness transport summary reason_code must be valid")
+        if (
+            self.reason_code is not None
+            and self.reason_code not in TARGET_FRESHNESS_TRANSPORT_REASON_CODES
+            and self.reason_code != TargetFreshnessReasonCode.UNKNOWN_FRESHNESS
+        ):
+            raise ValueError("target freshness transport summary reason_code must be transport failure")
+        if self.reason_code == TargetFreshnessReasonCode.UNKNOWN_FRESHNESS:
+            pass
+        elif self.retryable != (self.reason_code in TARGET_FRESHNESS_RETRYABLE_REASON_CODES):
+            raise ValueError("target freshness transport summary retryable mismatch")
+        _require_optional_non_empty(self.request_id, "target freshness transport summary request_id")
+        if self.request_id is not None:
+            if len(self.request_id) > 128 or any(
+                char not in ALLOWED_ACTOR_PERMISSION_REQUEST_ID_CHARS for char in self.request_id
+            ):
+                raise ValueError("target freshness transport summary request_id must be allowlisted")
+            if any(
+                secret in self.request_id.casefold()
+                for secret in SECRET_ACTOR_PERMISSION_REQUEST_ID_FRAGMENTS
+            ):
+                raise ValueError("target freshness transport summary request_id must not contain secrets")
+
+
+@dataclass(frozen=True)
+class TargetFreshnessCheckResult:
+    status: GateStatus
+    reason_code: TargetFreshnessReasonCode | None = None
+    transport_summary: TargetFreshnessTransportSummary | None = None
+    current_target: ReviewTarget | None = None
+    current_target_hash: str | None = None
+    current_checked_at: str | None = None
+    check_method: str | None = None
+    mismatched_fields: tuple[str, ...] = field(default_factory=tuple)
+    reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.status, GateStatus):
+            raise ValueError("target freshness status must be a GateStatus")
+        if self.status == GateStatus.UNKNOWN:
+            raise ValueError("target freshness status must be pass or fail")
+        if self.reason_code is not None and not isinstance(self.reason_code, TargetFreshnessReasonCode):
+            raise ValueError("target freshness reason_code must be valid")
+        if self.transport_summary is not None and not isinstance(
+            self.transport_summary, TargetFreshnessTransportSummary
+        ):
+            raise ValueError("target freshness transport_summary must be valid")
+        if self.current_target is not None and not isinstance(self.current_target, ReviewTarget):
+            raise ValueError("target freshness current_target must be a ReviewTarget")
+        _require_optional_hash_like(self.current_target_hash, "target freshness current_target_hash")
+        _require_optional_non_empty(self.current_checked_at, "target freshness current_checked_at")
+        if self.current_checked_at is not None and not _is_realistic_rfc3339_utc_z(self.current_checked_at):
+            raise ValueError("target freshness current_checked_at must be UTC RFC3339")
+        _require_optional_non_empty(self.check_method, "target freshness check_method")
+        if self.check_method is not None and self.check_method != TARGET_FRESHNESS_CHECK_METHOD:
+            raise ValueError("target freshness check_method is unsupported")
+        _require_allowed_str_tuple(
+            self.mismatched_fields,
+            "target freshness mismatched_fields",
+            TARGET_FRESHNESS_MISMATCH_FIELDS,
+        )
+        _require_optional_non_empty(self.reason, "target freshness reason")
+        if self.reason is not None and not _is_safe_actor_permission_reason(self.reason):
+            raise ValueError("target freshness reason must be allowlisted")
+        if self.status == GateStatus.PASS:
+            for name in ("transport_summary", "current_target", "current_target_hash", "current_checked_at", "check_method"):
+                if getattr(self, name) is None:
+                    raise ValueError(f"target freshness pass requires {name}")
+            if self.reason_code is not None:
+                raise ValueError("target freshness pass must not include reason_code")
+            if self.mismatched_fields:
+                raise ValueError("target freshness pass must not include mismatched_fields")
+            if self.reason is not None:
+                raise ValueError("target freshness pass must not include reason")
+            if self.transport_summary.reason_code is not None or self.transport_summary.retryable:
+                raise ValueError("target freshness pass transport summary must not include failure")
+            if self.current_target_hash != self.current_target.target_hash():
+                raise ValueError("target freshness current_target_hash mismatch")
+        else:
+            if self.reason_code is None:
+                raise ValueError("target freshness failure requires reason_code")
+            if self.transport_summary is None:
+                raise ValueError("target freshness failure requires transport_summary")
+            if self.reason_code == TargetFreshnessReasonCode.TARGET_MISMATCH and not self.mismatched_fields:
+                raise ValueError("target freshness mismatch requires mismatched_fields")
+            if self.reason_code == TargetFreshnessReasonCode.CHECKED_AT_BEFORE_APPROVAL and self.mismatched_fields != ("checked_at",):
+                raise ValueError("target freshness checked-at regression requires checked_at mismatch")
+            if self.current_target is not None and self.current_target_hash != self.current_target.target_hash():
+                raise ValueError("target freshness failure current_target_hash mismatch")
+
+
+@dataclass(frozen=True)
 class FinalizationStatus:
     state: FinalizationState
     final_payload_hash: str | None
     target_hash: str | None
+    reason_code: FinalizationReasonCode | None = None
     reason: str | None = None
 
     def __post_init__(self) -> None:
@@ -2115,11 +2267,19 @@ class FinalizationStatus:
             raise ValueError("finalization state must be a FinalizationState")
         _require_optional_hash_like(self.final_payload_hash, "finalization final_payload_hash")
         _require_optional_hash_like(self.target_hash, "finalization target_hash")
+        if self.reason_code is not None and not isinstance(self.reason_code, FinalizationReasonCode):
+            raise ValueError("finalization reason_code must be valid")
         _require_optional_non_empty(self.reason, "finalization reason")
         if self.state == FinalizationState.FINALIZED:
             for name in ("final_payload_hash", "target_hash"):
                 if getattr(self, name) is None:
                     raise ValueError(f"finalized status requires {name}")
+            if self.reason_code is not None:
+                raise ValueError("finalized status must not include reason_code")
+        if self.state != FinalizationState.FINALIZED and self.reason_code is None:
+            raise ValueError("non-finalized status requires reason_code")
+        if self.state != FinalizationState.FINALIZED and self.final_payload_hash is not None:
+            raise ValueError("non-finalized status must not include final_payload_hash")
 
 
 @dataclass(frozen=True)
@@ -2364,6 +2524,7 @@ class ReviewState:
     post_interaction_gate: PostInteractionGateResult | None
     actor_permission_gate: ActorPermissionGateResult | None
     actor_permission_finalization_check: ActorPermissionFinalizationCheckResult | None
+    target_freshness_check: TargetFreshnessCheckResult | None
     payload_validation: PayloadValidationResult | None
     marker_reconciliation: MarkerReconciliationResult | None
     finalization_status: FinalizationStatus | None
