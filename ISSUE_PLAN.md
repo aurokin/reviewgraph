@@ -35,45 +35,48 @@ This issue must prove that marker scans paginate existing comments, restrict mar
 - Trusted same-target/same-findings/same-payload markers reconcile with no post.
 - Trusted same-target/same-findings/different-payload markers fail closed.
 - Trusted malformed ReviewGraph-looking final-line markers fail closed whenever the exact parser cannot prove a safe different target/findings/payload result; AUR-245 uses the stricter rule that any trusted final-line `<!-- reviewgraph:` parse failure fails closed.
-- Existing comment scans must either fully paginate within explicit page/comment caps before any terminal result or fail closed before any writer can post. A match on page one cannot reconcile if page two later contains a trusted conflict, malformed trusted marker, or pagination failure.
+- Existing comment scans must either fully paginate within explicit page/comment/timeout caps before any terminal result or fail closed before any writer can post. A match on page one cannot reconcile if page two later contains a trusted conflict, malformed trusted marker, or pagination failure.
 - Timeout, rate limit, forbidden, not found, unavailable, malformed page shape, incomplete pagination, repeated cursor, page cap, comment cap, and unknown transport failure states must produce stable fail-closed reason codes.
 - Transport summaries are redacted structured data on every outcome, including reconciled, no-match, ignored-spoof, and fail-closed outcomes. They contain endpoint kind, pages scanned, comments scanned, markers scanned, retryability, stable reason code, and one allowlisted GitHub request ID. On failure this is the failure page request ID; on pass/no-match this is the last safe page request ID. They must not include tokens, raw stderr, raw comment bodies, or payload bodies.
 - Duplicate approved finding fingerprints inside one final payload fail before posting. If this is already covered by approval/finalization preflight, this issue adds an adversarial regression harness rather than inventing a second policy.
 
 ## Implementation Shape
 
-1. Add a durable marker reconciliation handoff model used by the hardened scanner:
-   - status enum with `RECONCILED_EXISTING`, `SCAN_COMPLETE_NO_MATCH`, and `FAILED_CLOSED`
-   - reason-code enum with `pagination_incomplete`, `repeated_cursor`, `page_cap_exceeded`, `comment_cap_exceeded`, `malformed_page`, `timeout`, `rate_limited`, `forbidden`, `not_found`, `unavailable`, `transport_unknown`, `trusted_marker_conflict`, and `trusted_marker_malformed`
+1. Add a durable marker reconciliation handoff model used by the hardened scanner and later finalization/writer nodes:
+   - status enum with `SAFE_TO_POST`, `RECONCILED_EXISTING`, and `FAILED_CLOSED`
+   - reason/action-code enum with `safe_to_post`, `matched_existing`, `pagination_incomplete`, `repeated_cursor`, `page_cap_exceeded`, `comment_cap_exceeded`, `malformed_page`, `timeout`, `rate_limited`, `forbidden`, `not_found`, `unavailable`, `transport_unknown`, `trusted_marker_conflict`, and `trusted_marker_malformed`
    - transport-summary dataclass with endpoint kind, page count, comment count, marker count, retryable, reason code, and request ID
    - author/provenance dataclass for existing comments
    - scan policy dataclass for page/comment caps and trusted bot authors
-   - hardened reconciliation result that can express reconciled, scan-complete/no-match, and fail-closed states without releasing writer input
+   - hardened reconciliation result that can express safe-to-post, reconciled-existing/no-post, and fail-closed states without releasing writer input by itself
    - duplicate matching comment IDs and marker metadata, without retaining raw comment bodies
-   - prefer expanding `src/reviewgraph/models.py` if this result is graph state; otherwise document a concrete conversion from the hardened result into `ReviewState.marker_reconciliation` for AUR-222/AUR-241
+   - expand `src/reviewgraph/models.py` or add an explicitly documented conversion so `ReviewState.marker_reconciliation` can carry status, reason code, transport summary, trusted actor, existing comment ID, and duplicate comment IDs when AUR-222/AUR-241 wire the graph route
 2. Keep the new marker code pure:
    - no live GitHub client
    - no writer adapter
    - no graph imports
    - no shell, environment, subprocess, or clock reads
 3. Add a fake paginated comment-scan adapter surface:
-   - accept a deterministic fake transport that returns issue-comment pages with cursor start `None`
+   - define a protocol such as `get_issue_comments_page(owner_repo, pr_number, cursor)` with cursor start `None`
+   - accept a deterministic fake transport implementing that protocol and returning issue-comment pages
    - page shape is concrete and validated: comments tuple, optional `next_cursor`, boolean `completed`, optional request ID
    - exactly one of `completed=True` or non-empty `next_cursor` is allowed; `completed=True` requires `next_cursor=None`
    - empty completed pages are valid; empty non-completed pages are valid only if the cursor advances
+   - scanned comment shape includes `comment_id`, `body`, `author_login`, `author_type`, `source_provider`, and optional `author_association` for diagnostics only
    - failures are injected as structured transport failures, not real exceptions from network code
    - scan all pages before deciding any terminal status; partial scans fail closed even when an earlier page contained a match
    - call order and cursor progression are asserted in the harness
 4. Add explicit caps and failure taxonomy:
-   - default policy is explicit: `max_pages=20`, `max_comments=1000`
+   - define `MarkerScanLimits(max_pages, max_comments, timeout_seconds)` with default policy `max_pages=20`, `max_comments=1000`, `timeout_seconds=10`
    - exactly-at-cap scans can pass; cap-plus-one scans fail closed
    - repeated cursor, malformed page, page cap exceeded, comment cap exceeded, timeout, rate limit, forbidden, not found, unavailable, incomplete pagination, and unknown transport failure all fail closed
    - timeout/rate-limit/unavailable/transport_unknown are retryable; conflicts and malformed trusted markers are non-retryable
    - untrusted/spoofed markers are ignored and never fail the scan unless the transport/page itself is invalid
 5. Add marker author trust policy:
    - compare exact approved actor for supported user- or bot-authored comments
-   - compare configured trusted ReviewGraph bot authors for bot-authored comments
+   - compare configured `trusted_bot_authors` as trusted ReviewGraph bot authors for bot-authored comments; do not add a broader marker-specific trust list in this issue
    - ignore other authors, even if GitHub association is owner/member/collaborator
+   - ignore memory `trust_label` and do not call conversation-memory trust classification
    - reject unknown/missing author identity only for trust; do not let it become trusted
    - actor comparisons are exact and case-sensitive
 6. Compose with AUR-221 marker semantics:
@@ -86,9 +89,14 @@ This issue must prove that marker scans paginate existing comments, restrict mar
    - conflict/malformed trusted markers found on any later page override an earlier exact match
    - a page/cap/transport failure after an earlier exact match still fails closed because scan completeness was not proven
 7. Prove duplicate-fingerprint preflight:
-   - add a focused regression that duplicate approved finding fingerprints fail before marker reconciliation can release writer input
+   - add a focused regression that duplicate approved finding fingerprints fail before marker scan, final payload construction, marker reconciliation, or writer input release
    - reuse existing `finalize_github_payload` or approval preflight when possible instead of duplicating finalization policy
-8. Update narrow durable docs:
+8. Add the finalization transition contract without adding a writer:
+   - `SAFE_TO_POST` is the only hardened marker outcome that can later let `finalize_github_payload` set `FinalizationState.FINALIZED`, `final_github_payload`, `final_payload_hash`, and writer input
+   - `RECONCILED_EXISTING` is a terminal no-post reconciliation result with an existing comment ID and no writer input release
+   - `FAILED_CLOSED` leaves `final_github_payload`, `final_payload_hash`, and writer input unset
+   - AUR-245 may wire a narrow optional marker-reconciliation input into `finalize_github_payload` or leave the current deferred finalization state if the handoff model and tests prove later wiring; in either case, duplicate-fingerprint preflight must run before any marker transport call
+9. Update narrow durable docs:
    - marker trust, pagination fail-closed behavior, and transport summary shape in `docs/architecture/github-integration.md`
    - finalization/idempotency wording in `docs/architecture/side-effects.md`
    - harness bullet in `docs/harnesses/harness-engineering.md`
@@ -97,7 +105,7 @@ This issue must prove that marker scans paginate existing comments, restrict mar
 
 Create `tests/test_marker_hardening.py` covering:
 
-- Paginated scan reads all pages before returning no-match or reconciled.
+- Paginated scan reads all pages before returning `SAFE_TO_POST` or `RECONCILED_EXISTING`.
 - Matching trusted marker on a later page reconciles without releasing writer input.
 - Early matching trusted marker plus later trusted conflict fails closed.
 - Early matching trusted marker plus later malformed trusted marker fails closed.
@@ -109,7 +117,7 @@ Create `tests/test_marker_hardening.py` covering:
 - Page cap exceeded fails closed with stable reason code and no writer release.
 - Comment cap exceeded fails closed with stable reason code and no writer release.
 - Repeated cursor/incomplete pagination fails closed.
-- Timeout, rate limit, forbidden, not found, unavailable, malformed response, and unknown transport failure classify to stable reason code, retryability, and redacted summary.
+- Timeout, rate limit, forbidden, not found, unavailable, malformed response, unknown transport failure, and injected timeout budget exhaustion classify to stable reason code, retryability, and redacted summary.
 - Transport summary exists on every outcome and includes endpoint kind, page count, comment count, marker count, retryability, reason code, and safe request ID.
 - Transport summary rejects or drops token-looking request IDs and never exposes raw stderr, comment body, payload body, or token fragments.
 - Markers from unapproved users, unconfigured bots, missing authors, unknown author types, differently cased authors, and owner/member/collaborator commenters that are not the approved actor are ignored.
@@ -121,6 +129,7 @@ Create `tests/test_marker_hardening.py` covering:
 - Body-middle copied marker remains inert.
 - Multiple trusted identical matching markers reconcile with duplicate metadata and `writer_input_released=False`.
 - Duplicate approved finding fingerprints fail before marker reconciliation/writer release.
+- Duplicate approved finding fingerprints fail before marker transport calls, final payload construction, marker reconciliation, or writer release.
 - Import-boundary proof for `src/reviewgraph/markers.py`.
 
 Update existing tests as needed:
