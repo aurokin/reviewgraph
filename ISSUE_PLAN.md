@@ -56,6 +56,7 @@ The current code already has approval proof and finalization preflight primitive
    - Keep existing JSON shape stable unless a small first-class explanation is clearly needed for tests.
 4. Update narrow durable docs:
    - `docs/architecture/side-effects.md` for no-approved/local-only writer suppression.
+   - Correct stale durable approval terminology from `approved_finding_ids` to the implemented item-level `approved_item_ids`; do not add an alias or compatibility field.
    - `docs/architecture/state-graph.md` if finalization preflight behavior changes.
    - `docs/harnesses/harness-engineering.md` for the focused no-approved-findings harness.
 
