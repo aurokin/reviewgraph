@@ -1,6 +1,6 @@
-# ISSUE PLAN: AUR-243 Bind Approval To Actor And Permission Snapshot
+# ISSUE PLAN: AUR-220 Fail Closed On Stale Review Target
 
-Active issue plan for `AUR-243` / `RG-054: Bind Approval To Actor And Permission Snapshot`.
+Active issue plan for `AUR-220` / `RG-031: Fail Closed On Stale Review Target`.
 
 Linear is the durable source for status, blockers, and handoff. Durable behavior comes from `docs/architecture/side-effects.md`, `docs/architecture/state-graph.md`, `docs/architecture/github-integration.md`, and `docs/harnesses/harness-engineering.md`.
 
@@ -9,141 +9,159 @@ Linear is the durable source for status, blockers, and handoff. Durable behavior
 - Project: `ReviewGraph`
 - Team: `Aurokin`
 - Milestone: `PRD 0007: Side Effects`
-- Issue: `AUR-243`
-- Title: `RG-054: Bind Approval To Actor And Permission Snapshot`
+- Issue: `AUR-220`
+- Title: `RG-031: Fail Closed On Stale Review Target`
 - Status when planned: `In Progress`
 - Linear comments fetched on 2026-05-07: none
-- Upstream blockers complete: `AUR-244`, `AUR-218`, `AUR-217`, and `AUR-219`.
+- Upstream blockers complete: `AUR-244`, `AUR-218`, `AUR-217`, `AUR-219`, and `AUR-243`.
 
 ## Objective
 
-Bind item-level human approval to the exact actor/permission gate snapshot shown before approval, then add a pure finalization preflight that re-evaluates the current actor/permission proof immediately before final payload construction can happen.
+Add a target-freshness finalization gate so ReviewGraph can prove the PR target has not changed since approval before any final payload construction or writer reachability.
 
-This issue is still a harness-first pre-writer slice. It does not implement live GitHub permission calls, live target freshness refetch, marker reconciliation, post-mode CLI prompting, graph post-mode routing, fake writer, real writer, or any GitHub mutation. It creates the approval binding and final actor/permission re-check contracts that later target freshness, marker, and writer slices must consume.
+This is still a harness-first side-effect slice. It does not implement live GitHub refetch, marker reconciliation, graph post-mode routing, fake writer, real writer, or any GitHub mutation. It must, however, add a minimal `finalize_github_payload` orchestration surface that consumes actor/permission and target freshness preflights, fails closed with dry-run/finalization evidence, and proves no writer input can be released before the full finalization contract exists.
 
 ## Contracts To Preserve
 
 - Dry-run remains the default behavior and must not invoke a writer.
-- Approval can pass only when the pre-approval `ActorPermissionGateResult` has `status=pass`.
-- Approval stores the approved actor, credential principal, credential source, compatibility permission, repo/installation/endpoint permission fields, issue-comment write proof, checked-at time, checked target, checked target hash, endpoint, endpoint kind, check method, and review target.
-- Unknown actor, unknown credential source, unknown permission, insufficient endpoint permission, missing checked-at time, stale cached proof, or any AUR-219 transport failure blocks approval/posting.
-- Finalization re-checks actor/permission from a current probe and fails closed if the current proof is absent, failed, stale, or does not exactly match the approved snapshot.
-- If current actor changes after approval, finalization fails closed even when the new actor has permission.
-- If current credential source, credential principal, compatibility permission, repo/installation/endpoint permission, endpoint write ability, checked target, endpoint, endpoint kind, endpoint method, or check method changes after approval, finalization fails closed.
-- Cached success cannot substitute for an unknown or failed current check. The finalization API must accept a raw current `ActorPermissionProbeResult`, expected target, `evaluated_at`, and max-age policy, then call `evaluate_actor_permission_gate` itself. It must not accept a caller-supplied passing `ActorPermissionGateResult` as enough proof of current permission.
-- Current proof `checked_at` must be greater than or equal to the approved snapshot `approved_permission_checked_at`. A current proof that is otherwise fresh by max-age but older than the approved proof fails closed.
-- Final re-check failures reuse AUR-219 `ActorPermissionReasonCode` taxonomy and redacted `ActorPermissionTransportSummary` semantics.
-- A failed finalization must not build a final payload, set a final payload hash, reconcile markers, or make a writer reachable.
-- Target freshness is intentionally deferred to `AUR-220`; this issue only verifies that actor/permission proof is bound to the approved `ReviewTarget`.
+- The freshness check is bound to the approved `ReviewTarget`, not merely a head SHA string.
+- Current target proof must include owner/repo, PR number, base SHA, head SHA, merge-base SHA, diff basis, checked-at time, endpoint kind, check method, and redacted transport summary.
+- Changed head SHA blocks writer reachability.
+- Changed base SHA, merge-base SHA, or diff basis blocks writer reachability.
+- Owner/repo or PR-number mismatch blocks writer reachability.
+- Timeout, rate limit, forbidden, not found, unavailable service, malformed response, stale cached target proof, missing checked-at, or unknown freshness fails closed with stable machine reason, retryability, and request ID when available.
+- Cached success cannot substitute for a current target check. The helper must accept a raw fake target probe plus explicit `evaluated_at`, then evaluate freshness itself.
+- Target freshness must be checked after approval. The helper must accept `ApprovalDecision` or an explicit approved-at timestamp, validate that timestamp, and reject target proofs whose `checked_at` predates approval even if the proof is otherwise fresh by max-age.
+- Unknown freshness fails before final payload construction and before writer reachability.
+- A passing target-freshness preflight does not by itself mean the final payload is finalized. `finalize_github_payload` must still validate approval shape, approved IDs, non-empty approved findings, duplicate approved fingerprints, actor/permission preflight, final payload hash, redaction, and later marker reconciliation before writer input can be released.
+- Marker reconciliation remains deferred, so AUR-220 must not set `FinalizationState.FINALIZED`, `final_github_payload`, `final_payload_hash`, or a writer-input release object on the fresh-target path.
+- The writer adapter, once it exists, receives only already-finalized payloads. AUR-220 proves this with a fake writer-input sentinel: stale/unknown target freshness calls the final payload builder zero times and releases no writer input; fresh matching target can advance to a `preflight_passed_marker_reconciliation_deferred` state but still releases no writer input.
 
 ## Implementation Shape
 
-1. Expand `ApprovalDecision` in `src/reviewgraph/models.py` to carry the endpoint-specific actor/permission snapshot from AUR-219:
-   - `approved_credential_principal`
-   - `approved_credential_source`
-   - `approved_repo_permission`
-   - `approved_installation_permission`
-   - `approved_endpoint_permission`
-   - `approved_issue_comment_write`
-   - `approved_permission_check_method`
-   - `approved_permission_endpoint_method`
-   - `approved_permission_checked_target`
-   - `approved_permission_checked_target_hash`
-   - `approved_permission_endpoint`
-   - `approved_permission_endpoint_kind`
-   - `approved_permission_transport_summary`
-2. Keep existing `ApprovalDecision` fields source-compatible where practical. If the model must become stricter, update all call sites and model tests in the same commit.
-3. Keep `build_approval_proof(...)` payload/hash-only. It must continue to return `ApprovalProofResult` for approved item IDs, final body hash, marker hash, findings hash, redaction proof, approver, and timestamp. Do not make `ApprovalProofResult` carry side-effect actor/permission state.
-4. Add a small pure helper such as `build_approval_decision(proof, actor_permission_gate, ...)` in `src/reviewgraph/approval.py`. This is the only approval-time binding point for `ApprovalDecision`; it consumes a passing `ApprovalProofResult` and a passing actor/permission gate and copies the immutable approval snapshot.
-5. Add `ApprovalDecisionBuildResult` and `ApprovalDecisionBuildReasonCode` or equivalent so approval-time actor/permission failures have a stable machine reason without mixing side-effect authorization failures into `ApprovalProofResult` / `ApprovalProofReasonCode`. Minimum reason codes:
-   - `approval_proof_failed`
-   - `actor_permission_gate_failed`
-   - `actor_permission_target_mismatch`
-6. Propagate the failing gate's redacted transport summary through the approval-decision build result only as diagnostics if the model shape supports it; do not copy secret-bearing text into reasons. `build_approval_proof` must never emit actor/permission failure codes.
-7. Add `ActorPermissionFinalizationCheckResult` and `ActorPermissionFinalizationReasonCode` or equivalent in `src/reviewgraph/models.py`. This is an actor/permission preflight result, not full payload finalization. Minimum fields:
-   - `status: GateStatus`
-   - `reason_code`
-   - `actor_permission_reason_code` when the current gate itself failed with an AUR-219 code
-   - `actor_permission_transport_summary`
-   - `current_actor_permission_checked_at`
-   - allowlisted `mismatched_fields`
-   - no final payload, final payload hash, marker reconciliation, or writer result fields
-   - `GateStatus.UNKNOWN` is invalid and must be rejected at construction or normalized to a failed-closed result before it reaches state.
-8. Add the new result to `ReviewState` as an explicit field such as `actor_permission_finalization_check`. Do not overload `finalization_status` for this preflight pass. Later AUR-220/finalization work may compose this check into full `FinalizationStatus`.
-9. Add `ActorPermissionFinalizationReasonCode` values for at least:
-   - `actor_permission_gate_failed`
-   - `actor_permission_snapshot_mismatch`
-   - `actor_permission_checked_at_regressed`
-10. Add `src/reviewgraph/finalization.py` as a pure pre-writer module:
-   - `validate_actor_permission_snapshot_for_finalization(approval, current_probe, expected_target, evaluated_at, max_proof_age_seconds=...)` or equivalent.
-   - the helper owns the call to `evaluate_actor_permission_gate` so tests cannot satisfy finalization with a cached passing gate.
-   - the helper returns `ActorPermissionFinalizationCheckResult`.
-   - a passing actor/permission check means only that the actor/permission preflight passed; it must not set `FinalizationState.FINALIZED`, `final_github_payload`, `final_payload_hash`, marker reconciliation, or writer reachability.
-   - no imports of live GitHub clients, shell, subprocess, writer, graph post mode, or marker reconciliation.
-11. Prefer an immutable `ActorPermissionSnapshot` value object if it reduces duplicated field lists. The canonical comparison tuple is actor, credential principal, credential source, compatibility permission, repo permission, installation permission, endpoint permission, issue-comment write, check method, endpoint method, checked target, checked target hash, endpoint, and endpoint kind. `transport_summary` is diagnostic-only and must not participate in pass equality because request IDs can legitimately change across re-checks.
-12. Approval building must reject a passing `ActorPermissionGateResult` if `checked_target`, `checked_target_hash`, endpoint path, or endpoint kind does not match the `review_target` being approved. `ApprovalDecision` direct construction should also reject internally inconsistent actor/permission snapshots where the fields are present in the model contract.
-13. Actor/permission finalization check comparison must require exact equality for the canonical tuple above and require `current_gate.checked_at >= approval.approved_permission_checked_at`.
-14. Failed actor/permission finalization checks should preserve a redacted transport summary from the current evaluated gate when available and expose a stable machine reason:
-   - direct AUR-219 reason code for current gate failures,
-   - actor/permission finalization-specific mismatch code for approved/current snapshot drift,
-   - allowlisted `mismatched_fields` for actor, credential principal, credential source, permission, repo permission, installation permission, endpoint permission, issue-comment write, check method, endpoint method, checked target, checked target hash, endpoint, endpoint kind, or checked-at regression,
-   - no secret-bearing fields in reasons or summaries.
-15. Update `GitHubReadResult.to_dict()` or dry-run JSON only if needed to prove dry-run output still records the enriched actor/permission gate from AUR-219. Do not add a writer path.
-16. Update narrow durable docs with the new approval snapshot shape and final actor/permission re-check semantics.
+1. Add target-freshness model contracts in `src/reviewgraph/models.py`:
+   - `TargetFreshnessReasonCode`
+   - `TargetFreshnessTransportSummary`
+   - `TargetFreshnessCheckResult`
+2. Add a dedicated `ReviewState` field such as `target_freshness_check: TargetFreshnessCheckResult | None`.
+3. Add `TargetFreshnessProbeResult` and `validate_target_freshness_for_finalization(...)` in `src/reviewgraph/finalization.py` or a small pure module if that keeps boundaries clearer.
+4. The helper owns fake-probe evaluation:
+   - accepts raw `TargetFreshnessProbeResult`
+   - accepts `ApprovalDecision` or approved target plus explicit approved-at timestamp
+   - accepts explicit `evaluated_at`
+   - accepts deterministic max proof age policy
+   - does not accept an already-passing freshness result as enough proof
+5. Target freshness pass requires:
+   - probe status/evidence is current and well-formed
+   - current `ReviewTarget` exactly equals the approved target across owner/repo, PR number, base SHA, head SHA, merge-base SHA, and diff basis
+   - approved and current merge-base SHA are known in post/finalization mode; `None` merge-base freshness is unknown and fails closed in AUR-220
+   - checked-at is UTC RFC3339 with trailing `Z`
+   - checked-at is fresh relative to `evaluated_at`
+   - checked-at is greater than or equal to the approval timestamp
+   - transport summary is redacted and present
+6. Target freshness failure result:
+   - uses stable reason code
+   - includes retryability classification
+   - includes redacted transport summary and request ID when available
+   - includes allowlisted mismatched fields for target drift
+   - carries no final payload, final payload hash, marker reconciliation, or writer result
+7. `GateStatus.UNKNOWN` is invalid for target freshness results and must be rejected or normalized to fail before state.
+8. Raw unknown or missing-current-proof input must return a structured fail-closed `TargetFreshnessCheckResult(status=fail, reason_code=unknown_freshness, retryable=...)`; it must not crash or rely on an uncaught model constructor error.
+9. `TargetFreshnessTransportSummary` must have model-level allowlisting comparable to actor/permission summaries: endpoint-kind constants, pass/fail reason consistency, retryability consistency, request-ID character and secret filtering, and no fields for raw stderr, raw bodies, request headers, or tokens.
+10. Add or expand `FinalizationStatus` with stable finalization reason codes so target freshness failures have structured finalization evidence:
+   - `target_freshness_failed`
+   - `actor_permission_failed` if the composed actor/permission preflight fails
+   - `approval_preflight_failed` for invalid approved IDs, empty approvals, unknown approved IDs, or duplicate approved fingerprints before any current reads
+   - `payload_validation_failed` for final payload/hash/redaction validation failures in this minimal orchestrator
+   - `marker_reconciliation_deferred` or `preflight_passed_marker_reconciliation_deferred` for the fresh target path that cannot become fully finalized yet
+11. Add `finalize_github_payload(...)` in `src/reviewgraph/finalization.py`:
+   - validates approved decision shape, approved IDs, non-empty approved findings, unknown approved IDs, and duplicate approved fingerprints before any current actor/permission or target freshness reads
+   - runs actor/permission finalization preflight from AUR-243
+   - runs target freshness preflight from AUR-220
+   - fails closed before final payload construction when either preflight fails
+   - records `target_freshness_check`, `actor_permission_finalization_check`, `finalization_status`, and a dry-run/error evidence shape for stale target
+   - may call a deterministic final payload preview/builder only after approval shape, approved ID preflight, actor/permission, and target freshness pass
+   - validates the preview hash against `approval.approved_final_payload_hash` if it constructs a preview
+   - returns a non-finalized `marker_reconciliation_deferred` result on the fresh path; no writer input is released until AUR-221/AUR-245 marker reconciliation exists
+12. The dry-run/failure evidence shape must expose stale target reason code, retryability, endpoint kind, request ID when available, and mismatched fields without raw response bodies, headers, tokens, stderr, or unredacted payloads.
+13. Keep `src/reviewgraph/finalization.py` pure: no live GitHub client, shell, subprocess, writer, graph post mode, marker reconciliation, or environment reads.
+14. Update narrow durable docs with the target-freshness result shape, the minimal finalization gate, and its position after actor/permission preflight and before final payload construction.
+
+## Reason Codes
+
+Target freshness failures should include at least:
+
+- `target_mismatch`
+- `missing_merge_base`
+- `missing_checked_at`
+- `stale_cached_target`
+- `future_checked_at`
+- `checked_at_before_approval`
+- `unknown_freshness`
+- `timeout`
+- `rate_limited`
+- `forbidden`
+- `not_found`
+- `unavailable`
+- `malformed_response`
+
+Retryable target freshness failures are `timeout`, `rate_limited`, `unavailable`, and raw `unknown_freshness` only when the fake probe explicitly marks the unknown proof as retryable. Permission/visibility failures, malformed responses, missing timestamps, future timestamps, checked-at regression before approval, stale cache, missing merge-base, and target mismatch are fail-closed non-retryable by default.
 
 ## Focused Harness
 
-Create `tests/test_actor_permission_binding.py` covering:
+Create `tests/test_target_freshness.py` covering:
 
-- Approval decision stores approved actor, credential principal/source, compatibility permission, repo/installation/endpoint permission, issue-comment write ability, checked-at time, full checked target, endpoint, endpoint kind, method, check method, transport summary, and review target.
-- `build_approval_proof` remains payload/hash-only; `build_approval_decision` owns actor/permission binding.
-- Approval decision builder returns a typed failure result when `proof.status != pass` or `actor_permission_gate.status != pass`; permission failures do not use `ApprovalProofReasonCode`.
-- Approval builder rejects a passing actor/permission gate whose checked target, checked target hash, endpoint, or endpoint kind does not match the approval review target.
-- Direct `ApprovalDecision` construction rejects internally inconsistent actor/permission snapshot fields where practical, including mismatched target hash/target object, incompatible endpoint/target, invalid endpoint kind/method, missing write proof, invalid status-like values, and unsafe identity fields.
-- `ActorPermissionFinalizationCheckResult` rejects `GateStatus.UNKNOWN` and requires pass/fail-only semantics.
-- Positive actor/permission finalization check: exact current snapshot with `checked_at >= approved_permission_checked_at` returns pass evidence and no mismatched fields.
-- Positive actor/permission finalization check with a different current transport request ID proves transport metadata is diagnostic-only and not part of snapshot equality.
-- Unknown actor, unknown credential source, unknown permission, insufficient endpoint permission, missing checked-at time, malformed response, stale cached proof, timeout, rate limit, forbidden, not found, and unavailable current gates block approval/finalization.
-- Finalization helper owns current proof evaluation from `ActorPermissionProbeResult`, `expected_target`, and `evaluated_at`; tests must prove passing an old approved gate object is not an available API path.
-- Current actor mismatch fails closed even if the current gate has write permission.
-- Current credential principal mismatch fails closed.
-- Current credential source mismatch fails closed.
-- Current derived compatibility permission (`approved_permission`) mismatch fails closed, even if one of the lower-level permission fields still appears write-capable.
-- Current repo/installation/endpoint permission mismatch fails closed.
-- Current `issue_comment_write=false` or failed gate blocks finalization.
-- Current checked target, target hash, endpoint, endpoint kind, endpoint method, or check method mismatch fails closed.
-- Current checked-at older than the approved checked-at fails closed even when the current proof is otherwise fresh by max-age.
-- Cached approved success cannot be reused when current gate is missing, failed, or unknown.
-- Actor/permission finalization check failures never return or imply a final payload hash, marker reconciliation, or writer reachability.
-- Actor/permission finalization mismatch failures expose stable reason code plus allowlisted mismatched fields rather than overloading `target_mismatch` for actor or credential changes.
-- Redacted transport summary preserves endpoint kind, retryability, reason code, and request ID while excluding tokens, raw stderr, and unredacted bodies.
-- Failed actor/permission finalization checks serialize enough diagnostic context for dry-run/state consumers while excluding raw probe bodies, request headers, tokens, raw stderr, and unredacted response bodies.
+- Fresh matching target passes with redacted transport summary.
+- Changed head SHA fails closed.
+- Changed base SHA fails closed.
+- Changed merge-base SHA fails closed.
+- Missing or unknown approved/current merge-base freshness fails closed.
+- Changed diff basis fails closed.
+- Changed owner/repo fails closed.
+- Changed PR number fails closed.
+- Missing checked-at fails closed.
+- Malformed checked-at fails closed.
+- Stale cached target proof fails closed.
+- Future checked-at outside allowed skew fails closed.
+- Checked-at before approval timestamp fails closed even when otherwise fresh by max-age.
+- Raw unknown/no-current-proof input returns structured fail-closed output with `unknown_freshness`.
+- Timeout, rate limit, forbidden, not found, unavailable, and malformed response fail closed with stable reason code, retryability, endpoint kind, and request ID when available.
+- `GateStatus.UNKNOWN` is rejected for target freshness result construction, while raw unknown probe input is normalized into structured fail-closed output.
+- Transport summary model tests prove endpoint kind, reason-code/retryability consistency, request ID allowlisting, and secret-like request ID rejection.
+- Current raw probe evaluation is owned by the helper; there is no API path that accepts a cached passing freshness result as sufficient.
+- Stale/unknown target freshness prevents the final payload builder from being called.
+- Stale/unknown target freshness records `target_freshness_check`, `finalization_status`, and dry-run/error evidence with stable code, retryability, endpoint kind, request ID, and mismatched fields.
+- Passing target freshness alone does not create marker reconciliation or writer state.
+- Invalid approved IDs, empty approvals, unknown approved IDs, and duplicate approved fingerprints fail before current actor/permission or target freshness probes are evaluated.
+- Fresh matching target plus passing actor/permission preflight produces a non-finalized `marker_reconciliation_deferred` / `preflight_passed_marker_reconciliation_deferred` result, not `FinalizationState.FINALIZED`.
+- The fake writer-input sentinel proves writer input is not released by AUR-220 even on the fresh target path because marker reconciliation is not implemented yet; no writer adapter or GitHub mutation is introduced.
+- Failing target freshness serializes enough diagnostic context for dry-run/state consumers without raw response bodies, request headers, tokens, raw stderr, or unredacted payloads.
 - `src/reviewgraph/finalization.py` import-boundary proof: no live GitHub, shell/subprocess, graph post mode, writer, marker reconciliation, or live transport imports.
 
 Update existing tests as needed:
 
-- `tests/test_approval.py` for the new approval decision builder and failure cases.
-- `tests/test_models.py` for stricter `ApprovalDecision` invariants and finalization result invariants.
-- `tests/test_github_fake_read.py` only if dry-run/read actor-permission serialization changes.
+- `tests/test_models.py` for target freshness model invariants and `ReviewState` field parity with `docs/architecture/state-graph.md`.
+- `tests/test_actor_permission_binding.py` only if shared finalization module contracts move.
+- `tests/test_github_fake_read.py` only if serialized dry-run/read target evidence changes.
 
 ## Validation
 
 Focused:
 
 ```bash
-python -m pytest tests/test_actor_permission_binding.py -q
+python -m pytest tests/test_target_freshness.py -q
 ```
 
 Regression:
 
 ```bash
-python -m pytest tests/test_actor_permission_binding.py tests/test_approval.py tests/test_models.py tests/test_permissions.py tests/test_github_fake_read.py tests/test_redaction.py tests/test_cli.py -q
+python -m pytest tests/test_target_freshness.py tests/test_actor_permission_binding.py tests/test_approval.py tests/test_models.py tests/test_permissions.py tests/test_github_fake_read.py tests/test_redaction.py tests/test_cli.py -q
 python scripts/check_docs.py
 git diff --check
 python -m py_compile src/reviewgraph/*.py
 ```
 
-Run the full suite because this issue touches shared side-effect models and approval contracts:
+Run the full suite because this issue touches shared side-effect models and finalization preflight state:
 
 ```bash
 python -m pytest -q
@@ -151,9 +169,7 @@ python -m pytest -q
 
 ## Out Of Scope
 
-- Live GitHub actor/permission discovery.
-- Target freshness re-fetch and target drift blocking (`AUR-220`).
-- Marker generation/parsing/reconciliation beyond preserving existing approval marker hash behavior.
-- Non-interactive post-mode gate (`AUR-246`).
-- No-approved-finding writer suppression (`AUR-223`).
+- Live GitHub target re-fetch implementation.
+- Marker generation/parsing/reconciliation.
+- Non-interactive post-mode gate.
 - Fake writer, real writer, manual live post smoke, or any GitHub mutation.
