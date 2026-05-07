@@ -44,9 +44,19 @@ def test_builds_memory_from_comments_reviews_and_threads() -> None:
 def test_owner_member_collaborator_and_operator_are_trusted() -> None:
     fixture = load_fixture_pr("security-sensitive-change")
     pr = fixture.pr
-    owner_comment = replace(pr.comments[0], author="repo-owner", author_association="OWNER")
-    collaborator_comment = replace(pr.comments[0], author="collab", author_association="COLLABORATOR")
-    operator_comment = replace(pr.comments[0], author="operator", author_association="CONTRIBUTOR")
+    owner_comment = replace(pr.comments[0], author="repo-owner", author_association="OWNER", trust_label="trusted")
+    collaborator_comment = replace(
+        pr.comments[0],
+        author="collab",
+        author_association="COLLABORATOR",
+        trust_label="trusted",
+    )
+    operator_comment = replace(
+        pr.comments[0],
+        author="operator",
+        author_association="CONTRIBUTOR",
+        trust_label="trusted",
+    )
     pr = replace(pr, comments=(owner_comment, collaborator_comment, operator_comment))
 
     memory = build_conversation_memory(pr, trusted_operator_authors={"operator"})
@@ -89,6 +99,33 @@ def test_unknown_author_type_is_default_denied_even_with_trusted_association() -
     assert memory.entries[0].trust_label == "untrusted"
     assert memory.entries[0].actionable is False
     assert memory.entries[0].passive_reason == "untrusted author"
+
+
+def test_unknown_trust_label_is_default_denied_even_with_trusted_association() -> None:
+    fixture = load_fixture_pr("basic-pr")
+    ambiguous_comment = replace(fixture.pr.comments[0], trust_label="unknown")
+    ambiguous_review = replace(fixture.pr.reviews[0], trust_label="unknown")
+    ambiguous_thread = replace(
+        fixture.pr.review_threads[0],
+        resolved_status="unresolved",
+        comments=(replace(fixture.pr.review_threads[0].comments[0], trust_label="unknown"),),
+    )
+    pr = replace(
+        fixture.pr,
+        comments=(ambiguous_comment,),
+        reviews=(ambiguous_review,),
+        review_threads=(ambiguous_thread,),
+    )
+
+    memory = build_conversation_memory(pr)
+
+    assert [entry.trust_label for entry in memory.entries] == ["untrusted", "untrusted", "untrusted"]
+    assert [entry.actionable for entry in memory.entries] == [False, False, False]
+    assert [entry.passive_reason for entry in memory.entries] == [
+        "untrusted author",
+        "untrusted author",
+        "untrusted author",
+    ]
 
 
 def test_contributor_comment_stays_passive_even_if_fixture_source_claims_trusted() -> None:
@@ -137,7 +174,14 @@ def test_resolved_threads_are_non_actionable_and_unresolved_threads_actionable_f
     changed = load_fixture_pr("untrusted-comment-injection").pr
     trusted_unresolved_thread = replace(
         changed.review_threads[0],
-        comments=(replace(changed.review_threads[0].comments[0], author="maintainer", author_association="MEMBER"),),
+        comments=(
+            replace(
+                changed.review_threads[0].comments[0],
+                author="maintainer",
+                author_association="MEMBER",
+                trust_label="trusted",
+            ),
+        ),
     )
     memory = build_conversation_memory(replace(changed, review_threads=(trusted_unresolved_thread,)))
     thread_entry = next(entry for entry in memory.entries if entry.source_type == "review_thread")

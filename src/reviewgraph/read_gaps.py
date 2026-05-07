@@ -49,6 +49,38 @@ class FailClosedReadOutcome:
     posting_plan: None
     candidate_payload: None
     graph_trace: tuple[str, ...]
+    page_gap_descriptors: tuple[GitHubPageGapDescriptor, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        data = {
+            "post_enabled": self.post_enabled,
+            "pr_ref": None if self.pr_ref is None else {
+                "owner_repo": self.pr_ref.owner_repo,
+                "pr_number": self.pr_ref.pr_number,
+            },
+            "review_target": None if self.review_target is None else self.review_target.to_ordered_dict(),
+            "read_gaps": [_raw_read_gap_json(gap) for gap in self.read_gaps],
+            "errors": [_raw_error_json(error) for error in self.errors],
+            "graph_trace": list(self.graph_trace),
+            "page_gap_descriptors": [
+                _raw_page_gap_descriptor_json(descriptor) for descriptor in self.page_gap_descriptors
+            ],
+            "selected_reviewers": list(self.selected_reviewers),
+            "reviewer_run_status": list(self.reviewer_run_status),
+            "reviewer_results": list(self.reviewer_results),
+            "findings": list(self.findings),
+            "posting_plan": self.posting_plan,
+            "candidate_payload_preview": None,
+        }
+        redacted = redact_data(data)
+        if not isinstance(redacted.data, dict):
+            raise ValueError("fail-closed read outcome serialization must produce an object")
+        redacted.data["redaction_status"] = {
+            "redacted": redacted.redaction_status.redacted,
+            "replacement_count": redacted.redaction_status.replacement_count,
+            "categories": list(redacted.redaction_status.categories),
+        }
+        return redacted.data
 
 
 @dataclass(frozen=True)
@@ -95,6 +127,7 @@ def build_fail_closed_read_outcome(
     read_gaps: tuple[ReadGap, ...],
     review_target: ReviewTarget | None = None,
     errors: tuple[GraphError, ...] | None = None,
+    page_gap_descriptors: tuple[GitHubPageGapDescriptor, ...] = (),
 ) -> FailClosedReadOutcome:
     if not any(gap.required for gap in read_gaps):
         raise ValueError("fail-closed read outcome requires at least one required GitHub read gap")
@@ -112,6 +145,7 @@ def build_fail_closed_read_outcome(
         posting_plan=None,
         candidate_payload=None,
         graph_trace=(GITHUB_READ_GAP_TRACE,),
+        page_gap_descriptors=page_gap_descriptors,
     )
 
 
@@ -219,6 +253,16 @@ def _raw_error_json(error: GraphError) -> dict[str, Any]:
         "code": error.code,
         "message": error.message,
         "retryable": error.retryable,
+    }
+
+
+def _raw_page_gap_descriptor_json(descriptor: GitHubPageGapDescriptor) -> dict[str, Any]:
+    return {
+        "resource": descriptor.resource,
+        "missing_page": descriptor.missing_page,
+        "underlying_reason": descriptor.underlying_reason,
+        "would_affect": list(descriptor.would_affect),
+        "examples": list(descriptor.examples),
     }
 
 

@@ -47,6 +47,10 @@ Required GitHub read gaps fail closed before review. `forbidden`, `not_found`, `
 
 If metadata cannot be fetched, ReviewGraph may only know the parsed PR ref. That targetless read failure renders local dry-run evidence with no `ReviewTarget`, no reviewers, no findings, no candidate payload, and no side effects.
 
+The paginated fake read path extends the adapter contract to files, issue comments, review comments, reviews, and thread state. Successful pagination returns complete resource coverage, no stale metadata/files-only read gaps, and `thread_state.available=true`. Expected page failures return fail-closed read state instead of partial PR context; page/cursor diagnostics are serialized through the redacted read-gap surface.
+
+Review comments are attached to review threads only when matching thread state was fetched. A fetched review comment without matching thread state is a required `thread_state_unknown` gap. Until GitHub trust policy is implemented, GitHub-derived comments and reviews default to `untrusted`.
+
 Patch-derived changed ranges are deliberately conservative target hunk ranges for the diff-anchor protocol. Parseable modified, added, and renamed files with target-side additions can produce anchor metadata; renamed files preserve `previous_path`. Deleted files, binary or unavailable patches, oversized patches, unsupported hunk headers, malformed hunk body lines, target-empty hunks, or hunks without target-side additions produce anchor-unavailable metadata instead of false changed ranges.
 
 Raw typed PR context may exist in memory for graph use. Anything serialized for logs, traces, markdown, JSON, errors, or local notes must use the adapter's redacted serialization/status path.

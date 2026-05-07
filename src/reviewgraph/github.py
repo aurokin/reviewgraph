@@ -10,16 +10,26 @@ from reviewgraph.models import (
     ActorPermissionGateResult,
     GateStatus,
     PullRequestChangedFile,
+    PullRequestComment,
     PullRequestContext,
+    PullRequestReview,
+    PullRequestReviewThread,
     ReadGap,
     RedactionStatus,
     ReviewTarget,
+)
+from reviewgraph.read_gaps import (
+    FailClosedReadOutcome,
+    GitHubPageGapDescriptor,
+    build_fail_closed_read_outcome,
+    classify_github_read_gap,
 )
 from reviewgraph.redaction import redact_data, redact_text
 
 
 class GitHubReadScope(StrEnum):
     METADATA_FILES_ONLY = "metadata_files_only"
+    FULL_CONTEXT = "full_context"
 
 
 class ResourceReadStatus(StrEnum):
@@ -37,6 +47,45 @@ class GitHubFakeReadTransport(Protocol):
     def get_pull_request(self, owner_repo: str, pr_number: int) -> dict[str, object]: ...
 
     def get_changed_files(self, owner_repo: str, pr_number: int) -> list[dict[str, object]]: ...
+
+
+class GitHubPaginatedFakeReadTransport(Protocol):
+    def get_pull_request(self, owner_repo: str, pr_number: int) -> dict[str, object]: ...
+
+    def get_changed_files_page(
+        self,
+        owner_repo: str,
+        pr_number: int,
+        cursor: object | None,
+    ) -> dict[str, object]: ...
+
+    def get_issue_comments_page(
+        self,
+        owner_repo: str,
+        pr_number: int,
+        cursor: object | None,
+    ) -> dict[str, object]: ...
+
+    def get_review_comments_page(
+        self,
+        owner_repo: str,
+        pr_number: int,
+        cursor: object | None,
+    ) -> dict[str, object]: ...
+
+    def get_reviews_page(
+        self,
+        owner_repo: str,
+        pr_number: int,
+        cursor: object | None,
+    ) -> dict[str, object]: ...
+
+    def get_review_threads_page(
+        self,
+        owner_repo: str,
+        pr_number: int,
+        cursor: object | None,
+    ) -> dict[str, object]: ...
 
 
 @dataclass(frozen=True)
@@ -96,6 +145,17 @@ class GitHubResourceCoverage:
             reviews=ResourceReadStatus.NOT_FETCHED_IN_SCOPE,
             review_comments=ResourceReadStatus.NOT_FETCHED_IN_SCOPE,
             thread_state=ResourceReadStatus.NOT_FETCHED_IN_SCOPE,
+        )
+
+    @classmethod
+    def complete(cls) -> "GitHubResourceCoverage":
+        return cls(
+            metadata=ResourceReadStatus.COMPLETE,
+            files=ResourceReadStatus.COMPLETE,
+            comments=ResourceReadStatus.COMPLETE,
+            reviews=ResourceReadStatus.COMPLETE,
+            review_comments=ResourceReadStatus.COMPLETE,
+            thread_state=ResourceReadStatus.COMPLETE,
         )
 
     def to_dict(self) -> dict[str, str]:
@@ -172,6 +232,37 @@ class GitHubReadResult:
                         "patch_status": item.patch_status,
                     }
                     for item in self.pr.changed_files
+                ],
+                "comments": [
+                    _pull_request_comment_dict(comment)
+                    for comment in self.pr.comments
+                ],
+                "reviews": [
+                    {
+                        "id": review.id,
+                        "author": review.author,
+                        "author_association": review.author_association,
+                        "author_type": review.author_type,
+                        "state": review.state,
+                        "created_at": review.created_at,
+                        "trust_label": review.trust_label,
+                        "source_type": review.source_type,
+                        "body": review.body,
+                        "url": review.url,
+                    }
+                    for review in self.pr.reviews
+                ],
+                "review_threads": [
+                    {
+                        "id": thread.id,
+                        "path": thread.path,
+                        "resolved_status": thread.resolved_status,
+                        "comments": [
+                            _pull_request_comment_dict(comment)
+                            for comment in thread.comments
+                        ],
+                    }
+                    for thread in self.pr.review_threads
                 ],
             },
             "changed_file_lines": [
@@ -303,6 +394,113 @@ def read_github_pr_with_fake_transport(
     ))
 
 
+def read_github_pr_with_paginated_fake_transport(
+    transport: GitHubPaginatedFakeReadTransport,
+    ref: str | GitHubPRRef,
+) -> GitHubReadResult | FailClosedReadOutcome:
+    pr_ref = parse_github_pr_ref(ref) if isinstance(ref, str) else ref
+    try:
+        pr_payload = transport.get_pull_request(pr_ref.owner_repo, pr_ref.pr_number)
+    except Exception as exc:
+        message = redact_text(str(exc)).text
+        raise GitHubReadError("fake_transport_error", f"GitHub fake read failed: {message}") from exc
+    if not isinstance(pr_payload, dict):
+        raise GitHubReadError("invalid_pr_payload", "GitHub fake PR payload must be an object")
+
+    review_target = _review_target_from_payload(pr_ref, pr_payload)
+    metadata = GitHubPRMetadata(
+        author=_required_str(pr_payload, "author", "pull request"),
+        base_ref=_required_nested_str(pr_payload, "base", "ref"),
+        head_ref=_required_nested_str(pr_payload, "head", "ref"),
+    )
+    paged_files = _collect_pages(
+        resource="files",
+        fetch_page=transport.get_changed_files_page,
+        pr_ref=pr_ref,
+        review_target=review_target,
+    )
+    if isinstance(paged_files, FailClosedReadOutcome):
+        return paged_files
+    paged_issue_comments = _collect_pages(
+        resource="comments",
+        fetch_page=transport.get_issue_comments_page,
+        pr_ref=pr_ref,
+        review_target=review_target,
+    )
+    if isinstance(paged_issue_comments, FailClosedReadOutcome):
+        return paged_issue_comments
+    paged_review_comments = _collect_pages(
+        resource="review_comments",
+        fetch_page=transport.get_review_comments_page,
+        pr_ref=pr_ref,
+        review_target=review_target,
+    )
+    if isinstance(paged_review_comments, FailClosedReadOutcome):
+        return paged_review_comments
+    paged_reviews = _collect_pages(
+        resource="reviews",
+        fetch_page=transport.get_reviews_page,
+        pr_ref=pr_ref,
+        review_target=review_target,
+    )
+    if isinstance(paged_reviews, FailClosedReadOutcome):
+        return paged_reviews
+    paged_threads = _collect_pages(
+        resource="thread_state",
+        fetch_page=transport.get_review_threads_page,
+        pr_ref=pr_ref,
+        review_target=review_target,
+    )
+    if isinstance(paged_threads, FailClosedReadOutcome):
+        return paged_threads
+
+    if not paged_files.items:
+        raise GitHubReadError("invalid_files_payload", "GitHub fake changed files must not be empty")
+    changed_files, changed_file_lines, anchor_unavailable = _changed_files_from_payload(paged_files.items)
+    comments = tuple(_comment_from_payload(payload, source_type="issue_comment") for payload in paged_issue_comments.items)
+    reviews = tuple(_review_from_payload(payload) for payload in paged_reviews.items)
+    review_threads_or_gap = _review_threads_from_payloads(
+        pr_ref=pr_ref,
+        review_target=review_target,
+        review_comment_payloads=paged_review_comments.items,
+        thread_payloads=paged_threads.items,
+    )
+    if isinstance(review_threads_or_gap, FailClosedReadOutcome):
+        return review_threads_or_gap
+    pr = PullRequestContext(
+        review_target=review_target,
+        title=_required_str(pr_payload, "title", "pull request"),
+        body=_optional_text(pr_payload, "body", "pull request"),
+        labels=tuple(_str_list(pr_payload.get("labels", []), "pull request labels")),
+        changed_files=changed_files,
+        comments=comments,
+        reviews=reviews,
+        review_threads=review_threads_or_gap,
+    )
+    return _with_current_redaction_status(GitHubReadResult(
+        pr_ref=pr_ref,
+        metadata=metadata,
+        pr=pr,
+        review_target=review_target,
+        changed_file_lines=changed_file_lines,
+        anchor_unavailable=anchor_unavailable,
+        resource_coverage=GitHubResourceCoverage.complete(),
+        read_gaps=(),
+        thread_state=GitHubThreadStateAvailability(
+            available=True,
+            reason="complete",
+        ),
+        actor_permission=None,
+        redaction_status=RedactionStatus(
+            status=GateStatus.PASS,
+            redacted=False,
+            replacement_count=0,
+            categories=(),
+        ),
+        scope=GitHubReadScope.FULL_CONTEXT,
+    ))
+
+
 def _raise_invalid_ref(value: str) -> None:
     raise GitHubReadError("invalid_pr_ref", "invalid GitHub PR reference")
 
@@ -395,6 +593,263 @@ def _changed_files_from_payload(
         changed_files.append(changed_file)
         changed_lines.append(changed_line)
     return tuple(changed_files), tuple(changed_lines), tuple(anchor_unavailable)
+
+
+@dataclass(frozen=True)
+class _PagedItems:
+    items: list[dict[str, object]]
+
+
+def _collect_pages(
+    *,
+    resource: str,
+    fetch_page: Any,
+    pr_ref: GitHubPRRef,
+    review_target: ReviewTarget,
+) -> _PagedItems | FailClosedReadOutcome:
+    cursor: object | None = None
+    page_number = 1
+    items: list[dict[str, object]] = []
+    seen_cursors: set[object] = set()
+    while True:
+        try:
+            payload = fetch_page(pr_ref.owner_repo, pr_ref.pr_number, cursor)
+        except Exception as exc:
+            return _pagination_failure(
+                pr_ref=pr_ref,
+                review_target=review_target,
+                resource=resource,
+                page=page_number,
+                reason="timeout",
+                message=str(exc),
+            )
+        if not isinstance(payload, dict):
+            return _pagination_failure(
+                pr_ref=pr_ref,
+                review_target=review_target,
+                resource=resource,
+                page=page_number,
+                reason="pagination_incomplete",
+                message=f"{resource} page {page_number} must be an object",
+            )
+        error = payload.get("error")
+        if error is not None:
+            if not isinstance(error, dict):
+                return _pagination_failure(
+                    pr_ref=pr_ref,
+                    review_target=review_target,
+                    resource=resource,
+                    page=page_number,
+                    reason="pagination_incomplete",
+                    message=f"{resource} page {page_number} error must be an object",
+                )
+            error_reason = error.get("reason")
+            if error_reason is not None and (not isinstance(error_reason, str) or not error_reason):
+                return _pagination_failure(
+                    pr_ref=pr_ref,
+                    review_target=review_target,
+                    resource=resource,
+                    page=page_number,
+                    reason="pagination_incomplete",
+                    message=f"{resource} page {page_number} error reason must be a non-empty string or null",
+                )
+            error_message = error.get("message")
+            if error_message is not None and not isinstance(error_message, str):
+                return _pagination_failure(
+                    pr_ref=pr_ref,
+                    review_target=review_target,
+                    resource=resource,
+                    page=page_number,
+                    reason="pagination_incomplete",
+                    message=f"{resource} page {page_number} error message must be a string or null",
+                )
+            return _pagination_failure(
+                pr_ref=pr_ref,
+                review_target=review_target,
+                resource=resource,
+                page=page_number,
+                reason=error_reason or "unavailable",
+                message=error_message or f"{resource} page {page_number} failed",
+            )
+        page_items = payload.get("items")
+        if not isinstance(page_items, list) or any(not isinstance(item, dict) for item in page_items):
+            return _pagination_failure(
+                pr_ref=pr_ref,
+                review_target=review_target,
+                resource=resource,
+                page=page_number,
+                reason="pagination_incomplete",
+                message=f"{resource} page {page_number} items must be a list of objects",
+            )
+        items.extend(page_items)
+        has_next_page = payload.get("has_next_page")
+        if type(has_next_page) is not bool:
+            return _pagination_failure(
+                pr_ref=pr_ref,
+                review_target=review_target,
+                resource=resource,
+                page=page_number,
+                reason="pagination_incomplete",
+                message=f"{resource} page {page_number} has_next_page must be a boolean",
+            )
+        if not has_next_page:
+            return _PagedItems(items=items)
+        next_cursor = payload.get("next_cursor")
+        if next_cursor is None:
+            return _pagination_failure(
+                pr_ref=pr_ref,
+                review_target=review_target,
+                resource=resource,
+                page=page_number,
+                reason="pagination_incomplete",
+                message=f"{resource} page {page_number} next_cursor is required",
+            )
+        if not isinstance(next_cursor, str):
+            return _pagination_failure(
+                pr_ref=pr_ref,
+                review_target=review_target,
+                resource=resource,
+                page=page_number,
+                reason="pagination_incomplete",
+                message=f"{resource} page {page_number} next_cursor must be a string",
+            )
+        if next_cursor in seen_cursors:
+            return _pagination_failure(
+                pr_ref=pr_ref,
+                review_target=review_target,
+                resource=resource,
+                page=page_number,
+                reason="pagination_incomplete",
+                message=f"{resource} page {page_number} pagination cursor repeated",
+            )
+        seen_cursors.add(next_cursor)
+        cursor = next_cursor
+        page_number += 1
+
+
+def _pagination_failure(
+    *,
+    pr_ref: GitHubPRRef,
+    review_target: ReviewTarget,
+    resource: str,
+    page: int,
+    reason: str,
+    message: str,
+) -> FailClosedReadOutcome:
+    gap = classify_github_read_gap(
+        resource=resource,
+        required=True,
+        reason=reason,
+        page=page,
+        message=message,
+    )
+    return build_fail_closed_read_outcome(
+        pr_ref=pr_ref,
+        review_target=review_target,
+        read_gaps=(gap,),
+        page_gap_descriptors=(
+            GitHubPageGapDescriptor(
+                resource=resource,
+                missing_page=page,
+                underlying_reason=gap.reason,
+                would_affect=("routing", "trust", "redaction"),
+                examples=(message,),
+            ),
+        ),
+    )
+
+
+def _comment_from_payload(payload: dict[str, object], *, source_type: str) -> PullRequestComment:
+    return PullRequestComment(
+        id=_required_str(payload, "id", "pull request comment"),
+        author=_required_str(payload, "author", "pull request comment"),
+        author_association=_required_str(payload, "author_association", "pull request comment"),
+        author_type=_required_str(payload, "author_type", "pull request comment"),
+        body=_required_str(payload, "body", "pull request comment"),
+        created_at=_required_str(payload, "created_at", "pull request comment"),
+        trust_label="untrusted",
+        source_type=source_type,
+        url=_optional_str(payload, "url", "pull request comment"),
+        path=_optional_str(payload, "path", "pull request comment"),
+        line=_optional_positive_int(payload, "line", "pull request comment"),
+        side=_optional_str(payload, "side", "pull request comment"),
+        commit_sha=_optional_str(payload, "commit_sha", "pull request comment"),
+        position=_optional_positive_int(payload, "position", "pull request comment"),
+    )
+
+
+def _review_from_payload(payload: dict[str, object]) -> PullRequestReview:
+    return PullRequestReview(
+        id=_required_str(payload, "id", "pull request review"),
+        author=_required_str(payload, "author", "pull request review"),
+        author_association=_required_str(payload, "author_association", "pull request review"),
+        author_type=_required_str(payload, "author_type", "pull request review"),
+        state=_required_str(payload, "state", "pull request review"),
+        created_at=_required_str(payload, "created_at", "pull request review"),
+        trust_label="untrusted",
+        source_type=_optional_str(payload, "source_type", "pull request review") or "review",
+        body=_optional_text(payload, "body", "pull request review"),
+        url=_optional_str(payload, "url", "pull request review"),
+    )
+
+
+def _review_threads_from_payloads(
+    *,
+    pr_ref: GitHubPRRef,
+    review_target: ReviewTarget,
+    review_comment_payloads: list[dict[str, object]],
+    thread_payloads: list[dict[str, object]],
+) -> tuple[PullRequestReviewThread, ...] | FailClosedReadOutcome:
+    comments_by_thread: dict[str, list[PullRequestComment]] = {}
+    for payload in review_comment_payloads:
+        thread_id = _required_str(payload, "thread_id", "review comment")
+        comments_by_thread.setdefault(thread_id, []).append(
+            _comment_from_payload(
+                {
+                    **payload,
+                    "source_type": "review_thread",
+                },
+                source_type="review_thread",
+            )
+        )
+    known_thread_ids = {
+        _required_str(payload, "id", "review thread")
+        for payload in thread_payloads
+    }
+    orphan_ids = sorted(set(comments_by_thread) - known_thread_ids)
+    if orphan_ids:
+        orphan_comment_ids = sorted(
+            comment.id
+            for thread_id in orphan_ids
+            for comment in comments_by_thread[thread_id]
+        )
+        message = (
+            f"review comments without thread state: {', '.join(orphan_comment_ids)} "
+            f"(threads: {', '.join(orphan_ids)})"
+        )
+        return _pagination_failure(
+            pr_ref=pr_ref,
+            review_target=review_target,
+            resource="thread_state",
+            page=1,
+            reason="thread_state_unknown",
+            message=message,
+        )
+    threads: list[PullRequestReviewThread] = []
+    for payload in thread_payloads:
+        thread_id = _required_str(payload, "id", "review thread")
+        comments = tuple(comments_by_thread.get(thread_id, ()))
+        if not comments:
+            continue
+        threads.append(
+            PullRequestReviewThread(
+                id=thread_id,
+                path=_required_str(payload, "path", "review thread"),
+                resolved_status=_required_str(payload, "resolved_status", "review thread"),
+                comments=comments,
+            )
+        )
+    return tuple(threads)
 
 
 def _changed_ranges_from_patch(
@@ -504,6 +959,25 @@ def _actor_permission_dict(value: ActorPermissionGateResult | None) -> dict[str,
     }
 
 
+def _pull_request_comment_dict(comment: PullRequestComment) -> dict[str, object]:
+    return {
+        "id": comment.id,
+        "author": comment.author,
+        "author_association": comment.author_association,
+        "author_type": comment.author_type,
+        "body": comment.body,
+        "created_at": comment.created_at,
+        "trust_label": comment.trust_label,
+        "source_type": comment.source_type,
+        "url": comment.url,
+        "path": comment.path,
+        "line": comment.line,
+        "side": comment.side,
+        "commit_sha": comment.commit_sha,
+        "position": comment.position,
+    }
+
+
 def _valid_owner_repo_part(value: str) -> bool:
     return _OWNER_REPO_PART_RE.match(value) is not None
 
@@ -564,4 +1038,13 @@ def _optional_non_negative_int(data: dict[str, object], key: str) -> int:
     value = data.get(key, 0)
     if type(value) is not int or value < 0:
         raise GitHubReadError("invalid_payload", f"changed file {key} must be a non-negative integer")
+    return value
+
+
+def _optional_positive_int(data: dict[str, object], key: str, label: str) -> int | None:
+    value = data.get(key)
+    if value is None:
+        return None
+    if type(value) is not int or value <= 0:
+        raise GitHubReadError("invalid_payload", f"{label} {key} must be a positive integer or null")
     return value

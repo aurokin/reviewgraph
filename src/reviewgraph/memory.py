@@ -68,7 +68,7 @@ def _memory_from_comment(
     force_passive: bool = False,
     fallback_path: str | None = None,
 ) -> MemoryReference:
-    trusted = _is_trusted(
+    trusted = comment.trust_label == "trusted" and _is_trusted(
         comment.author,
         comment.author_association,
         comment.author_type,
@@ -100,7 +100,7 @@ def _memory_from_review(
     trusted_operator_authors: set[str],
     trusted_bot_authors: set[str],
 ) -> MemoryReference:
-    trusted = _is_trusted(
+    trusted = review.trust_label == "trusted" and _is_trusted(
         review.author,
         review.author_association,
         review.author_type,
@@ -161,4 +161,3 @@ def _passive_reason(trusted: bool, resolved_status: str) -> str:
     if resolved_status == "unknown":
         return "unknown thread state"
     return "passive memory"
-
