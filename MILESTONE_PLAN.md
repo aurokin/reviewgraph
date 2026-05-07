@@ -6,20 +6,20 @@ Active execution artifact for this milestone. Linear remains the durable source 
 
 - Milestone: `PRD 0006: GitHub Read And Memory`
 - Milestone ID: `d5570b49-93a7-453b-af77-9e8a5396d21b`
-- Current execution status: all active PRD 0006 issues are `Backlog`.
+- Current execution status as of 2026-05-07: `AUR-213`, `AUR-247`, and `AUR-214` are `Done`; `AUR-215` is `In Progress`; remaining active PRD 0006 issues are `Backlog`.
 - Active implementation issues:
-  - `AUR-213` / `RG-024: Read GitHub PR Metadata With Fake Transport` / `Backlog`
-  - `AUR-214` / `RG-025: Paginate GitHub Files Comments And Reviews` / `Backlog`
-  - `AUR-215` / `RG-026: Apply GitHub Trust Rules To Memory` / `Backlog`
+  - `AUR-213` / `RG-024: Read GitHub PR Metadata With Fake Transport` / `Done`
+  - `AUR-247` / `RG-058: Fail Closed On GitHub Read Gaps` / `Done`
+  - `AUR-214` / `RG-025: Paginate GitHub Files Comments And Reviews` / `Done`
+  - `AUR-215` / `RG-026: Apply GitHub Trust Rules To Memory` / `In Progress`
   - `AUR-236` / `RG-047: Select Conversation Pattern Reviewers` / `Backlog`
-  - `AUR-247` / `RG-058: Fail Closed On GitHub Read Gaps` / `Backlog`
   - `AUR-239` / `RG-050: Add GitHub PR Dry-Run Adapter Path` / `Backlog`
   - `AUR-216` / `RG-027: Add Opt-In Live Read Smoke` / `Backlog`
 - Gate issue:
   - `AUR-259` / `Complete PRD 0006: GitHub Read And Memory` / `Backlog`
 - Canceled duplicate:
   - `AUR-252` / `RG-058: Fail Closed On GitHub Read Gaps` / `Duplicate`
-- Linear comments: fetched on 2026-05-06; active PRD 0006 issues had no comments.
+- Linear comments: `AUR-214` has implementation evidence; `AUR-215` had no comments when fetched on 2026-05-07.
 
 ## Milestone Intent
 
@@ -35,7 +35,8 @@ The product point is safe memory. PR discussion is shared context across reviewe
 - `src/reviewgraph/routing.py` already supports `conversation_patterns`, but matching is currently body-text based over all actionable memory and does not include matched memory IDs or trust labels in selection reasons.
 - `src/reviewgraph/runner.py` is fixture-oriented. It loads fixture data, builds memory, applies context budgets, runs staged fake reviewers, classifies quality, computes local verdict, builds a dry-run posting plan, and renders markdown/JSON. It is also coupled to fixture changed ranges for diff anchors and to fixture raw reviewer outputs for deterministic fake review.
 - `src/reviewgraph/cli.py` accepts `--fixture-pr` only. GitHub PR refs/URLs are not yet accepted as review targets.
-- There is no `src/reviewgraph/github.py` read adapter yet, and no generic runner input that can accept a GitHub-read `PullRequestContext` plus fake reviewer output source without going through fixture loading.
+- `src/reviewgraph/github.py` now provides fake metadata/files reads, fail-closed read-gap envelopes, and paginated fake full-context reads for files, issue comments, review comments, reviews, and thread state.
+- There is no generic runner input yet that can accept a GitHub-read `PullRequestContext` plus fake reviewer output source without going through fixture loading.
 - Existing tests cover fixture parsing, memory trust basics, prompt-injection memory boundaries, context budgeting, routing, rendering, and CLI dry-run output. PRD 0006 should add focused GitHub-read harnesses without weakening existing fixture behavior.
 
 ## Execution Order

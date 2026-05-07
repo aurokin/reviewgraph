@@ -1,108 +1,138 @@
-# ISSUE PLAN: AUR-214 Paginate GitHub Files Comments And Reviews
+# ISSUE PLAN: AUR-215 Apply GitHub Trust Rules To Memory
 
-Active issue plan for `AUR-214` / `RG-025: Paginate GitHub Files Comments And Reviews`.
+Active issue plan for `AUR-215` / `RG-026: Apply GitHub Trust Rules To Memory`.
 
-Linear remains the source of truth for issue state and relationships.
+Linear remains the durable source of current issue status and relationships. This file is the committed execution plan for the issue.
 
 ## Linear Snapshot
 
-- Issue: `AUR-214`
-- Status at plan time: `In Progress`
+- Project: `ReviewGraph`
+- Team: `Aurokin`
 - Milestone: `PRD 0006: GitHub Read And Memory`
-- Title: `RG-025: Paginate GitHub Files Comments And Reviews`
-- Harness from Linear: `python -m pytest tests/test_github_pagination.py`
-- Linear comments at start: none.
-- Out of scope from Linear: trust classification and live calls.
+- Issue: `AUR-215`
+- Title: `RG-026: Apply GitHub Trust Rules To Memory`
+- Status when planned: `In Progress`
+- Priority: `Medium`
+- Linear comments fetched on 2026-05-07: none
 
-## Intent
+## Acceptance Mapping
 
-Extend the fake GitHub read adapter to prove complete pagination across files, issue comments, review comments, reviews, and thread state before context-budget truncation can run. This issue should turn the AUR-247 read-gap policy into the adapter's partial-pagination failure behavior, without adding live GitHub calls or wiring GitHub reads into the CLI/runner.
+1. Trusted humans are owner/member/collaborator plus authenticated operator.
+   - Prove with GitHub-derived issue comments and review-thread comments from owner/member/collaborator/operator authors.
+   - Preserve existing fixture behavior where explicit fixture `trust_label="trusted"` plus trusted association becomes trusted memory.
+   - In this issue, authenticated operator means configured `trusted_operator_authors`; deriving it from a live actor/permission snapshot is PRD 0007 side-effect policy.
+   - Operator and bot allowlists match canonical GitHub logins exactly; mismatches fail closed.
+2. Trusted review bots are default-deny allowlisted.
+   - Prove a bot with owner/member association remains passive unless present in `trusted_bot_authors`.
+3. Unlisted bot comments remain passive memory.
+   - Prove both top-level issue comments and review-thread comments from unlisted bots produce `trust_label="untrusted"`, `actionable=False`, and `passive_reason="untrusted author"`.
+4. Untrusted comments cannot trigger conversation-pattern routing.
+   - Use the existing routing selector with GitHub-derived passive memory whose body matches a `conversation_patterns` selector and assert no reviewer is selected.
+5. Untrusted comments cannot influence reviewer prompts as instructions, local verdicts, approval input, or public payload text.
+   - Prompt input: assert passive GitHub memory bodies are omitted from instructions and prompt data.
+   - Quality/local verdict: add a GitHub-derived passive-memory case where reviewer output cites passive memory by ID without copying the body; prove it is suppressed or local-only and cannot change the local verdict.
+   - Public payload: add a GitHub-derived passive-memory case with a unique phrase and prove the phrase is absent from prompt data, rendered memory body, candidate payload preview, and public posting-plan items.
+   - Approval/writer code remains out of scope and unreachable for this issue.
+6. Resolved threads are non-actionable unless new unresolved follow-up appears.
+   - Prove trusted GitHub review-thread comments in `resolved` and `unknown` thread states are passive.
+   - Prove the same trusted author in an `unresolved` thread becomes actionable, representing the new-unresolved-follow-up case available in the current model.
+   - Current data has thread-level resolved state, not per-comment transition timestamps. AUR-215 will preserve thread IDs as seen-state but will not infer which older comment reopened a thread; finer-grained follow-up detection is deferred until the model has per-comment event/state history.
+7. Seen-state is preserved.
+   - Preserve raw source comment/review/review-comment IDs as `source_id`.
+   - Use collision-safe namespaced `MemoryReference.id` values for GitHub-derived memory so issue comments, reviews, and review comments with the same raw ID cannot collide.
+   - Preserve review-thread IDs as `thread_id` on review-thread memory entries and rendered/reviewer-context JSON.
+   - Do not introduce durable deduplication or semantic duplicate detection in this issue.
 
-## Current Baseline
+## Design
 
-- `src/reviewgraph/github.py` has `read_github_pr_with_fake_transport()` for metadata/files-only reads using non-paginated fake transport calls.
-- `GitHubReadResult` carries `PullRequestContext`, `ReviewTarget`, changed-line metadata, resource coverage, read gaps, thread-state availability, and redaction status.
-- Metadata/files-only reads intentionally produce required gaps for `comments`, `reviews`, `review_comments`, and `thread_state`.
-- `src/reviewgraph/read_gaps.py` classifies read gaps, produces required `github_read_gap` errors, and provides fail-closed read outcomes/rendering.
-- `PullRequestContext` already stores `comments`, `reviews`, and `review_threads`.
-- `PullRequestComment`, `PullRequestReview`, and `PullRequestReviewThread` model the data needed by `memory.py`, but AUR-215 owns trust/actionability semantics for GitHub-derived memory.
+AUR-214 forced paginated GitHub conversation items to `trust_label="untrusted"` as a temporary safe default. AUR-215 replaces that temporary default with explicit provenance plus memory-side GitHub trust classification.
 
-## Decisions
+Planned contract:
 
-1. Preserve the existing metadata/files-only fake adapter. Add a new paginated fake-read entry point rather than changing the existing AUR-213 contract out from under its tests.
-2. Add a paginated fake transport protocol with page-based read methods for:
-   - changed files;
-   - issue comments;
-   - review comments;
-   - reviews;
-   - review threads / thread state.
-3. Keep pagination deterministic and local. The fake transport should return explicit page payloads with `items`, `has_next_page`, and a next-page cursor or number; no network, `gh`, live GitHub client, or writer code.
-4. Pagination completes before truncation. AUR-214 proves this by fetching page 2 data that would exceed a later budget or change downstream context, while no `TruncationNotice` is created in the adapter.
-5. Partial pagination failure uses AUR-247 policy: produce read gaps with underlying failure reason/page metadata and fail-closed state. Do not silently return first-page-only context.
-6. A fully paginated read clears the metadata/files-only gaps for comments, reviews, review comments, and thread state; resource coverage becomes complete for all fetched resources.
-7. Thread state availability is explicit. Complete thread-state pagination with concrete thread statuses sets `available=True`; unknown or unavailable required thread state creates a required read gap.
-8. The paginated read API returns a typed union-like result: successful reads return `GitHubReadResult`; pagination failures return `FailClosedReadOutcome`. Later AUR-239 can branch on the type without catching adapter exceptions for expected page failures.
-9. Page/cursor diagnostics need a durable surface. Add a `page_gap_descriptors` field or equivalent on the failed paginated read outcome and its redacted serialization, carrying resource, failed page/cursor, underlying reason, and observed/omitted examples. Keep `ReadGap` minimal.
-10. Review comments should be represented as `PullRequestComment` values inside `PullRequestReviewThread` only where matching thread context exists. A fetched review comment whose matching thread is absent after complete thread-state pagination is a required `thread_state_unknown` gap and returns fail-closed state; it must not be dropped or emitted as actionable memory.
-11. Until AUR-215 classifies GitHub authors, paginated GitHub comment/review objects must use a safe default `trust_label="untrusted"` unless the payload explicitly provides a test-only trust label. Tests should prefer the safe default so fixture convenience does not pre-trust GitHub memory.
-12. Do not wire CLI, runner, live read, approval, finalization, posting, or writer behavior.
+- Add explicit source provenance fields to model data, likely `source_provider` on `PullRequestComment`, `PullRequestReview`, and `MemoryReference`, plus `thread_id` on `MemoryReference`.
+- The GitHub fake read adapter sets `source_provider="github"` on comments, review comments, and reviews.
+- `source_provider` allowed values are `fixture` and `github`. Existing fixtures/default constructors use `fixture`; unknown values are allowed only as non-trusted provenance and fail closed for trust.
+- The adapter ignores any inbound `trust_label` and `source_provider` fields from fake page payloads. Transport data must not be able to self-declare trusted memory or trusted provenance.
+- `build_conversation_memory()` treats `trust_label="trusted"` as explicit fixture/test trust eligibility and `source_provider="github"` as GitHub-derived trust eligibility.
+- `source_provider` is provenance, not trust. It may appear in diagnostic/rendered memory metadata; it must never appear as `MemoryReference.trust_label`.
+- Final `MemoryReference.trust_label` remains only `trusted` or `untrusted`.
+- `_is_trusted()` remains the central policy:
+  - user + `OWNER`, `MEMBER`, or `COLLABORATOR` -> trusted
+  - user + configured `trusted_operator_authors` -> trusted
+  - bot + configured `trusted_bot_authors` -> trusted
+  - unlisted bot, unknown actor type, contributor, unknown trust label -> untrusted
+- Review summaries remain passive even when trusted, because later nodes interpret them.
+- All passive memory bodies are hidden from prompt data and rendered memory JSON, including trusted review summaries and trusted resolved/unknown review-thread comments. Trusted actionable memory is the only memory body class that can be included.
+- Review threads use thread-level `resolved_status`: `resolved` and `unknown` force passive; `unresolved` can be actionable if the author is trusted.
+- AUR-215 must prevent trusted GitHub actionable memory from satisfying positive `conversation_patterns` routing until `AUR-236` adds matched-memory IDs and trust status to selection reasons. Fixture memory can keep existing routing behavior.
+- URL absence alone does not make GitHub-derived memory untrusted in this slice. The fake adapter is the provenance boundary, source IDs/thread IDs are the seen-state handle, and URL is optional metadata.
 
-## Implementation Plan
+## Files
 
-1. Add `tests/test_github_pagination.py` first.
-   - Happy path with multi-page files proves every file page is fetched and `changed_files`/changed-line metadata include later-page files.
-   - Multi-page issue comments are fetched and serialized into `PullRequestContext.comments`.
-   - Multi-page review comments plus thread state are fetched and serialized into `PullRequestContext.review_threads`.
-   - Multi-page reviews are fetched and serialized into `PullRequestContext.reviews`.
-   - Resource coverage is complete and read gaps are empty after a successful full paginated read.
-   - Thread-state availability is `available=True` when thread state pages complete.
-   - Page 2 content includes text that would affect routing/trust/redaction later, proving first-page-only success would be observable.
-   - Pagination failure on a later page returns `FailClosedReadOutcome` instead of partial context, preserving the underlying failure reason and page/cursor diagnostics in a durable redacted surface.
-   - Orphan review comments whose matching thread state is missing after complete thread pagination return a required `thread_state_unknown` gap and cannot silently disappear.
-   - Tests assert exact fake transport call order, cursor/page propagation, and stop-on-`has_next_page=false` for files, issue comments, review comments, reviews, and thread state.
-   - Tests prove pagination happens before truncation by asserting no adapter-level truncation is emitted while later-page items remain present.
+Likely implementation files:
 
-2. Extend `src/reviewgraph/github.py`.
-   - Add resource coverage constructor for all resources complete.
-   - Add paginated fake transport protocol and page payload validation helpers.
-   - Add `read_github_pr_with_paginated_fake_transport()` or equivalent.
-   - Return `GitHubReadResult | FailClosedReadOutcome` for expected pagination outcomes.
-   - Reuse existing PR metadata, file conversion, changed-line parsing, redaction, and read-result serialization.
-   - Convert comment/review/thread payload dictionaries into existing model types.
-   - Add a redacted `page_gap_descriptors` serialization surface for failed paginated reads.
-   - Keep adapter errors structured and redacted.
-   - Keep dependencies limited to models, redaction, and read-gap policy; do not import runner, CLI, memory trust policy, approval, finalization, posting, writer, or network clients.
+- `src/reviewgraph/github.py`
+- `src/reviewgraph/memory.py`
+- `src/reviewgraph/models.py`
+- `src/reviewgraph/render.py`
+- `src/reviewgraph/reviewer_context.py`
 
-3. Use AUR-247 for gap behavior.
-   - Later-page failure should classify a `ReadGap` with the resource, required flag, specific reason, retryability, and page descriptor metadata where available.
-   - Required pagination gaps should be usable by `build_fail_closed_read_outcome()`.
-   - Successful full pagination should not carry stale metadata/files-only gaps.
-   - Failed pagination should not raise `GitHubReadError` for expected page failure cases; reserve exceptions for invalid fake payload shape/programmer errors.
+Likely test files:
 
-4. Update durable docs.
-   - `docs/architecture/github-integration.md`: paginated fake-read contract, complete coverage, and thread-state availability.
-   - `docs/harnesses/harness-engineering.md`: `tests/test_github_pagination.py` coverage and pagination-before-truncation rule.
+- `tests/test_github_memory_trust.py`
+- `tests/test_github_pagination.py`
+- `tests/test_memory.py`
+- `tests/test_reviewer_context.py`
+- `tests/test_routing.py`
 
-## Verification
+Likely docs:
 
-- Focused:
-  - `python -m pytest tests/test_github_pagination.py -q`
-- Related regression:
-  - `python -m pytest tests/test_github_fake_read.py tests/test_github_read_gaps.py tests/test_memory.py tests/test_contract_boundaries.py -q`
-- Wider PRD 0006/runner regression:
-  - `python -m pytest tests/test_fixtures.py tests/test_routing.py tests/test_cli.py tests/test_redaction.py tests/test_reviewer_context.py tests/test_context_budget.py tests/test_diff_anchor.py -q`
-- Hygiene:
-  - `python -m pytest -q`
-  - `python -m py_compile src/reviewgraph/*.py`
-  - `python scripts/check_docs.py`
-  - `git diff --check`
+- `docs/architecture/github-integration.md`
+- `docs/architecture/state-graph.md`
+- `docs/harnesses/harness-engineering.md`
+
+## Implementation Steps
+
+1. Add focused failing tests in `tests/test_github_memory_trust.py`.
+2. Add explicit provenance/seen-state fields with backwards-compatible defaults.
+3. Update the paginated fake GitHub adapter to mark GitHub-derived comments, review comments, and reviews with non-payload-controlled provenance.
+4. Update memory trust eligibility so only explicit fixture-trusted or GitHub-derived items can be classified by author policy.
+5. Preserve review-thread IDs in memory, reviewer context trace/prompt metadata, and rendered JSON.
+6. Use namespaced GitHub memory IDs and raw `source_id` so seen-state is preserved without collisions.
+7. Add candidate-payload/public-boundary proof for GitHub-derived passive memory, including trusted-but-passive review summaries and resolved/unknown threads.
+8. Add quality/local-verdict proof for a reviewer output that cites passive GitHub memory by ID.
+9. Gate positive GitHub `conversation_patterns` routing until `AUR-236`, while preserving negative routing proof for untrusted/passive GitHub memory.
+10. Keep unknown labels and unknown provenance default-denied.
+11. Update AUR-214 pagination expectations from temporary untrusted memory defaults to provenance plus memory-classified trust where applicable.
+12. Add or adjust docs for the new boundary: source provenance is not trust; memory emits final trusted/untrusted classification.
+
+## Validation Plan
+
+Focused harness:
+
+```bash
+python -m pytest tests/test_github_memory_trust.py -q
+```
+
+Regression harness:
+
+```bash
+python -m pytest tests/test_github_pagination.py tests/test_memory.py tests/test_routing.py tests/test_reviewer_context.py tests/test_prompt_injection_memory.py tests/test_quality.py tests/test_render.py -q
+```
+
+Full validation before completion:
+
+```bash
+python -m pytest -q
+python -m py_compile src/reviewgraph/*.py
+python scripts/check_docs.py
+git diff --check
+```
 
 ## Out Of Scope
 
-- Live GitHub reads.
-- CLI GitHub PR target support.
-- Runner integration for GitHub read results.
-- Trust classification and memory actionability.
-- Conversation-pattern reviewer routing from GitHub memory.
-- Context-budget implementation changes beyond proving adapter pagination precedes truncation.
-- Approval, finalization, writer behavior, inline comments, labels, statuses, and formal PR reviews.
+- Changing `conversation_patterns` selection reason format or adding matched memory IDs. That is `AUR-236`.
+- GitHub PR dry-run CLI wiring. That is `AUR-239`.
+- Live read. That is `AUR-216`.
+- Approval prompts, finalization, writer behavior, or public posting.
+- Requiring comment URLs for trust. URL is useful metadata, but source IDs plus adapter provenance are the planned trust boundary for this slice.
