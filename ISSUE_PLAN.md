@@ -34,6 +34,7 @@ This issue should create the first approved-post vertical slice, but it must sta
 - Candidate payloads, formal PR review payloads, inline comments, labels, statuses, approvals, request-changes writes, suggested replies, local notes, suppressed outputs, and clarification requests cannot reach the fake writer.
 - Marker reconciliation must complete before posting. `SAFE_TO_POST` may release writer input; `RECONCILED_EXISTING` is terminal no-post/reconciled; `FAILED_CLOSED` blocks writer calls.
 - `writer_result.status=RECONCILED` means the post path ended reconciled from marker state with no writer invocation. It is synthesized by `post_or_emit` from finalization/marker state, not returned by the fake writer.
+- Fake writer invocation requires a narrow `FinalizedIssueCommentWriterInput` produced only after `finalize_github_payload(...)` reaches `FINALIZED` with marker reconciliation `SAFE_TO_POST`. A structurally valid `FinalIssueCommentPayload` alone is not writer input.
 - Retry safety is scoped to one approved run/retry sequence. No cross-process locking or global dedupe claim.
 - Real GitHub writer transport, live post smoke, manual disposable PR allowlists, and production post CLI are out of scope.
 
@@ -45,9 +46,12 @@ This issue should create the first approved-post vertical slice, but it must sta
    - Reuse existing approval, permission, target freshness, marker, and payload fixture helpers where possible instead of creating parallel models.
 2. Add `src/reviewgraph/writer_fake.py`:
    - Provide a deterministic in-memory fake issue-comment transport/writer.
-   - Accept only `FinalIssueCommentPayload` plus a finalized state or explicit writer input object produced after finalization.
+   - Accept only `FinalizedIssueCommentWriterInput`, not raw `FinalIssueCommentPayload`.
+   - `FinalizedIssueCommentWriterInput` must carry the final payload, final payload hash, target hash, marker reconciliation status/reason, approved actor, and body-free run metadata needed for result/debug output.
+   - Construct `FinalizedIssueCommentWriterInput` only from a finalization result with `state=FINALIZED`, `writer_input_released=true`, `marker_reconciliation.status=SAFE_TO_POST`, and matching final payload/hash values.
    - Validate final issue-comment payloads with `validate_final_issue_comment_payload(...)` immediately before recording a fake write.
    - Reject candidate payloads, formal PR review-like shapes, non-issue-comment artifact kinds, missing final marker lines, invalid hashes, and marker-field mismatches.
+   - Reject raw valid final payloads, `NOT_READY`, `FAILED_CLOSED`, `RECONCILED_EXISTING`, missing marker reconciliation, non-`SAFE_TO_POST`, or `writer_input_released=false` state before any fake transport call.
    - Return `GitHubWriterResult(status=POSTED, artifact_kind=issue_comment, target_hash=..., payload_hash=..., comment_id=...)` on fake posts.
    - Return `GitHubWriterResult(status=FAILED, ..., error=stable_reason)` only for writer-local validation/transport failures after finalization released writer input.
    - Never return `RECONCILED`; the fake writer is not invoked for marker-reconciled no-post paths.
@@ -68,10 +72,11 @@ This issue should create the first approved-post vertical slice, but it must sta
 4. Add a harness-only approved post route:
    - Prefer a small pure function such as `run_fixture_fake_post_attempt(...)` or `run_fake_post_harness(...)` over exposing production CLI posting.
    - Route order must be visible in `graph_trace`: `render_review -> post_mode_interaction_gate -> approval_gate -> writer_release_preflight -> finalize_github_payload -> post_or_emit`.
-   - The harness supplies deterministic interactive approval, current actor/permission probe, target freshness probe, marker scan transport, and fake writer.
+   - The harness supplies deterministic interactive approval, current actor/permission probe, target freshness probe, marker scan transport, finalized writer-input builder, and fake writer.
    - JSON records `post_interaction_gate`, `approval`, `writer_release_preflight`, `actor_permission_finalization_check`, `target_freshness_check`, `payload_validation`, `marker_reconciliation`, `finalization_status`, `final_payload_hash`, and `writer_result`.
    - Approved valid item-level payload reaches fake writer exactly once.
-   - Dry-run and all blocked post attempts record `writer_called=false`, `writer_call_count=0`, and no writer result except a typed `NOT_CALLED`/absent writer result if the existing model requires it.
+   - `post_or_emit` defensively rejects any state where `final_github_payload` is present but `finalization_status.state != FINALIZED`, marker reconciliation is not `SAFE_TO_POST`, or `writer_input_released=false`; those states record no writer call.
+   - Dry-run and all blocked post attempts record `writer_called=false`, `writer_call_count=0`, and typed no-post reason evidence distinguishing dry-run, reconciled-existing, marker-failed, and other fail-closed states.
 5. Prove no writer reachability in blocked paths:
    - Dry-run.
    - Non-interactive post mode.
@@ -94,7 +99,7 @@ This issue should create the first approved-post vertical slice, but it must sta
 7. Update narrow durable docs:
    - `docs/architecture/side-effects.md` for fake writer handoff and marker-aware writer release.
    - `docs/architecture/state-graph.md` for `post_or_emit` behavior and finalized/reconciled paths.
-   - `docs/architecture/github-integration.md` only if fake retry semantics expose a durable writer adapter contract that the real writer must preserve.
+   - `docs/architecture/github-integration.md` is mandatory because marker reconciliation ownership moves to finalization and the writer receives only finalized writer input, not a marker reconciliation plan.
    - `docs/harnesses/harness-engineering.md` for the fake writer and post-mode graph harness.
 
 ## Focused Harness
@@ -103,12 +108,15 @@ Create or update tests covering:
 
 - Fake writer accepts one valid finalized top-level issue-comment payload.
 - Fake writer rejects candidate payloads and non-final/final-marker-invalid payloads.
+- Fake writer rejects a structurally valid raw `FinalIssueCommentPayload` when it is not wrapped in finalized writer input.
+- Fake writer rejects `NOT_READY`, `FAILED_CLOSED`, `RECONCILED_EXISTING`, missing `SAFE_TO_POST`, and `writer_input_released=false` state before any fake transport call.
 - Fake writer result includes stable status, target hash, payload hash, artifact kind, and fake comment ID without raw body text.
 - Finalization with `SAFE_TO_POST` releases writer input and sets finalized state/final payload hash.
 - Finalization with `RECONCILED_EXISTING` returns terminal no-post/reconciled evidence, and `post_or_emit` synthesizes `GitHubWriterResult(status=RECONCILED)` with writer call count zero.
 - Finalization with `FAILED_CLOSED` leaves final payload/hash/writer input unset and exposes marker failure reason evidence.
 - Finalization cannot consume stale marker reconciliation evidence computed for a different target hash, payload hash, or findings hash.
 - Harness approved post route calls fake writer exactly once.
+- `post_or_emit` rejects inconsistent state with a final payload but non-finalized status, non-`SAFE_TO_POST` marker reconciliation, or `writer_input_released=false`.
 - Harness dry-run route calls fake writer zero times.
 - Non-interactive post mode calls approval/finalization/writer zero times.
 - Missing, rejected, failed-build, empty, unknown, or non-public approval calls writer zero times.
