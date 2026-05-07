@@ -91,6 +91,18 @@ class PayloadValidationReasonCode(StrEnum):
     FORMAL_REVIEW_PAYLOAD_REJECTED = "formal_review_payload_rejected"
 
 
+class ApprovalProofReasonCode(StrEnum):
+    EMPTY_APPROVAL = "empty_approval"
+    UNKNOWN_APPROVED_ID = "unknown_approved_id"
+    NON_PUBLIC_DESTINATION = "non_public_destination"
+    SUMMARY_ITEM_DEFERRED = "summary_item_deferred"
+    CANDIDATE_BINDING_MISMATCH = "candidate_binding_mismatch"
+    DUPLICATE_APPROVED_FINGERPRINT = "duplicate_approved_fingerprint"
+    FINAL_REDACTION_FAILED = "final_redaction_failed"
+    INVALID_RUN_ID = "invalid_run_id"
+    REQUEST_CHANGES_PUBLIC_TEXT_DEFERRED = "request_changes_public_text_deferred"
+
+
 class FinalizationState(StrEnum):
     NOT_READY = "not_ready"
     FINALIZED = "finalized"
@@ -166,6 +178,44 @@ def _require_hash_like(value: str, field_name: str) -> None:
 def _require_optional_hash_like(value: str | None, field_name: str) -> None:
     if value is not None:
         _require_hash_like(value, field_name)
+
+
+def _require_strict_sha256(value: str, field_name: str) -> None:
+    _require_hash_like(value, field_name)
+    digest = value.removeprefix("sha256:")
+    if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+        raise ValueError(f"{field_name} must be a strict sha256 hash")
+
+
+def _parse_reviewgraph_marker(marker_line: str) -> dict[str, str] | None:
+    prefix = "<!-- reviewgraph:v1 "
+    suffix = " -->"
+    if not isinstance(marker_line, str) or not marker_line.startswith(prefix) or not marker_line.endswith(suffix):
+        return None
+    body = marker_line[len(prefix) : -len(suffix)]
+    parts = body.split(" ")
+    if len(parts) != 4:
+        return None
+    fields: dict[str, str] = {}
+    for part in parts:
+        if "=" not in part:
+            return None
+        key, value = part.split("=", 1)
+        if key in fields or key not in {"run_id", "target", "payload", "findings"}:
+            return None
+        fields[key] = value
+    if tuple(fields) != ("run_id", "target", "payload", "findings"):
+        return None
+    run_id = fields["run_id"]
+    allowed_run_chars = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._:/#-")
+    if not run_id or len(run_id) > 128 or not run_id[0].isalnum() or any(char not in allowed_run_chars for char in run_id):
+        return None
+    for key in ("target", "payload", "findings"):
+        try:
+            _require_strict_sha256(fields[key], f"marker {key}")
+        except ValueError:
+            return None
+    return fields
 
 
 def _require_non_negative_int(value: int, field_name: str) -> None:
@@ -1443,6 +1493,97 @@ class PayloadValidationResult:
                 raise ValueError("payload validation pass must not include reason_code")
         if self.status != GateStatus.PASS and self.reason_code is None:
             raise ValueError("payload validation failure requires reason_code")
+
+
+@dataclass(frozen=True)
+class ApprovalProofResult:
+    status: GateStatus
+    approved_item_ids: tuple[str, ...] = field(default_factory=tuple)
+    approved_review_target: ReviewTarget | None = None
+    approved_review_target_hash: str | None = None
+    approved_final_payload_hash: str | None = None
+    final_visible_body_hash: str | None = None
+    marker_payload_hash: str | None = None
+    findings_hash: str | None = None
+    marker_line: str | None = None
+    final_redaction_status: RedactionStatus | None = None
+    include_public_verdict: bool = False
+    approved_by: str | None = None
+    timestamp: str | None = None
+    reason_code: ApprovalProofReasonCode | None = None
+    reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.status, GateStatus):
+            raise ValueError("approval proof status must be a GateStatus")
+        _require_string_tuple(self.approved_item_ids, "approval proof approved_item_ids")
+        if self.approved_review_target is not None and not isinstance(self.approved_review_target, ReviewTarget):
+            raise ValueError("approval proof approved_review_target must be a ReviewTarget")
+        _require_optional_hash_like(self.approved_review_target_hash, "approval proof approved_review_target_hash")
+        _require_optional_hash_like(self.approved_final_payload_hash, "approval proof approved_final_payload_hash")
+        _require_optional_hash_like(self.final_visible_body_hash, "approval proof final_visible_body_hash")
+        _require_optional_hash_like(self.marker_payload_hash, "approval proof marker_payload_hash")
+        _require_optional_hash_like(self.findings_hash, "approval proof findings_hash")
+        _require_optional_non_empty(self.marker_line, "approval proof marker_line")
+        if self.final_redaction_status is not None and not isinstance(self.final_redaction_status, RedactionStatus):
+            raise ValueError("approval proof final_redaction_status must be a RedactionStatus")
+        if type(self.include_public_verdict) is not bool:
+            raise ValueError("approval proof include_public_verdict must be a boolean")
+        _require_optional_non_empty(self.approved_by, "approval proof approved_by")
+        _require_optional_non_empty(self.timestamp, "approval proof timestamp")
+        if self.reason_code is not None and not isinstance(self.reason_code, ApprovalProofReasonCode):
+            raise ValueError("approval proof reason_code must be an ApprovalProofReasonCode")
+        _require_optional_non_empty(self.reason, "approval proof reason")
+        proof_fields = (
+            "approved_item_ids",
+            "approved_review_target",
+            "approved_review_target_hash",
+            "approved_final_payload_hash",
+            "final_visible_body_hash",
+            "marker_payload_hash",
+            "findings_hash",
+            "marker_line",
+            "final_redaction_status",
+            "approved_by",
+            "timestamp",
+        )
+        if self.status == GateStatus.PASS:
+            for name in proof_fields:
+                value = getattr(self, name)
+                if value is None or value == ():
+                    raise ValueError(f"approval proof pass requires {name}")
+            if self.reason_code is not None:
+                raise ValueError("approval proof pass must not include reason_code")
+            if self.approved_review_target_hash != self.approved_review_target.target_hash():
+                raise ValueError("approval proof approved_review_target_hash must match approved_review_target")
+            if self.final_redaction_status.status != GateStatus.PASS:
+                raise ValueError("approval proof pass requires passing final_redaction_status")
+            marker = _parse_reviewgraph_marker(self.marker_line)
+            if marker is None:
+                raise ValueError("approval proof marker_line must match ReviewGraph v1 marker grammar")
+            for name in (
+                "approved_review_target_hash",
+                "approved_final_payload_hash",
+                "final_visible_body_hash",
+                "marker_payload_hash",
+                "findings_hash",
+            ):
+                _require_strict_sha256(getattr(self, name), f"approval proof {name}")
+            if self.final_visible_body_hash != self.marker_payload_hash:
+                raise ValueError("approval proof final_visible_body_hash must match marker_payload_hash")
+            if marker["target"] != self.approved_review_target_hash:
+                raise ValueError("approval proof marker target must match approved_review_target_hash")
+            if marker["payload"] != self.marker_payload_hash:
+                raise ValueError("approval proof marker payload must match marker_payload_hash")
+            if marker["findings"] != self.findings_hash:
+                raise ValueError("approval proof marker findings must match findings_hash")
+        else:
+            if self.reason_code is None:
+                raise ValueError("approval proof failure requires reason_code")
+            for name in proof_fields:
+                value = getattr(self, name)
+                if value is not None and value != ():
+                    raise ValueError(f"approval proof failure must not include {name}")
 
 
 @dataclass(frozen=True)
