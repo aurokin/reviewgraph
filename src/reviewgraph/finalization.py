@@ -542,6 +542,9 @@ def _writer_preflight_for_approval(
             diagnostics.append(diagnostic)
             continue
         fingerprints.append(plan_item.fingerprint or "")
+    duplicate_fingerprint = _duplicate_value(tuple(fingerprints))
+    if duplicate_fingerprint is not None:
+        return _writer_preflight_fail(WriterReleasePreflightReasonCode.DUPLICATE_APPROVED_FINGERPRINT)
     if diagnostics:
         reason = (
             WriterReleasePreflightReasonCode.UNKNOWN_APPROVED_ID
@@ -549,9 +552,6 @@ def _writer_preflight_for_approval(
             else WriterReleasePreflightReasonCode.NON_PUBLIC_APPROVED_ITEM
         )
         return _writer_preflight_fail(reason, item_diagnostics=tuple(diagnostics))
-    duplicate_fingerprint = _duplicate_value(tuple(fingerprints))
-    if duplicate_fingerprint is not None:
-        return _writer_preflight_fail(WriterReleasePreflightReasonCode.DUPLICATE_APPROVED_FINGERPRINT)
     return WriterReleasePreflightResult(
         status=GateStatus.PASS,
         writer_input_released=False,

@@ -208,6 +208,40 @@ def test_writer_release_preflight_rejects_duplicate_approved_fingerprints() -> N
     assert result.writer_input_released is False
 
 
+def test_writer_release_preflight_prioritizes_duplicate_fingerprints_over_item_diagnostics() -> None:
+    plan = PostingPlan(
+        items=(
+            PostingPlanItem(
+                "finding-1",
+                OutputClassification.POSTABLE_FINDING.value,
+                PostingDestination.REVIEW_BODY_ITEM,
+                True,
+                "fp-duplicate",
+            ),
+            PostingPlanItem(
+                "finding-2",
+                OutputClassification.POSTABLE_FINDING.value,
+                PostingDestination.REVIEW_BODY_ITEM,
+                True,
+                "fp-duplicate",
+            ),
+            PostingPlanItem("note-1", "local_note", PostingDestination.LOCAL_ONLY, False),
+        )
+    )
+
+    result = evaluate_writer_release_preflight(
+        post_enabled=True,
+        approval_result=replace(_approval(), approved_item_ids=("finding-1", "finding-2", "note-1")),
+        posting_plan=plan,
+        current_items_by_id=_descriptors(plan),
+    )
+
+    assert result.status == GateStatus.FAIL
+    assert result.reason_code == WriterReleasePreflightReasonCode.DUPLICATE_APPROVED_FINGERPRINT
+    assert result.item_diagnostics == ()
+    assert result.writer_input_released is False
+
+
 @pytest.mark.parametrize(
     "plan",
     [
