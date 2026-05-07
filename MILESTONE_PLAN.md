@@ -27,17 +27,18 @@ PRD 0006 moves ReviewGraph from fixture-only review targets toward GitHub PR rea
 
 The product point is safe memory. PR discussion is shared context across reviewer agents, but it is labeled data, not an instruction stream. Trusted actionable memory may route reviewers through explicit graph state. Untrusted, resolved, unknown, truncated, or partially-read memory remains passive and cannot create routing pressure, public findings, approval input, local verdict pressure, or provider instructions.
 
-## Current Code Snapshot
+## Final PRD 0006 Code Snapshot
 
 - `src/reviewgraph/fixtures.py` parses fixture PRs into `PullRequestContext` and `ReviewTarget`.
-- `src/reviewgraph/models.py` already defines `ReviewTarget`, `PullRequestContext`, `PullRequestComment`, `PullRequestReview`, `PullRequestReviewThread`, `PullRequestChangedFile`, `PRConversationMemory`, `MemoryReference`, and `ReadGap`.
-- `src/reviewgraph/memory.py` builds conversation memory from parsed PR context. It trusts owner/member/collaborator users plus configured operators, trusts bots only by allowlist, treats unknown actor types as untrusted, and makes resolved or unknown thread state passive.
-- `src/reviewgraph/routing.py` already supports `conversation_patterns`, but matching is currently body-text based over all actionable memory and does not include matched memory IDs or trust labels in selection reasons.
-- `src/reviewgraph/runner.py` is fixture-oriented. It loads fixture data, builds memory, applies context budgets, runs staged fake reviewers, classifies quality, computes local verdict, builds a dry-run posting plan, and renders markdown/JSON. It is also coupled to fixture changed ranges for diff anchors and to fixture raw reviewer outputs for deterministic fake review.
-- `src/reviewgraph/cli.py` accepts `--fixture-pr` only. GitHub PR refs/URLs are not yet accepted as review targets.
-- `src/reviewgraph/github.py` now provides fake metadata/files reads, fail-closed read-gap envelopes, and paginated fake full-context reads for files, issue comments, review comments, reviews, and thread state.
-- There is no generic runner input yet that can accept a GitHub-read `PullRequestContext` plus fake reviewer output source without going through fixture loading.
-- Existing tests cover fixture parsing, memory trust basics, prompt-injection memory boundaries, context budgeting, routing, rendering, and CLI dry-run output. PRD 0006 should add focused GitHub-read harnesses without weakening existing fixture behavior.
+- `src/reviewgraph/models.py` defines the shared target, PR context, conversation memory, read-gap, reviewer, verdict, and posting-plan contracts used by fixture and GitHub-read paths.
+- `src/reviewgraph/github.py` provides PR ref parsing, fake GitHub read transports, read-result envelopes, pagination across files/comments/reviews/thread state, required/optional read-gap reporting, patch anchor metadata, actor/permission snapshots, and redacted serialization without live network or writer behavior.
+- `src/reviewgraph/read_gaps.py` owns fail-closed read-gap classification and targetless/target-bound fail-closed outcomes before downstream review, routing, rendering, or post eligibility can rely on partial context.
+- `src/reviewgraph/memory.py` builds conversation memory from GitHub-derived PR context, preserves source IDs/thread IDs, applies trusted-human and allowlisted-bot rules, and keeps untrusted, resolved, unknown-state, and passive memory from routing, verdict, prompt body, and public payload surfaces.
+- `src/reviewgraph/routing.py` matches `conversation_patterns` only against trusted actionable memory and records selection reasons with memory IDs, trust labels, and GitHub source metadata.
+- `src/reviewgraph/runner.py` exposes a generic dry-run input path so fixture and GitHub fake-read contexts feed the same memory, budget, reviewer, quality, verdict, render, and dry-run posting-plan contracts.
+- `src/reviewgraph/cli.py` supports fixture dry-run and GitHub fake-read dry-run with `--github-pr` and `--github-fake-data`; live GitHub review remains deferred/fail-closed outside the production CLI path.
+- `src/reviewgraph/github_live.py` provides the opt-in live-read smoke harness through read-only `gh api` REST calls, skipped by default, separated from writer/approval/finalization/reviewer execution, and fail-closed when REST cannot prove required thread state.
+- PRD 0006 tests cover fake reads, read gaps, pagination, memory trust, conversation routing, GitHub dry-run CLI, live-read smoke boundaries, and shared side-effect boundaries without requiring default credentials.
 
 ## Execution Order
 
@@ -157,4 +158,4 @@ The milestone is complete when ReviewGraph proves:
 - Durable docs explain the final GitHub read, memory trust, read-gap, and live-read contracts an implementation agent needs when dropping into the repo.
 - Fresh subagent review of code, tests, docs, Linear evidence, and the milestone gate reports no material issues.
 - No GitHub writer, approval, inline-posting, live LLM, or unapproved live API behavior has been introduced.
-- No `.ws/` or temporary export artifacts remain.
+- No `.ws/`, temporary export artifacts, live-read artifacts, audit scratch files, or subagent scratch files remain in the repository.

@@ -48,11 +48,12 @@ Map every gate requirement to concrete evidence before closing:
 - Harness contract: `docs/harnesses/harness-engineering.md` and the PRD 0006 focused tests.
 - Implementation evidence: `src/reviewgraph/github.py`, `src/reviewgraph/github_live.py`, `src/reviewgraph/read_gaps.py`, `src/reviewgraph/memory.py`, `src/reviewgraph/routing.py`, `src/reviewgraph/targets.py`, `src/reviewgraph/runner.py`, and `src/reviewgraph/cli.py`.
 - Side-effect boundary: no new GitHub writer, approval, finalization, inline posting, formal review, status, label, live LLM, or unapproved live API path is reachable from PRD 0006 read/dry-run/live-smoke code.
-- Temporary artifacts: no `.ws/` tree or temporary Linear export remains.
+- Temporary artifacts: no `.ws/` tree, temporary Linear export, live-read artifact, audit scratch file, or subagent scratch file remains in the repository. Prefer writing any unavoidable scratch artifact outside the repo under `/tmp`.
 - Validation commands: focused PRD 0006 harnesses, full suite, docs check, py-compile, and diff check.
 - Linear queue verifier: a temporary canonical backlog export must be generated from current Linear milestone data, checked with `python scripts/check_docs.py --backlog-export <path>`, summarized in the final gate evidence, and removed before closure.
 - Live-read decision: either run `REVIEWGRAPH_LIVE_READ=1 ... pytest -m live_read` against an explicit public PR target and record the artifact, or explicitly document that live network smoke was not executed and that the gate evidence is limited to skipped-by-default harness proof plus fake/read-only boundary proof.
-- Commit reconciliation: verify every commit hash cited by PRD 0006 Linear evidence is reachable from current `HEAD`, and rerun gate validation at the current gate commit rather than relying on earlier issue comments.
+- Commit reconciliation: verify every commit hash cited by PRD 0006 Linear evidence is reachable from current `HEAD`, record `git rev-parse HEAD`, prove the worktree is clean with `git status --short`, and rerun gate validation at the current gate commit rather than relying on earlier issue comments.
+- Final evidence schema: the `AUR-259` Linear comment must include a table with issue ID, current status/status type, blocker or canceled/duplicate state, evidence comment ID, cited commits, and mapped PRD 0006 acceptance surface.
 - Review gate: fresh subagents review code, tests, docs, Linear evidence, and this gate plan until they report no material findings.
 
 ## Audit Steps
@@ -60,7 +61,7 @@ Map every gate requirement to concrete evidence before closing:
 1. Re-fetch Linear issue statuses and comments for the full PRD 0006 milestone.
 2. Inspect the durable docs and compare them against PRD 0006 acceptance surface and the final implemented behavior.
 3. Inspect key implementation files for contract coverage and side-effect boundaries.
-4. Generate a temporary canonical Linear backlog export from current Linear data, run `python scripts/check_docs.py --backlog-export <path> --verbose`, save the command result in the audit notes, and remove the temporary export before closing.
+4. Generate a temporary canonical Linear backlog export from current Linear data under `/tmp`, run `python scripts/check_docs.py --backlog-export <path> --verbose`, save the command result in the audit notes, and remove the temporary export before closing.
 5. Verify the commit hashes referenced in implementation evidence comments are reachable from current `HEAD`.
 6. Run focused harnesses:
    - `python -m pytest tests/test_github_fake_read.py -q`
@@ -81,7 +82,8 @@ Map every gate requirement to concrete evidence before closing:
    - `git diff --check`
 9. Ask fresh subagents for independent milestone-gate review after local audit data is available.
 10. If docs or implementation gaps are found, fix them in scoped commits and rerun affected checks and reviewer passes.
-11. Move `AUR-259` to `In Review`, add a Linear evidence comment with the audit mapping, command results, live-read decision, commit reachability, backlog verifier result, temporary-artifact cleanup proof, and final subagent review results. Move it to `Done` only after all findings are none-issues.
+11. Run final repository-state proof: `git rev-parse HEAD`, `git status --short`, `find . -maxdepth 2 -type d -name .ws -print`, and a targeted check for repo-local temporary gate artifacts.
+12. Move `AUR-259` to `In Review`, add a Linear evidence comment with the required gate evidence table, audit mapping, command results, live-read decision, commit reachability, backlog verifier result, current `HEAD`, clean-worktree proof, temporary-artifact cleanup proof, and final subagent review results. Move it to `Done` only after all findings are none-issues.
 
 ## Documentation Refactor Expectations
 
