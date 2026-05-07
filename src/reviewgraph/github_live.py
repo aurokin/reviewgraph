@@ -16,6 +16,7 @@ from reviewgraph.github import (
     read_github_pr_with_paginated_fake_transport,
 )
 from reviewgraph.read_gaps import FailClosedReadOutcome
+from reviewgraph.read_gaps import build_fail_closed_read_outcome, classify_github_read_gap
 from reviewgraph.redaction import redact_data, redact_text
 
 
@@ -198,7 +199,22 @@ def read_live_github_pr(
         timeout_seconds=timeout_seconds,
         gh_executable=gh_executable,
     )
-    return read_github_pr_with_paginated_fake_transport(transport, ref)
+    pr_ref = parse_github_pr_ref(ref) if isinstance(ref, str) else ref
+    try:
+        return read_github_pr_with_paginated_fake_transport(transport, pr_ref)
+    except Exception:
+        if transport.last_error is None:
+            raise
+        gap = classify_github_read_gap(
+            resource="metadata",
+            required=True,
+            reason=transport.last_error.reason,
+            message=str(transport.last_error),
+        )
+        return build_fail_closed_read_outcome(
+            pr_ref=pr_ref,
+            read_gaps=(gap,),
+        )
 
 
 def live_read_artifact(
@@ -239,6 +255,7 @@ class GhApiReadTransport:
     per_page: int = _DEFAULT_PER_PAGE
     timeout_seconds: int = _DEFAULT_TIMEOUT_SECONDS
     gh_executable: str = "gh"
+    last_error: GhApiCommandError | None = None
 
     def get_pull_request(self, owner_repo: str, pr_number: int) -> dict[str, object]:
         payload = self._get_json(f"repos/{owner_repo}/pulls/{pr_number}")
@@ -322,14 +339,20 @@ class GhApiReadTransport:
         _assert_read_only_gh_args(args, gh_executable=self.gh_executable)
         completed = self.runner.run(args, timeout_seconds=self.timeout_seconds, env=_gh_env(self.env))
         if completed.timed_out:
-            raise GhApiCommandError("timeout", _redacted_text(completed.stderr or "gh api timed out"))
+            error = GhApiCommandError("timeout", _redacted_text(completed.stderr or "gh api timed out"))
+            self.last_error = error
+            raise error
         if completed.returncode != 0:
             message = _redacted_text(completed.stderr or "gh api failed")
-            raise GhApiCommandError(_reason_from_gh_failure(completed.stderr, completed.returncode), message)
+            error = GhApiCommandError(_reason_from_gh_failure(completed.stderr, completed.returncode), message)
+            self.last_error = error
+            raise error
         try:
             return json.loads(completed.stdout)
         except json.JSONDecodeError as exc:
-            raise GhApiCommandError("pagination_incomplete", f"gh api returned invalid JSON: {exc.msg}") from exc
+            error = GhApiCommandError("pagination_incomplete", f"gh api returned invalid JSON: {exc.msg}")
+            self.last_error = error
+            raise error from exc
 
 
 def _assert_read_only_gh_args(args: tuple[str, ...], *, gh_executable: str) -> None:
@@ -391,10 +414,12 @@ def _map_comment_payload(payload: dict[str, object], *, source_type: str) -> dic
 
 
 def _map_review_payload(payload: dict[str, object]) -> dict[str, object]:
+    body = _nullable_text(payload.get("body"))
     return {
         **_map_comment_payload(payload, source_type="review"),
         "state": _text(payload.get("state"), default="COMMENTED"),
         "created_at": _text(payload.get("submitted_at") or payload.get("created_at"), default=""),
+        "body": body if body else None,
     }
 
 
@@ -434,7 +459,7 @@ def _gh_env(env: Mapping[str, str]) -> dict[str, str]:
     return {
         key: value
         for key, value in env.items()
-        if key in {"PATH", "HOME", "GITHUB_TOKEN", "GH_TOKEN", "GH_HOST", "GH_ENTERPRISE_TOKEN"}
+        if key in {"PATH", "HOME", "GITHUB_TOKEN", "GH_TOKEN"}
     } | {"GH_PROMPT_DISABLED": "1"}
 
 
@@ -452,7 +477,7 @@ def _blocked(
         command_summary={
             "transport": "gh_api_rest",
             "live_read_opt_in": env.get(LIVE_READ_OPT_IN_ENV) == "1",
-            "message": _redacted_text(message) if message else None,
+            "message": message,
         },
         redaction_status=_empty_redaction_status(),
     )

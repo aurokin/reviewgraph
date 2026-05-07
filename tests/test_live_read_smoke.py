@@ -85,6 +85,7 @@ def test_live_read_blocked_without_token_redacts_auth_stderr() -> None:
     serialized = json.dumps(data)
     assert "ghs_" not in serialized
     assert "[REDACTED]" in serialized
+    assert data["redaction_status"]["redacted"] is True
 
 
 def test_live_read_prerequisites_accept_env_token_without_auth_command() -> None:
@@ -116,6 +117,8 @@ def test_live_read_auth_check_uses_validated_gh_path_and_whitelisted_env() -> No
             "REVIEWGRAPH_LIVE_READ": "1",
             "REVIEWGRAPH_LIVE_READ_PR": "acme/widgets#42",
             "OPENAI_API_KEY": "sk-live-should-not-reach-child",
+            "GH_HOST": "enterprise.example.com",
+            "GH_ENTERPRISE_TOKEN": "ghs_enterprise_token_should_not_reach_child",
             "PATH": "/opt/bin",
         },
         gh_path="/opt/bin/gh",
@@ -125,6 +128,8 @@ def test_live_read_auth_check_uses_validated_gh_path_and_whitelisted_env() -> No
     assert artifact is None
     assert runner.calls[0][0] == ("/opt/bin/gh", "auth", "token")
     assert "OPENAI_API_KEY" not in runner.calls[0][2]
+    assert "GH_HOST" not in runner.calls[0][2]
+    assert "GH_ENTERPRISE_TOKEN" not in runner.calls[0][2]
     assert runner.calls[0][2]["GH_PROMPT_DISABLED"] == "1"
 
 
@@ -194,6 +199,49 @@ def test_live_page_failures_preserve_non_timeout_read_gap_reason() -> None:
     assert result.read_gaps[0].resource == "comments"
     assert result.read_gaps[0].reason == "forbidden"
     assert result.read_gaps[0].retryable is False
+
+
+def test_live_metadata_failure_returns_targetless_fail_closed_read_gap() -> None:
+    responses = {
+        ("gh", "api", "repos/acme/widgets/pulls/42"): GhCommandResult(
+            returncode=1,
+            stderr="HTTP 404: not found",
+        )
+    }
+
+    result = read_live_github_pr(
+        "acme/widgets#42",
+        runner=FakeGhRunner(responses),
+        env={"GITHUB_TOKEN": "present"},
+    )
+
+    assert isinstance(result, FailClosedReadOutcome)
+    assert result.review_target is None
+    assert result.read_gaps[0].resource == "metadata"
+    assert result.read_gaps[0].reason == "not_found"
+    artifact = live_read_artifact(result).to_dict()
+    assert artifact["status"] == "fail_closed"
+    assert artifact["fail_closed"]["review_target"] is None
+    assert artifact["fail_closed"]["read_gaps"][0]["resource"] == "metadata"
+
+
+def test_empty_live_review_body_remains_optional() -> None:
+    responses = _success_responses()
+    reviews = json.loads(responses[("gh", "api", "repos/acme/widgets/pulls/42/reviews?per_page=100&page=1")].stdout)
+    reviews[0]["body"] = ""
+    responses[("gh", "api", "repos/acme/widgets/pulls/42/reviews?per_page=100&page=1")] = GhCommandResult(
+        returncode=0,
+        stdout=json.dumps(reviews),
+    )
+
+    result = read_live_github_pr(
+        "acme/widgets#42",
+        runner=FakeGhRunner(responses),
+        env={"GITHUB_TOKEN": "present"},
+    )
+
+    assert isinstance(result, GitHubReadResult)
+    assert result.pr.reviews[0].body is None
 
 
 def test_live_review_comments_without_thread_state_fail_closed() -> None:
