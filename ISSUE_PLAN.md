@@ -50,9 +50,10 @@ Linear's handoff names `src/reviewgraph/finalize.py`; the repository module is `
    - clarification-only dry-run has no candidate payload preview, no writer call, and local-only posting-plan evidence.
    - mixed run with approved findings plus suggested reply keeps candidate payload/final approval proof restricted to the finding; suggested reply text must not enter candidate or final public payloads.
 2. Add a named pure writer-release preflight helper for AUR-222 to consume before finalization:
-   - Prefer a small surface such as `evaluate_writer_release_preflight(post_enabled, approval_result, posting_plan, findings_by_id)`, where `approval_result` is the single canonical input: an `ApprovalDecisionBuildResult`, an `ApprovalDecision`, or `None`.
+   - Prefer a small surface such as `evaluate_writer_release_preflight(post_enabled, approval_result, posting_plan, current_items_by_id)`, where `approval_result` is the single canonical input: an `ApprovalDecisionBuildResult`, an `ApprovalDecision`, or `None`.
+   - `current_items_by_id` is a body-free resolver map keyed by posting-plan item ID. It may contain current typed source objects (`ClassifiedFinding`, `LocalNote`, `SuggestedReply`, `ClarificationRequest`, or suppressed-output records) or a small typed descriptor, but the posting plan is authoritative for unknown IDs, destination, source classification, and public eligibility.
    - It returns a typed `WriterReleasePreflightResult` recorded on `ReviewState.writer_release_preflight`.
-   - Result shape: `status`, `reason_code`, `approved_item_ids`, `approved_finding_ids` absent, `nested_reason_code`, `item_diagnostics`, `final_payload_hash=None`, `writer_result=None`, and no body text.
+   - Result shape: `status`, `reason_code`, `approved_item_ids`, `approved_finding_ids` absent, `nested_reason_code`, `nested_actor_permission_reason_code`, `item_diagnostics`, `writer_input_released`, `final_payload_hash=None`, `writer_result=None`, and no body text.
    - Pass shape: `status=pass`, no `reason_code`, `approved_item_ids` contains only approved public `review_body_item` postable finding IDs, `item_diagnostics` is empty, and local-only suggested replies remain excluded.
    - Failure shape: `status=fail`, `approved_item_ids=()`, no final payload/hash/writer result, and stable no-release reason.
    - Reason precedence: `post_disabled` first; then `approval_build_failed` for failed `ApprovalDecisionBuildResult` while preserving its nested reason; then `missing_approval`; then `rejected_approval`; then `empty_approval`; then duplicate approved IDs/fingerprints; then `unknown_approved_id`; then `non_public_approved_item`; then `no_public_approved_findings`.
@@ -69,11 +70,11 @@ Linear's handoff names `src/reviewgraph/finalize.py`; the repository module is `
    - When `candidate_payload_preview` is absent because all items are local-only or no public findings are eligible, markdown should say dry-run never attempts a GitHub write and no public GitHub payload was prepared because no public postable finding items are eligible.
    - Do not label other fail-closed states as "no public findings" when postable findings exist but are blocked by clarification, required reviewer failure, read gaps, or another graph error.
    - Make the explanation cause-aware from posting-plan public eligibility plus graph errors/clarification/read-gap state, not merely `candidate_payload is None`.
-   - Keep existing JSON shape stable unless a small first-class explanation is clearly needed for tests.
+   - Expose the machine-readable reason under top-level `writer_release_preflight` in dry-run/post-attempt JSON when the helper is evaluated; render metadata can mirror it, but AUR-222 should consume the top-level key.
 5. Update narrow durable docs:
    - `docs/architecture/side-effects.md` for no-approved/local-only writer suppression.
    - Correct stale durable approval terminology from `approved_finding_ids` to the implemented item-level `approved_item_ids`; do not add an alias or compatibility field.
-   - `docs/architecture/state-graph.md` if finalization preflight behavior changes.
+   - `docs/architecture/state-graph.md` is mandatory because `ReviewState.writer_release_preflight` is a state-shape change.
    - `docs/harnesses/harness-engineering.md` for the focused no-approved-findings harness.
 
 ## Focused Harness
