@@ -42,7 +42,7 @@ def test_paginated_scan_reads_all_pages_before_safe_to_post() -> None:
     assert result.transport_summary.marker_count == 0
     assert result.transport_summary.request_id == "REQ-2"
     assert result.writer_input_released is False
-    assert transport.calls == [("acme/widgets", 42, None), ("acme/widgets", 42, "page-2")]
+    assert transport.calls == [("acme/widgets", 42, None, 10), ("acme/widgets", 42, "page-2", 10)]
 
 
 def test_matching_trusted_marker_on_later_page_reconciles_without_writer_release() -> None:
@@ -148,6 +148,27 @@ def test_trusted_conflict_before_or_after_exact_marker_fails_closed() -> None:
     assert after.reason_code == MarkerReconciliationReasonCode.TRUSTED_MARKER_CONFLICT
 
 
+def test_deferred_trusted_conflict_preserves_failure_page_request_id_after_full_scan() -> None:
+    result = _scan(
+        _Transport(
+            {
+                None: MarkerCommentPage(
+                    comments=(_comment("conflict", _conflicting_payload().body, author="reviewgraph-bot"),),
+                    next_cursor="page-2",
+                    completed=False,
+                    request_id="REQ-conflict",
+                ),
+                "page-2": MarkerCommentPage(comments=(), completed=True, request_id="REQ-last"),
+            }
+        )
+    )
+
+    assert result.status == MarkerReconciliationStatus.FAILED_CLOSED
+    assert result.reason_code == MarkerReconciliationReasonCode.TRUSTED_MARKER_CONFLICT
+    assert result.transport_summary.page_count == 2
+    assert result.transport_summary.request_id == "REQ-conflict"
+
+
 def test_page_and_comment_cap_boundaries() -> None:
     payload = _payload()
     at_page_cap = _scan(
@@ -210,6 +231,19 @@ def test_empty_pages_completion_and_cursor_progression(page: MarkerCommentPage, 
     result = _scan(_Transport(pages), limits=MarkerScanLimits(max_pages=3, max_comments=10, timeout_seconds=10))
 
     assert result.reason_code == expected
+
+
+def test_unhashable_or_non_scalar_cursor_fails_closed_as_malformed_page() -> None:
+    result = _scan(
+        _Transport(
+            {
+                None: MarkerCommentPage(comments=(), completed=False, next_cursor=[]),
+            }
+        )
+    )
+
+    assert result.status == MarkerReconciliationStatus.FAILED_CLOSED
+    assert result.reason_code == MarkerReconciliationReasonCode.MALFORMED_PAGE
 
 
 @pytest.mark.parametrize(
@@ -278,6 +312,46 @@ def test_transport_summary_exists_on_every_outcome_and_does_not_expose_bodies_or
     }
     assert "ghp_" not in repr(result)
     assert secret_body.strip() not in repr(result)
+
+
+def test_secret_like_request_ids_are_dropped_beyond_github_token_fragments() -> None:
+    result = _scan(
+        _Transport(
+            {
+                None: MarkerCommentPage(
+                    comments=(),
+                    completed=True,
+                    request_id="api_key:abcdefghijklmnop",
+                )
+            }
+        )
+    )
+
+    assert result.transport_summary.request_id is None
+    assert "api_key" not in repr(result)
+
+
+def test_malformed_expected_hashes_are_rejected_before_transport_calls() -> None:
+    transport = _Transport({None: MarkerCommentPage(comments=(), completed=True)})
+
+    with pytest.raises(ValueError, match="expected_target_hash"):
+        reconcile_paginated_trusted_markers(
+            transport=transport,
+            owner_repo="acme/widgets",
+            pr_number=42,
+            approved_actor="reviewgraph-bot",
+            trusted_bot_authors=(),
+            expected_target_hash="not-a-hash",
+            expected_payload_hash=_payload().marker_payload_hash,
+            expected_findings_hash=_payload().marker_findings_hash,
+        )
+
+    assert transport.calls == []
+
+
+def test_transport_failure_rejects_non_failure_reason_codes() -> None:
+    with pytest.raises(ValueError, match="failure reason_code"):
+        MarkerScanTransportFailure(MarkerReconciliationReasonCode.SAFE_TO_POST)
 
 
 @pytest.mark.parametrize(
@@ -455,8 +529,9 @@ class _Transport:
         owner_repo: str,
         pr_number: int,
         cursor: object | None,
+        timeout_seconds: int,
     ) -> MarkerCommentPage:
-        self.calls.append((owner_repo, pr_number, cursor))
+        self.calls.append((owner_repo, pr_number, cursor, timeout_seconds))
         if cursor in self.failures:
             raise self.failures[cursor]
         return self.pages[cursor]

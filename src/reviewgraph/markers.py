@@ -14,6 +14,7 @@ from reviewgraph.hashing import (
     visible_body_hash,
 )
 from reviewgraph.models import ArtifactKind, FinalIssueCommentPayload, RedactionStatus, ReviewTarget
+from reviewgraph.redaction import redact_text
 
 
 class MarkerScanStatus(StrEnum):
@@ -52,6 +53,17 @@ RETRYABLE_MARKER_RECONCILIATION_REASON_CODES = frozenset(
         MarkerReconciliationReasonCode.TIMEOUT,
         MarkerReconciliationReasonCode.RATE_LIMITED,
         MarkerReconciliationReasonCode.UNAVAILABLE,
+        MarkerReconciliationReasonCode.TRANSPORT_UNKNOWN,
+    }
+)
+TRANSPORT_MARKER_RECONCILIATION_REASON_CODES = frozenset(
+    {
+        MarkerReconciliationReasonCode.TIMEOUT,
+        MarkerReconciliationReasonCode.RATE_LIMITED,
+        MarkerReconciliationReasonCode.FORBIDDEN,
+        MarkerReconciliationReasonCode.NOT_FOUND,
+        MarkerReconciliationReasonCode.UNAVAILABLE,
+        MarkerReconciliationReasonCode.MALFORMED_PAGE,
         MarkerReconciliationReasonCode.TRANSPORT_UNKNOWN,
     }
 )
@@ -162,6 +174,8 @@ class MarkerScanTransportFailure(Exception):
     ) -> None:
         if not isinstance(reason_code, MarkerReconciliationReasonCode):
             raise ValueError("marker scan transport failure reason_code must be valid")
+        if reason_code not in TRANSPORT_MARKER_RECONCILIATION_REASON_CODES:
+            raise ValueError("marker scan transport failure reason_code must be a failure reason_code")
         self.reason_code = reason_code
         self.request_id = request_id
         self.raw_stderr = raw_stderr
@@ -174,6 +188,7 @@ class PaginatedMarkerCommentTransport(Protocol):
         owner_repo: str,
         pr_number: int,
         cursor: object | None,
+        timeout_seconds: int,
     ) -> MarkerCommentPage: ...
 
 
@@ -444,7 +459,7 @@ def reconcile_paginated_trusted_markers(
         ("expected_payload_hash", expected_payload_hash),
         ("expected_findings_hash", expected_findings_hash),
     ):
-        _require_non_empty_string(value, f"marker scan {name}")
+        _require_strict_sha256_hash(value, f"marker scan {name}")
     scan_limits = limits or MarkerScanLimits()
     if not isinstance(scan_limits, MarkerScanLimits):
         raise ValueError("marker scan limits must be MarkerScanLimits")
@@ -460,7 +475,7 @@ def reconcile_paginated_trusted_markers(
     request_id: str | None = None
     trusted_match: tuple[PaginatedMarkerComment, ReviewGraphMarker] | None = None
     duplicate_comment_ids: list[str] = []
-    deferred_failure: TrustedMarkerReconciliationResult | None = None
+    deferred_failure: tuple[MarkerReconciliationReasonCode, str | None] | None = None
 
     while True:
         if page_count >= scan_limits.max_pages:
@@ -472,7 +487,12 @@ def reconcile_paginated_trusted_markers(
                 request_id=request_id,
             )
         try:
-            page = transport.get_issue_comments_page(owner_repo, pr_number, cursor)
+            page = transport.get_issue_comments_page(
+                owner_repo,
+                pr_number,
+                cursor,
+                scan_limits.timeout_seconds,
+            )
         except MarkerScanTransportFailure as exc:
             return _trusted_marker_failure(
                 exc.reason_code,
@@ -516,6 +536,14 @@ def reconcile_paginated_trusted_markers(
                 marker_count=marker_count,
                 request_id=request_id,
             )
+        if not page.completed and not _is_valid_marker_cursor(page.next_cursor):
+            return _trusted_marker_failure(
+                MarkerReconciliationReasonCode.MALFORMED_PAGE,
+                page_count=page_count,
+                comment_count=comment_count,
+                marker_count=marker_count,
+                request_id=request_id,
+            )
         comment_count += len(page.comments)
         if comment_count > scan_limits.max_comments:
             return _trusted_marker_failure(
@@ -540,24 +568,18 @@ def reconcile_paginated_trusted_markers(
                 continue
             if marker is None:
                 if looks_like_marker and deferred_failure is None:
-                    deferred_failure = _trusted_marker_failure(
+                    deferred_failure = (
                         MarkerReconciliationReasonCode.TRUSTED_MARKER_MALFORMED,
-                        page_count=page_count,
-                        comment_count=comment_count,
-                        marker_count=marker_count,
-                        request_id=request_id,
+                        request_id,
                     )
                 continue
             if marker.target_hash != expected_target_hash or marker.findings_hash != expected_findings_hash:
                 continue
             if marker.payload_hash != expected_payload_hash:
                 if deferred_failure is None:
-                    deferred_failure = _trusted_marker_failure(
+                    deferred_failure = (
                         MarkerReconciliationReasonCode.TRUSTED_MARKER_CONFLICT,
-                        page_count=page_count,
-                        comment_count=comment_count,
-                        marker_count=marker_count,
-                        request_id=request_id,
+                        request_id,
                     )
                 continue
             if trusted_match is None:
@@ -579,12 +601,13 @@ def reconcile_paginated_trusted_markers(
         cursor = page.next_cursor
 
     if deferred_failure is not None:
+        reason_code, failure_request_id = deferred_failure
         return _trusted_marker_failure(
-            deferred_failure.reason_code,
+            reason_code,
             page_count=page_count,
             comment_count=comment_count,
             marker_count=marker_count,
-            request_id=request_id,
+            request_id=failure_request_id,
         )
     if trusted_match is not None:
         comment, marker = trusted_match
@@ -700,6 +723,8 @@ def _safe_marker_request_id(value: str | None) -> str | None:
         return None
     if any(secret in value.casefold() for secret in _SECRET_MARKER_REQUEST_ID_FRAGMENTS):
         return None
+    if redact_text(value).redacted:
+        return None
     return value
 
 
@@ -710,3 +735,16 @@ def _is_safe_marker_request_id(value: str) -> bool:
 def _require_non_empty_string(value: str, field_name: str) -> None:
     if not isinstance(value, str) or not value:
         raise ValueError(f"{field_name} must be a non-empty string")
+
+
+def _require_strict_sha256_hash(value: str, field_name: str) -> None:
+    _require_non_empty_string(value, field_name)
+    if len(value) != 71 or not value.startswith("sha256:"):
+        raise ValueError(f"{field_name} must be a strict sha256 hash")
+    digest = value.removeprefix("sha256:")
+    if any(char not in "0123456789abcdef" for char in digest):
+        raise ValueError(f"{field_name} must be a strict sha256 hash")
+
+
+def _is_valid_marker_cursor(value: object | None) -> bool:
+    return isinstance(value, str) and bool(value)
