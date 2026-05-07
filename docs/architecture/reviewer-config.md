@@ -100,7 +100,11 @@ Trigger fields are evaluated as selectors plus gates:
 
 A reviewer is selected for an eligible stage when at least one selector matches and all configured gates pass. If a reviewer has only gates and no selector, the gates act as the selector. Every matched selector and every gate decision must be recorded in `SelectedReviewer.reasons`.
 
-Untrusted PR comments may be retained as passive memory, but they must not satisfy `conversation_patterns` or contribute to request-changes recommendations.
+Untrusted PR comments may be retained as passive memory, but they must not satisfy `conversation_patterns` or contribute to request-changes recommendations. Conversation-pattern reasons must name the matching memory ID and trust label; GitHub-derived memory reasons also include source provider provenance. Example:
+
+```text
+initial_triage triggers.conversation_patterns=ambiguous behavior memory_id=github:issue_comment:123 trust=trusted source_provider=github
+```
 
 Top-level config may include `trusted_operator_authors` and `trusted_bot_authors`. Bot authors are default-deny even when their GitHub association is owner, member, or collaborator. Missing or unknown actor type fails closed for trust.
 

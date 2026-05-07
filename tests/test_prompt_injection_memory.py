@@ -584,7 +584,10 @@ def test_trusted_actionable_memory_can_select_reviewer_without_bypassing_quality
         reviewer=SelectedReviewer(
             name="logic",
             stage="initial_triage",
-            reasons=("initial_triage triggers.conversation_patterns=redirect needs logic review",),
+            reasons=(
+                "initial_triage triggers.conversation_patterns=redirect needs logic review "
+                "memory_id=comment-injection-1 trust=trusted",
+            ),
         ),
         reviewer_config=_agent_config(name="logic"),
     )
@@ -595,7 +598,10 @@ def test_trusted_actionable_memory_can_select_reviewer_without_bypassing_quality
         {
             "name": "logic",
             "stage": "initial_triage",
-            "reasons": ["initial_triage triggers.conversation_patterns=redirect needs logic review"],
+            "reasons": [
+                "initial_triage triggers.conversation_patterns=redirect needs logic review "
+                "memory_id=comment-injection-1 trust=trusted"
+            ],
         }
     ]
     assert memory_by_id["comment-injection-1"]["role"] == "trusted_actionable_data"

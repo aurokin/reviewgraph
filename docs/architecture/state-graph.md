@@ -185,9 +185,7 @@ Reviewer selection may happen more than once as state changes. Examples:
 - `logic_review`: reviewers inspect cross-file reasoning, invariants, and product behavior when the diff suggests non-local risk. Postable logic findings still need changed-line anchoring and concrete evidence; unclear intent becomes a clarification request.
 - `clarification_review`: reviewers that raised material ambiguity can ask a human for context before making a mergeability recommendation.
 
-Each selected reviewer must record the stage and trigger reasons in state.
-
-GitHub-derived actionable memory is not allowed to satisfy positive `conversation_patterns` routing until the later routing policy explicitly accounts for GitHub provenance, seen-state, and quote handling. Fixture trusted memory can still exercise conversation-pattern routing in deterministic harnesses.
+Each selected reviewer must record the stage and trigger reasons in state. Conversation-pattern trigger reasons must be derived only from trusted actionable memory and include the matching memory ID plus trust status. GitHub-derived actionable memory may satisfy `conversation_patterns` only through this explicit matched-memory reason surface; passive, untrusted, resolved, unknown-thread, and review-summary memory cannot route reviewers.
 
 `select_reviewers` must use `ReviewerRunKey` for idempotence and resume safety:
 

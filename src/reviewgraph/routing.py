@@ -188,14 +188,13 @@ def _trigger_reasons(
     for label in triggers.labels:
         if label.casefold() in labels:
             selector_reasons.append(f"{stage} triggers.labels={label}")
-    trusted_memory = "\n".join(
-        memory.body or ""
-        for memory in memory_references
-        if memory.actionable and memory.source_provider != "github"
-    ).casefold()
-    for pattern in triggers.conversation_patterns:
-        if pattern.casefold() in trusted_memory:
-            selector_reasons.append(f"{stage} triggers.conversation_patterns={pattern}")
+    selector_reasons.extend(
+        _conversation_pattern_reasons(
+            stage=stage,
+            patterns=triggers.conversation_patterns,
+            memory_references=memory_references,
+        )
+    )
 
     has_explicit_selector = any(
         (
@@ -213,6 +212,38 @@ def _trigger_reasons(
 
 def _stage_value(stage: str | ReviewStage) -> str:
     return stage.value if isinstance(stage, ReviewStage) else stage
+
+
+def _conversation_pattern_reasons(
+    *,
+    stage: str,
+    patterns: tuple[str, ...],
+    memory_references: tuple[MemoryReference, ...],
+) -> tuple[str, ...]:
+    reasons: list[str] = []
+    seen: set[str] = set()
+    actionable_memory = tuple(memory for memory in memory_references if memory.actionable and memory.body)
+    for pattern in patterns:
+        casefolded_pattern = pattern.casefold()
+        for memory in actionable_memory:
+            if casefolded_pattern not in (memory.body or "").casefold():
+                continue
+            reason = _conversation_pattern_reason(stage=stage, pattern=pattern, memory=memory)
+            if reason in seen:
+                continue
+            seen.add(reason)
+            reasons.append(reason)
+    return tuple(reasons)
+
+
+def _conversation_pattern_reason(*, stage: str, pattern: str, memory: MemoryReference) -> str:
+    reason = (
+        f"{stage} triggers.conversation_patterns={pattern} "
+        f"memory_id={memory.id} trust={memory.trust_label}"
+    )
+    if memory.source_provider is not None:
+        reason = f"{reason} source_provider={memory.source_provider}"
+    return reason
 
 
 def _path_matches(path: str, pattern: str) -> bool:

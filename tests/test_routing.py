@@ -269,7 +269,8 @@ def test_active_stage_selection_defaults_to_review_state_conversation_memory() -
 
     assert [reviewer.name for reviewer in selected] == ["memory"]
     assert state.selected_reviewers[0].reasons == (
-        "initial_triage triggers.conversation_patterns=cache miss fallback",
+        "initial_triage triggers.conversation_patterns=cache miss fallback "
+        "memory_id=comment-cache-intent trust=trusted",
     )
 
 

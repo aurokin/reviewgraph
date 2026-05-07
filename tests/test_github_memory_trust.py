@@ -200,7 +200,7 @@ def test_github_transport_cannot_self_declare_trust_or_provenance() -> None:
     assert memory_by_source_id["review-1"].source_provider == "github"
 
 
-def test_github_actionable_memory_does_not_route_conversation_patterns_until_aur_236() -> None:
+def test_github_actionable_memory_can_route_conversation_patterns_with_memory_reason() -> None:
     result = _read_result(
         issue_comments={
             None: {
@@ -231,7 +231,16 @@ def test_github_actionable_memory_does_not_route_conversation_patterns_until_aur
         memory_references=memory.entries,
     )
 
-    assert selected == ()
+    assert selected == (
+        SelectedReviewer(
+            name="logic",
+            stage="initial_triage",
+            reasons=(
+                "initial_triage triggers.conversation_patterns=ambiguous behavior "
+                "memory_id=github:issue_comment:1 trust=trusted source_provider=github",
+            ),
+        ),
+    )
 
 
 def test_passive_github_memory_cannot_enter_prompt_render_or_candidate_payload() -> None:
@@ -498,4 +507,3 @@ def _classified_finding(body: str) -> ClassifiedFinding:
         confidence=Confidence.HIGH,
         fingerprint="sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
     )
-

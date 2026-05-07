@@ -1778,7 +1778,10 @@ def test_actionable_review_thread_memory_selects_conversation_pattern_reviewer(t
         {
             "name": "logic",
             "stage": "initial_triage",
-            "reasons": ["initial_triage triggers.conversation_patterns=ambiguous behavior"],
+            "reasons": [
+                "initial_triage triggers.conversation_patterns=ambiguous behavior "
+                "memory_id=thread-comment-cache-1 trust=trusted"
+            ],
         }
     ]
 
@@ -1809,7 +1812,10 @@ def test_trusted_top_level_comment_memory_selects_conversation_pattern_reviewer(
         {
             "name": "logic",
             "stage": "initial_triage",
-            "reasons": ["initial_triage triggers.conversation_patterns=ambiguous behavior"],
+            "reasons": [
+                "initial_triage triggers.conversation_patterns=ambiguous behavior "
+                "memory_id=comment-cache-intent trust=trusted"
+            ],
         }
     ]
 
@@ -1888,7 +1894,10 @@ def test_allowlisted_bot_memory_selects_conversation_pattern_reviewer(tmp_path: 
         {
             "name": "logic",
             "stage": "initial_triage",
-            "reasons": ["initial_triage triggers.conversation_patterns=ambiguous behavior"],
+            "reasons": [
+                "initial_triage triggers.conversation_patterns=ambiguous behavior "
+                "memory_id=thread-comment-cache-1 trust=trusted"
+            ],
         }
     ]
     thread_memory = next(item for item in result.json_data["review"]["memory"] if item["source_type"] == "review_thread")
