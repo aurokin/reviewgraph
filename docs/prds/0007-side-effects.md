@@ -39,7 +39,7 @@ Implement side effects only after dry-run, quality classification, posting plan 
 
 - Fake writer tests cover approval rejection, empty approval, local-notes-only output, stale SHA, actor/permission failure, and idempotent retry.
 - Tests assert `event: COMMENT` and `/pulls/{pr}/reviews` payloads are rejected.
-- Tests assert approving a subset changes the final payload hash and stale candidate hashes are rejected.
+- Tests assert approving a subset changes the final payload hash and stale final payload hashes are rejected. Candidate payloads expose only visible-body and findings hash inputs; they are never accepted as writer input.
 - Tests assert a pre-seeded marker prevents duplicate posting after process restart.
 - Live post smoke is manual and only against disposable PRs.
 

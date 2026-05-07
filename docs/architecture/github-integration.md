@@ -133,7 +133,7 @@ Before posting, render:
 - local notes excluded from posting
 - clarification requests, if any
 - review target SHAs
-- payload hash
+- candidate visible-body hash and findings hash inputs; final payload hashes appear only after approval/finalization
 - idempotency fingerprints
 
 No side-effect adapter should be reachable unless `post_enabled=True` and `approval.approved=True`.

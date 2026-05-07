@@ -31,8 +31,7 @@ The approval gate receives a candidate payload:
 - clarification requests and answers
 - local verdict
 - posting plan
-- candidate GitHub payload
-- candidate payload hash
+- candidate GitHub issue-comment payload with visible-body and findings hash inputs
 - review target
 - authenticated GitHub actor and permission summary
 - redaction status for rendered output and candidate payloads
@@ -63,7 +62,7 @@ It returns:
 }
 ```
 
-The final GitHub payload is built deterministically from `approved_finding_ids` and the candidate payload only after preflight passes. `approved_final_payload_hash` binds to the full final issue-comment body after item selection, including the hidden ReviewGraph marker line. The marker's own `payload` field stores a separate visible-body hash that excludes the marker, avoiding a self-referential hash. Before the writer is invoked, ReviewGraph must either show the final payload or prove that its hash equals `approved_final_payload_hash`. If approving a subset changes the body hash, the old candidate hash must be rejected.
+The final GitHub payload is built deterministically from `approved_finding_ids` and the candidate payload only after preflight passes. Candidate payloads expose visible-body and findings hash inputs only; they do not carry final payload hashes and are never writer input. `approved_final_payload_hash` binds to the full final issue-comment body after item selection, including the hidden ReviewGraph marker line. The marker's own `payload` field stores a separate visible-body hash that excludes the marker, avoiding a self-referential hash. Before the writer is invoked, ReviewGraph must either show the final payload or prove that its hash equals `approved_final_payload_hash`. If approving a subset changes the final body hash, previously computed final payload hashes must be rejected.
 
 The actor and permission summary is endpoint-specific. It must identify the authenticated actor, credential principal/source, repo or installation permission, ability to call `POST /repos/{owner}/{repo}/issues/{pr_number}/comments`, check method, checked target, checked-at time, and stable failure code when blocked. A broad repository role is not enough if the token or app cannot create the top-level issue comment.
 

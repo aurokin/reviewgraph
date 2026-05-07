@@ -24,7 +24,6 @@ from reviewgraph.models import (
 from reviewgraph.posting import (
     build_candidate_issue_comment_payload,
     build_posting_plan,
-    full_body_hash,
     PostingDestination,
     PostingPlan,
     PostingPlanItem,
@@ -204,7 +203,6 @@ def test_candidate_payload_preview_serializes_supplied_payload_without_recomputi
     assert preview["review_target"] == payload.review_target.to_ordered_dict()
     assert preview["body"] == payload.body
     assert preview["visible_body_hash"] == payload.visible_body_hash
-    assert preview["full_body_hash"] == payload.full_body_hash
     assert preview["findings_hash"] == payload.findings_hash
     assert preview["item_fingerprints"] == list(payload.item_fingerprints)
     assert preview["redaction_status"] == {
@@ -280,7 +278,6 @@ def test_candidate_payload_preview_rejects_unbound_target_plan_and_hashes() -> N
         payload,
         body=tampered_body,
         visible_body_hash=visible_body_hash(tampered_body),
-        full_body_hash=full_body_hash(tampered_body),
     )
     with pytest.raises(RenderError, match="current rendered findings"):
         render_review(
@@ -348,7 +345,6 @@ def test_candidate_payload_preview_rejects_redaction_drift_and_unexpected_public
         payload,
         body=secret_body,
         visible_body_hash=visible_body_hash(secret_body),
-        full_body_hash=full_body_hash(secret_body),
     )
     with pytest.raises(RenderError, match="current rendered findings"):
         render_review(
@@ -364,7 +360,6 @@ def test_candidate_payload_preview_rejects_redaction_drift_and_unexpected_public
         payload,
         body=unexpected_body,
         visible_body_hash=visible_body_hash(unexpected_body),
-        full_body_hash=full_body_hash(unexpected_body),
     )
     with pytest.raises(RenderError, match="current rendered findings"):
         render_review(

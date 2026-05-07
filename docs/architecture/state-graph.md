@@ -47,9 +47,8 @@ class ReviewState(TypedDict):
     payload_validation: PayloadValidationResult | None
     marker_reconciliation: MarkerReconciliationResult | None
     finalization_status: FinalizationStatus | None
-    candidate_github_payload: GitHubReviewPayload | None
-    final_github_payload: GitHubReviewPayload | None
-    candidate_payload_hash: str | None
+    candidate_github_payload: CandidateIssueCommentPayload | None
+    final_github_payload: FinalIssueCommentPayload | None
     final_payload_hash: str | None
     approval: ApprovalDecision | None
     writer_result: GitHubWriterResult | None

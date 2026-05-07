@@ -24,7 +24,7 @@ Define typed contracts for the core state and data models before building live i
 
 ## Implementation Decisions
 
-- `ReviewState` includes run ID, run mode, post-enabled flag, review target, posting target, read gaps, config hash, stage cursor, risk assessment, reviewer run status, context budget, redaction status, classified outputs, suggested replies, posting plan, actor/permission gate result, payload validation result, marker reconciliation result, finalization status, payload hashes, approval, writer result, and errors.
+- `ReviewState` includes run ID, run mode, post-enabled flag, review target, posting target, read gaps, config hash, stage cursor, risk assessment, reviewer run status, context budget, redaction status, classified outputs, suggested replies, posting plan, actor/permission gate result, payload validation result, marker reconciliation result, finalization status, candidate/final payload contracts, final payload hash, approval, writer result, and errors.
 - `ReviewTarget` includes owner/repo, PR number, base SHA, head SHA, merge-base SHA when available, and diff basis.
 - `ReviewerRunKey` includes target hash, config hash, stage, reviewer name, attempt metadata, retry metadata, and clarification ID when applicable.
 - Raw reviewer findings exclude graph-owned fields such as classification, blocking, final priority, fingerprint, and posting destination.

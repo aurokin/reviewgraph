@@ -9,14 +9,15 @@ from reviewgraph.models import (
     ArtifactKind,
     ClassifiedFinding,
     Confidence,
+    FinalIssueCommentPayload,
     GateStatus,
-    GitHubReviewPayload,
     RedactionStatus,
     ReviewTarget,
     SelectedReviewer,
     Severity,
 )
-from reviewgraph.posting import build_candidate_issue_comment_payload, build_posting_plan, full_body_hash, visible_body_hash
+from reviewgraph.hashing import final_payload_hash, findings_hash, marker_payload_hash
+from reviewgraph.posting import build_candidate_issue_comment_payload, build_posting_plan, visible_body_hash
 from reviewgraph.redaction import (
     REDACTION_TOKEN,
     RedactionPolicyError,
@@ -165,15 +166,29 @@ def test_rendered_markdown_json_and_candidate_payload_are_redacted() -> None:
 
 
 def test_final_payload_shaped_contract_carries_redacted_body_and_status() -> None:
-    raw_final_body = f"Final ReviewGraph payload\n{SECRET_TEXT}\n<!-- marker -->"
-    redaction = redact_text(raw_final_body)
-    payload = GitHubReviewPayload(
+    target = ReviewTarget("acme/widgets", 42, "base123", "head456", "merge789", "merge_base")
+    visible_body = f"Final ReviewGraph payload\n{SECRET_TEXT}\n"
+    redaction = redact_text(visible_body)
+    marker_findings_hash = findings_hash(())
+    marker_line = (
+        "<!-- reviewgraph:v1 run_id=run-1 "
+        f"target={target.target_hash()} "
+        f"payload={marker_payload_hash(redaction.text)} "
+        f"findings={marker_findings_hash} -->"
+    )
+    body = f"{redaction.text}{marker_line}\n"
+    payload = FinalIssueCommentPayload(
         artifact_kind=ArtifactKind.ISSUE_COMMENT,
-        review_target=ReviewTarget("acme/widgets", 42, "base123", "head456", "merge789", "merge_base"),
-        body=redaction.text,
-        visible_body_hash=visible_body_hash(redaction.text),
-        full_body_hash=full_body_hash(redaction.text),
-        findings_hash="sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        review_target=target,
+        body=body,
+        marker_line=marker_line,
+        marker_run_id="run-1",
+        marker_target_hash=target.target_hash(),
+        marker_payload_hash=marker_payload_hash(redaction.text),
+        marker_findings_hash=marker_findings_hash,
+        visible_body_hash=visible_body_hash(body),
+        final_payload_hash=final_payload_hash(body),
+        findings_hash=marker_findings_hash,
         item_fingerprints=(),
         redaction_status=RedactionStatus(
             redacted=redaction.redacted,

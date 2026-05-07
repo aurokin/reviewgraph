@@ -222,7 +222,6 @@ def build_candidate_issue_comment_payload(
         review_target=review_target,
         body=visible_body,
         visible_body_hash=visible_body_hash(visible_body),
-        full_body_hash=full_body_hash(visible_body),
         findings_hash=findings_hash(item_fingerprints),
         item_fingerprints=item_fingerprints,
         redaction_status=RedactionStatus(

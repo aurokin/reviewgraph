@@ -71,6 +71,26 @@ class GateStatus(StrEnum):
     UNKNOWN = "unknown"
 
 
+class PayloadValidationReasonCode(StrEnum):
+    WRONG_ARTIFACT_KIND = "wrong_artifact_kind"
+    REDACTION_NOT_PASSED = "redaction_not_passed"
+    CANDIDATE_CONTAINS_MARKER = "candidate_contains_marker"
+    CANDIDATE_BINDING_MISMATCH = "candidate_binding_mismatch"
+    NOT_FINAL_PAYLOAD = "not_final_payload"
+    BODY_HASH_MISMATCH = "body_hash_mismatch"
+    FINDINGS_HASH_MISMATCH = "findings_hash_mismatch"
+    DUPLICATE_FINGERPRINTS = "duplicate_fingerprints"
+    TARGET_HASH_MISMATCH = "target_hash_mismatch"
+    MARKER_NOT_FINAL_LINE = "marker_not_final_line"
+    MARKER_FIELD_MISMATCH = "marker_field_mismatch"
+    FINAL_PAYLOAD_HASH_MISMATCH = "final_payload_hash_mismatch"
+    WRONG_METHOD = "wrong_method"
+    WRONG_ENDPOINT = "wrong_endpoint"
+    REQUEST_TARGET_MISMATCH = "request_target_mismatch"
+    WRONG_REQUEST_BODY = "wrong_request_body"
+    FORMAL_REVIEW_PAYLOAD_REJECTED = "formal_review_payload_rejected"
+
+
 class FinalizationState(StrEnum):
     NOT_READY = "not_ready"
     FINALIZED = "finalized"
@@ -1286,30 +1306,80 @@ class PostingPlan:
 
 
 @dataclass(frozen=True)
-class GitHubReviewPayload:
+class CandidateIssueCommentPayload:
     artifact_kind: ArtifactKind
     review_target: ReviewTarget
     body: str
     visible_body_hash: str
-    full_body_hash: str
     findings_hash: str
     item_fingerprints: tuple[str, ...]
     redaction_status: RedactionStatus
 
     def __post_init__(self) -> None:
-        _require_issue_comment_artifact(self.artifact_kind, "github review payload artifact_kind")
+        _require_issue_comment_artifact(self.artifact_kind, "candidate issue comment payload artifact_kind")
         if not isinstance(self.review_target, ReviewTarget):
-            raise ValueError("github review payload review_target must be a ReviewTarget")
-        _require_non_empty(self.body, "github review payload body")
-        _require_hash_like(self.visible_body_hash, "github review payload visible_body_hash")
-        _require_hash_like(self.full_body_hash, "github review payload full_body_hash")
-        _require_hash_like(self.findings_hash, "github review payload findings_hash")
-        _require_string_tuple(self.item_fingerprints, "github review payload item_fingerprints")
+            raise ValueError("candidate issue comment payload review_target must be a ReviewTarget")
+        _require_non_empty(self.body, "candidate issue comment payload body")
+        _require_hash_like(self.visible_body_hash, "candidate issue comment payload visible_body_hash")
+        _require_hash_like(self.findings_hash, "candidate issue comment payload findings_hash")
+        _require_string_tuple(self.item_fingerprints, "candidate issue comment payload item_fingerprints")
         if not isinstance(self.redaction_status, RedactionStatus):
-            raise ValueError("github review payload redaction_status must be a RedactionStatus")
+            raise ValueError("candidate issue comment payload redaction_status must be a RedactionStatus")
 
 
-CandidateIssueCommentPayload: TypeAlias = GitHubReviewPayload
+@dataclass(frozen=True)
+class FinalIssueCommentPayload:
+    artifact_kind: ArtifactKind
+    review_target: ReviewTarget
+    body: str
+    marker_line: str
+    marker_run_id: str
+    marker_target_hash: str
+    marker_payload_hash: str
+    marker_findings_hash: str
+    visible_body_hash: str
+    final_payload_hash: str
+    findings_hash: str
+    item_fingerprints: tuple[str, ...]
+    redaction_status: RedactionStatus
+
+    def __post_init__(self) -> None:
+        _require_issue_comment_artifact(self.artifact_kind, "final issue comment payload artifact_kind")
+        if not isinstance(self.review_target, ReviewTarget):
+            raise ValueError("final issue comment payload review_target must be a ReviewTarget")
+        _require_non_empty(self.body, "final issue comment payload body")
+        _require_non_empty(self.marker_line, "final issue comment payload marker_line")
+        _require_non_empty(self.marker_run_id, "final issue comment payload marker_run_id")
+        _require_hash_like(self.marker_target_hash, "final issue comment payload marker_target_hash")
+        _require_hash_like(self.marker_payload_hash, "final issue comment payload marker_payload_hash")
+        _require_hash_like(self.marker_findings_hash, "final issue comment payload marker_findings_hash")
+        _require_hash_like(self.visible_body_hash, "final issue comment payload visible_body_hash")
+        _require_hash_like(self.final_payload_hash, "final issue comment payload final_payload_hash")
+        _require_hash_like(self.findings_hash, "final issue comment payload findings_hash")
+        _require_string_tuple(self.item_fingerprints, "final issue comment payload item_fingerprints")
+        if not isinstance(self.redaction_status, RedactionStatus):
+            raise ValueError("final issue comment payload redaction_status must be a RedactionStatus")
+
+
+GitHubReviewPayload: TypeAlias = FinalIssueCommentPayload
+
+
+@dataclass(frozen=True)
+class GitHubIssueCommentRequest:
+    method: str
+    endpoint: str
+    body: Mapping[str, object]
+    payload: FinalIssueCommentPayload
+
+    def __post_init__(self) -> None:
+        _require_non_empty(self.method, "github issue comment request method")
+        _require_non_empty(self.endpoint, "github issue comment request endpoint")
+        if not isinstance(self.body, Mapping):
+            raise ValueError("github issue comment request body must be a mapping")
+        if not all(isinstance(key, str) for key in self.body):
+            raise ValueError("github issue comment request body keys must be strings")
+        if not isinstance(self.payload, FinalIssueCommentPayload):
+            raise ValueError("github issue comment request payload must be a FinalIssueCommentPayload")
 
 
 @dataclass(frozen=True)
@@ -1354,6 +1424,7 @@ class PayloadValidationResult:
     status: GateStatus
     payload_hash: str | None
     target_hash: str | None
+    reason_code: PayloadValidationReasonCode | None = None
     reason: str | None = None
 
     def __post_init__(self) -> None:
@@ -1361,11 +1432,17 @@ class PayloadValidationResult:
             raise ValueError("payload validation status must be a GateStatus")
         _require_optional_hash_like(self.payload_hash, "payload validation payload_hash")
         _require_optional_hash_like(self.target_hash, "payload validation target_hash")
+        if self.reason_code is not None and not isinstance(self.reason_code, PayloadValidationReasonCode):
+            raise ValueError("payload validation reason_code must be a PayloadValidationReasonCode")
         _require_optional_non_empty(self.reason, "payload validation reason")
         if self.status == GateStatus.PASS:
             for name in ("payload_hash", "target_hash"):
                 if getattr(self, name) is None:
                     raise ValueError(f"payload validation pass requires {name}")
+            if self.reason_code is not None:
+                raise ValueError("payload validation pass must not include reason_code")
+        if self.status != GateStatus.PASS and self.reason_code is None:
+            raise ValueError("payload validation failure requires reason_code")
 
 
 @dataclass(frozen=True)
@@ -1515,9 +1592,8 @@ class ReviewState:
     payload_validation: PayloadValidationResult | None
     marker_reconciliation: MarkerReconciliationResult | None
     finalization_status: FinalizationStatus | None
-    candidate_github_payload: GitHubReviewPayload | None
-    final_github_payload: GitHubReviewPayload | None
-    candidate_payload_hash: str | None
+    candidate_github_payload: CandidateIssueCommentPayload | None
+    final_github_payload: FinalIssueCommentPayload | None
     final_payload_hash: str | None
     approval: ApprovalDecision | None
     writer_result: GitHubWriterResult | None

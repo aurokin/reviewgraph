@@ -198,7 +198,7 @@ Remaining graph work is intentionally staged in later PRDs: production live GitH
 
 ### Task 12: Add posting plan and approval proof models
 
-**Objective:** Build item-level posting plans, candidate payload hashes, approved payload hashes, and public/private verdict separation before any live adapter exists.
+**Objective:** Build item-level posting plans, candidate visible-body/findings hash inputs, approved final payload hashes, and public/private verdict separation before any live adapter exists.
 
 **Files:**
 - Create: `src/reviewgraph/posting.py`

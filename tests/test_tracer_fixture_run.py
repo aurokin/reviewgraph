@@ -1,7 +1,7 @@
 import json
 
 from reviewgraph.fixtures import load_fixture_pr, load_manifest
-from reviewgraph.posting import findings_hash, full_body_hash, visible_body_hash
+from reviewgraph.posting import findings_hash, visible_body_hash
 from reviewgraph.runner import run_fixture_dry_run
 
 
@@ -277,7 +277,6 @@ def test_basic_fixture_tracer_golden_run() -> None:
     )
     assert preview["item_fingerprints"] == ["sha256:f057847d9ec647ddf253d83316a2a8edefff5bf4a3606d0b205872131c0459c1"]
     assert preview["visible_body_hash"] == visible_body_hash(preview["body"])
-    assert preview["full_body_hash"] == full_body_hash(preview["body"])
     assert preview["findings_hash"] == findings_hash(preview["item_fingerprints"])
     assert preview["redaction_status"] == {
         "redacted": True,

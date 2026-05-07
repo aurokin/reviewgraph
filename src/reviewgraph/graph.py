@@ -136,7 +136,6 @@ def _initialize_review_state(state: _EmptyDryRunRuntimeState) -> dict[str, Any]:
         finalization_status=None,
         candidate_github_payload=None,
         final_github_payload=None,
-        candidate_payload_hash=None,
         final_payload_hash=None,
         approval=None,
         writer_result=None,

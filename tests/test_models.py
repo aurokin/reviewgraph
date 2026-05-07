@@ -10,6 +10,7 @@ from reviewgraph.models import (
     ActorPermissionGateResult,
     ApprovalDecision,
     ArtifactKind,
+    CandidateIssueCommentPayload,
     ClarificationAnswer,
     ClarificationRequest,
     ClarificationState,
@@ -17,16 +18,17 @@ from reviewgraph.models import (
     ClassifiedFinding,
     Confidence,
     ContextBudget,
+    FinalIssueCommentPayload,
     FinalizationState,
     FinalizationStatus,
     GateStatus,
-    GitHubReviewPayload,
     GitHubWriterResult,
     GraphError,
     MarkerReconciliationResult,
     MemoryReference,
     NormalizationError,
     OutputClassification,
+    PayloadValidationReasonCode,
     PayloadValidationResult,
     PostInteractionGateResult,
     PostingDestination,
@@ -60,6 +62,7 @@ from reviewgraph.models import (
     WriterStatus,
     validate_priority,
 )
+from reviewgraph.hashing import final_payload_hash, findings_hash, marker_payload_hash, visible_body_hash
 
 
 EXPECTED_STATE_FIELDS = (
@@ -106,7 +109,6 @@ EXPECTED_STATE_FIELDS = (
     "finalization_status",
     "candidate_github_payload",
     "final_github_payload",
-    "candidate_payload_hash",
     "final_payload_hash",
     "approval",
     "writer_result",
@@ -591,20 +593,11 @@ def test_side_effect_contracts_bind_approval_finalization_and_writer_metadata() 
             ),
         )
     )
-    payload = GitHubReviewPayload(
-        artifact_kind=ArtifactKind.ISSUE_COMMENT,
-        review_target=target,
-        body="ReviewGraph dry-run candidate\n",
-        visible_body_hash="sha256:visible",
-        full_body_hash="sha256:full",
-        findings_hash="sha256:findings",
-        item_fingerprints=("fp-1",),
-        redaction_status=redaction,
-    )
+    payload = _final_payload(target=target, fingerprints=("fp-1",), redaction=redaction)
     approval = ApprovalDecision(
         approved=True,
         approved_item_ids=("finding-1",),
-        approved_final_payload_hash=payload.full_body_hash,
+        approved_final_payload_hash=payload.final_payload_hash,
         approved_review_target_hash=target.target_hash(),
         approved_review_target=target,
         approved_github_actor="reviewgraph-bot",
@@ -623,7 +616,7 @@ def test_side_effect_contracts_bind_approval_finalization_and_writer_metadata() 
     interaction_gate = PostInteractionGateResult(status=GateStatus.PASS, interactive=True)
     validation = PayloadValidationResult(
         status=GateStatus.PASS,
-        payload_hash=payload.full_body_hash,
+        payload_hash=payload.final_payload_hash,
         target_hash=target.target_hash(),
     )
     reconciliation = MarkerReconciliationResult(
@@ -633,14 +626,14 @@ def test_side_effect_contracts_bind_approval_finalization_and_writer_metadata() 
     )
     finalization = FinalizationStatus(
         state=FinalizationState.FINALIZED,
-        final_payload_hash=payload.full_body_hash,
+        final_payload_hash=payload.final_payload_hash,
         target_hash=target.target_hash(),
     )
     writer = GitHubWriterResult(
         status=WriterStatus.NOT_CALLED,
         artifact_kind=ArtifactKind.ISSUE_COMMENT,
         target_hash=target.target_hash(),
-        payload_hash=payload.full_body_hash,
+        payload_hash=payload.final_payload_hash,
     )
 
     assert approval.approved_item_ids == ("finding-1",)
@@ -649,7 +642,7 @@ def test_side_effect_contracts_bind_approval_finalization_and_writer_metadata() 
     assert plan.public_payload_items[0].id == "finding-1"
     assert interaction_gate.interactive is True
     assert actor_gate.permission == "write"
-    assert validation.payload_hash == payload.full_body_hash
+    assert validation.payload_hash == payload.final_payload_hash
     assert reconciliation.trusted_actor == "reviewgraph-bot"
     assert finalization.state == FinalizationState.FINALIZED
     assert writer.status == WriterStatus.NOT_CALLED
@@ -804,52 +797,47 @@ def test_actionable_memory_requires_trusted_unresolved_supported_actor(kwargs: d
                 ),
             )
         ),
-        lambda: GitHubReviewPayload(
+        lambda: CandidateIssueCommentPayload(
             artifact_kind="issue_comment",
             review_target=_target(),
             body="ReviewGraph dry-run candidate\n",
             visible_body_hash="sha256:visible",
-            full_body_hash="sha256:full",
             findings_hash="sha256:findings",
             item_fingerprints=("fp-1",),
             redaction_status=RedactionStatus(redacted=False, replacement_count=0),
         ),
-        lambda: GitHubReviewPayload(
+        lambda: CandidateIssueCommentPayload(
             artifact_kind=ArtifactKind.ISSUE_COMMENT,
             review_target=object(),
             body="ReviewGraph dry-run candidate\n",
             visible_body_hash="sha256:visible",
-            full_body_hash="sha256:full",
             findings_hash="sha256:findings",
             item_fingerprints=("fp-1",),
             redaction_status=RedactionStatus(redacted=False, replacement_count=0),
         ),
-        lambda: GitHubReviewPayload(
+        lambda: CandidateIssueCommentPayload(
             artifact_kind=ArtifactKind.ISSUE_COMMENT,
             review_target=_target(),
             body="",
             visible_body_hash="sha256:visible",
-            full_body_hash="sha256:full",
             findings_hash="sha256:findings",
             item_fingerprints=("fp-1",),
             redaction_status=RedactionStatus(redacted=False, replacement_count=0),
         ),
-        lambda: GitHubReviewPayload(
+        lambda: CandidateIssueCommentPayload(
             artifact_kind=ArtifactKind.ISSUE_COMMENT,
             review_target=_target(),
             body="ReviewGraph dry-run candidate\n",
             visible_body_hash="visible",
-            full_body_hash="sha256:full",
             findings_hash="sha256:findings",
             item_fingerprints=("fp-1",),
             redaction_status=RedactionStatus(redacted=False, replacement_count=0),
         ),
-        lambda: GitHubReviewPayload(
+        lambda: CandidateIssueCommentPayload(
             artifact_kind=ArtifactKind.ISSUE_COMMENT,
             review_target=_target(),
             body="ReviewGraph dry-run candidate\n",
             visible_body_hash="sha256:visible",
-            full_body_hash="sha256:full",
             findings_hash="sha256:findings",
             item_fingerprints=["fp-1"],
             redaction_status=RedactionStatus(redacted=False, replacement_count=0),
@@ -862,6 +850,14 @@ def test_actionable_memory_requires_trusted_unresolved_supported_actor(kwargs: d
         lambda: PayloadValidationResult(GateStatus.PASS, None, "sha256:target"),
         lambda: PayloadValidationResult("pass", "sha256:payload", "sha256:target"),
         lambda: PayloadValidationResult(GateStatus.FAIL, "payload", None),
+        lambda: PayloadValidationResult(GateStatus.FAIL, None, None),
+        lambda: PayloadValidationResult(GateStatus.FAIL, None, None, "unknown_code"),
+        lambda: PayloadValidationResult(
+            GateStatus.PASS,
+            "sha256:payload",
+            "sha256:target",
+            PayloadValidationReasonCode.WRONG_ENDPOINT,
+        ),
         lambda: MarkerReconciliationResult(GateStatus.PASS, None),
         lambda: MarkerReconciliationResult("pass", "reviewgraph-bot"),
         lambda: MarkerReconciliationResult(GateStatus.FAIL, "", reason="failed"),
@@ -1092,6 +1088,39 @@ def _target() -> ReviewTarget:
     )
 
 
+def _final_payload(
+    *,
+    target: ReviewTarget | None = None,
+    fingerprints: tuple[str, ...] = ("fp-1",),
+    redaction: RedactionStatus | None = None,
+) -> FinalIssueCommentPayload:
+    review_target = target or _target()
+    visible_body = "Final ReviewGraph payload\n"
+    marker_findings_hash = findings_hash(fingerprints)
+    marker_line = (
+        "<!-- reviewgraph:v1 run_id=run-1 "
+        f"target={review_target.target_hash()} "
+        f"payload={marker_payload_hash(visible_body)} "
+        f"findings={marker_findings_hash} -->"
+    )
+    body = f"{visible_body}{marker_line}\n"
+    return FinalIssueCommentPayload(
+        artifact_kind=ArtifactKind.ISSUE_COMMENT,
+        review_target=review_target,
+        body=body,
+        marker_line=marker_line,
+        marker_run_id="run-1",
+        marker_target_hash=review_target.target_hash(),
+        marker_payload_hash=marker_payload_hash(visible_body),
+        marker_findings_hash=marker_findings_hash,
+        visible_body_hash=visible_body_hash(body),
+        final_payload_hash=final_payload_hash(body),
+        findings_hash=marker_findings_hash,
+        item_fingerprints=fingerprints,
+        redaction_status=redaction or RedactionStatus(redacted=False, replacement_count=0),
+    )
+
+
 def _review_state() -> ReviewState:
     target = _target()
     config = ReviewConfig(
@@ -1154,7 +1183,6 @@ def _review_state() -> ReviewState:
         finalization_status=None,
         candidate_github_payload=None,
         final_github_payload=None,
-        candidate_payload_hash=None,
         final_payload_hash=None,
         approval=None,
         writer_result=None,

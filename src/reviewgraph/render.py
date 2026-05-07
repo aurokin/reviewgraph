@@ -27,7 +27,6 @@ from reviewgraph.posting import (
     PostingPlanItem,
     build_candidate_issue_comment_payload,
     findings_hash,
-    full_body_hash,
     visible_body_hash,
 )
 from reviewgraph.redaction import redact_text, require_passing_redaction_status
@@ -248,7 +247,6 @@ def render_markdown(*, inputs: "_RenderInputs", context: "_RenderContext | None"
     else:
         lines.append(f"- Kind: {preview['artifact_kind']}")
         lines.append(f"- Visible body hash: {preview['visible_body_hash']}")
-        lines.append(f"- Full body hash: {preview['full_body_hash']}")
         lines.append(f"- Findings hash: {preview['findings_hash']}")
         lines.append("- Body:")
         lines.append("```text")
@@ -340,7 +338,6 @@ def _candidate_payload_preview(
         "review_target": _review_target_json(candidate_payload.review_target, context),
         "body": body,
         "visible_body_hash": candidate_payload.visible_body_hash,
-        "full_body_hash": candidate_payload.full_body_hash,
         "findings_hash": candidate_payload.findings_hash,
         "item_fingerprints": item_fingerprints,
         "redaction_status": {
@@ -373,8 +370,6 @@ def _validate_candidate_payload_binding(
         raise RenderError("candidate payload target does not match rendered review target")
     if candidate_payload.visible_body_hash != visible_body_hash(candidate_payload.body):
         raise RenderError("candidate payload visible body hash does not match body")
-    if candidate_payload.full_body_hash != full_body_hash(candidate_payload.body):
-        raise RenderError("candidate payload full body hash does not match body")
     if candidate_payload.findings_hash != findings_hash(candidate_payload.item_fingerprints):
         raise RenderError("candidate payload findings hash does not match item fingerprints")
     if posting_plan is None:

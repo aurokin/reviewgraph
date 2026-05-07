@@ -351,7 +351,6 @@ def test_candidate_payload_has_fingerprints_and_canonical_hashes() -> None:
 
     assert payload.item_fingerprints == ("fp-0", "fp-1")
     assert payload.visible_body_hash == visible_body_hash(payload.body)
-    assert payload.full_body_hash == full_body_hash(payload.body)
     assert canonical_visible_body("a\r\nb\n\n") == "a\nb\n"
     assert full_body_hash("a\r\nb\n\n") == full_body_hash("a\nb\n")
     valid_marker = (
