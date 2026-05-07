@@ -1,6 +1,6 @@
-# ISSUE PLAN: AUR-215 Apply GitHub Trust Rules To Memory
+# ISSUE PLAN: AUR-236 Select Conversation Pattern Reviewers
 
-Active issue plan for `AUR-215` / `RG-026: Apply GitHub Trust Rules To Memory`.
+Active issue plan for `AUR-236` / `RG-047: Select Conversation Pattern Reviewers`.
 
 Linear remains the durable source of current issue status and relationships. This file is the committed execution plan for the issue.
 
@@ -9,115 +9,109 @@ Linear remains the durable source of current issue status and relationships. Thi
 - Project: `ReviewGraph`
 - Team: `Aurokin`
 - Milestone: `PRD 0006: GitHub Read And Memory`
-- Issue: `AUR-215`
-- Title: `RG-026: Apply GitHub Trust Rules To Memory`
+- Issue: `AUR-236`
+- Title: `RG-047: Select Conversation Pattern Reviewers`
 - Status when planned: `In Progress`
 - Priority: `Medium`
 - Linear comments fetched on 2026-05-07: none
 
 ## Acceptance Mapping
 
-1. Trusted humans are owner/member/collaborator plus authenticated operator.
-   - Prove with GitHub-derived issue comments and review-thread comments from owner/member/collaborator/operator authors.
-   - Preserve existing fixture behavior where explicit fixture `trust_label="trusted"` plus trusted association becomes trusted memory.
-   - In this issue, authenticated operator means configured `trusted_operator_authors`; deriving it from a live actor/permission snapshot is PRD 0007 side-effect policy.
-   - Operator and bot allowlists match canonical GitHub logins exactly; mismatches fail closed.
-2. Trusted review bots are default-deny allowlisted.
-   - Prove a bot with owner/member association remains passive unless present in `trusted_bot_authors`.
-3. Unlisted bot comments remain passive memory.
-   - Prove both top-level issue comments and review-thread comments from unlisted bots produce `trust_label="untrusted"`, `actionable=False`, and `passive_reason="untrusted author"`.
-4. Untrusted comments cannot trigger conversation-pattern routing.
-   - Use the existing routing selector with GitHub-derived passive memory whose body matches a `conversation_patterns` selector and assert no reviewer is selected.
-5. Untrusted comments cannot influence reviewer prompts as instructions, local verdicts, approval input, or public payload text.
-   - Prompt input: assert passive GitHub memory bodies are omitted from instructions and prompt data.
-   - Quality/local verdict: add a GitHub-derived passive-memory case where reviewer output cites passive memory by ID without copying the body; prove it is suppressed or local-only and cannot change the local verdict.
-   - Public payload: add a GitHub-derived passive-memory case with a unique phrase and prove the phrase is absent from prompt data, rendered memory body, candidate payload preview, and public posting-plan items.
-   - Approval/writer code remains out of scope and unreachable for this issue.
-6. Resolved threads are non-actionable unless new unresolved follow-up appears.
-   - Prove trusted GitHub review-thread comments in `resolved` and `unknown` thread states are passive.
-   - Prove the same trusted author in an `unresolved` thread becomes actionable, representing the new-unresolved-follow-up case available in the current model.
-   - Current data has thread-level resolved state, not per-comment transition timestamps. AUR-215 will preserve thread IDs as seen-state but will not infer which older comment reopened a thread; finer-grained follow-up detection is deferred until the model has per-comment event/state history.
-7. Seen-state is preserved.
-   - Preserve raw source comment/review/review-comment IDs as `source_id`.
-   - Use collision-safe namespaced `MemoryReference.id` values for GitHub-derived memory so issue comments, reviews, and review comments with the same raw ID cannot collide.
-   - Preserve review-thread IDs as `thread_id` on review-thread memory entries and rendered/reviewer-context JSON.
-   - Do not introduce durable deduplication or semantic duplicate detection in this issue.
+1. Trusted actionable comments can select eligible reviewers through `conversation_patterns`.
+   - Re-enable `conversation_patterns` matching for all actionable memory, including GitHub-derived memory from AUR-215.
+   - Preserve fixture trusted-memory routing.
+   - Match only against memory body text when `MemoryReference.actionable=True`.
+2. Resolved trusted threads do not select reviewers unless there is new unresolved follow-up.
+   - Use existing thread-state actionability from AUR-215: resolved and unknown threads are passive, unresolved threads can be actionable if author trust passes.
+   - In this issue, "new unresolved follow-up" means the adapter/memory model's current thread-level `resolved_status="unresolved"` state. ReviewGraph does not yet model per-comment resolution transitions or timestamps.
+   - Prove resolved trusted GitHub thread memory with a matching body does not route.
+   - Prove unresolved trusted GitHub thread memory with a matching body does route.
+3. Untrusted comments and unlisted bot comments cannot satisfy `conversation_patterns`.
+   - Prove untrusted human GitHub comments and unlisted bot GitHub comments with matching bodies do not select reviewers.
+   - Keep passive/untrusted body text out of matching input rather than matching and filtering after the fact.
+4. Selection reasons include matching memory IDs and trust status.
+   - Replace conversation-pattern reason text with a richer deterministic reason that includes stage, pattern, `memory_id`, and `trust`.
+   - Include `source_provider` when present so GitHub-derived routing is explainable.
+   - Keep existing non-memory reason formats unchanged.
+5. Prompt-injection fixture proves malicious comments do not route reviewers.
+   - Add focused routing coverage for the existing untrusted injection fixture or equivalent GitHub-derived malicious memory.
+   - Do not rely on prompt rendering tests alone; the selector must reject passive memory before reviewer selection.
 
 ## Design
 
-AUR-214 forced paginated GitHub conversation items to `trust_label="untrusted"` as a temporary safe default. AUR-215 replaces that temporary default with explicit provenance plus memory-side GitHub trust classification.
+AUR-215 intentionally blocked positive GitHub `conversation_patterns` routing until routing reasons could name the memory that matched. AUR-236 removes that temporary block and makes conversation-pattern routing inspectable.
 
 Planned contract:
 
-- Add explicit source provenance fields to model data, likely `source_provider` on `PullRequestComment`, `PullRequestReview`, and `MemoryReference`, plus `thread_id` on `MemoryReference`.
-- The GitHub fake read adapter sets `source_provider="github"` on comments, review comments, and reviews.
-- `source_provider` allowed values are `fixture` and `github`. Existing fixtures/default constructors use `fixture`; unknown values are allowed only as non-trusted provenance and fail closed for trust.
-- The adapter ignores any inbound `trust_label` and `source_provider` fields from fake page payloads. Transport data must not be able to self-declare trusted memory or trusted provenance.
-- `build_conversation_memory()` treats `trust_label="trusted"` as explicit fixture/test trust eligibility and `source_provider="github"` as GitHub-derived trust eligibility.
-- `source_provider` is provenance, not trust. It may appear in diagnostic/rendered memory metadata; it must never appear as `MemoryReference.trust_label`.
-- Final `MemoryReference.trust_label` remains only `trusted` or `untrusted`.
-- `_is_trusted()` remains the central policy:
-  - user + `OWNER`, `MEMBER`, or `COLLABORATOR` -> trusted
-  - user + configured `trusted_operator_authors` -> trusted
-  - bot + configured `trusted_bot_authors` -> trusted
-  - unlisted bot, unknown actor type, contributor, unknown trust label -> untrusted
-- Review summaries remain passive even when trusted, because later nodes interpret them.
-- All passive memory bodies are hidden from prompt data and rendered memory JSON, including trusted review summaries and trusted resolved/unknown review-thread comments. Trusted actionable memory is the only memory body class that can be included.
-- Review threads use thread-level `resolved_status`: `resolved` and `unknown` force passive; `unresolved` can be actionable if the author is trusted.
-- AUR-215 must prevent trusted GitHub actionable memory from satisfying positive `conversation_patterns` routing until `AUR-236` adds matched-memory IDs and trust status to selection reasons. Fixture memory can keep existing routing behavior.
-- URL absence alone does not make GitHub-derived memory untrusted in this slice. The fake adapter is the provenance boundary, source IDs/thread IDs are the seen-state handle, and URL is optional metadata.
+- `conversation_patterns` iterates memory entries, not a concatenated body string.
+- Only `memory.actionable` entries are eligible. `trust_label` is still expected to be `trusted` by model validation for actionable memory, but routing should rely on the explicit `actionable` boundary.
+- Passive/untrusted/resolved/unknown/review-summary entries are skipped before reading the body.
+- Matching remains case-insensitive. Existing regex/literal behavior is not expanded for conversation memory in this issue; it remains simple substring matching unless current tests prove otherwise.
+- For every matched pattern/memory pair, add a deterministic reason:
+
+  ```text
+  {stage} triggers.conversation_patterns={pattern} memory_id={memory.id} trust={memory.trust_label}
+  ```
+
+- If `memory.source_provider` is present, append:
+
+  ```text
+  source_provider={memory.source_provider}
+  ```
+
+- Multiple matching memory entries may produce multiple reasons. This is acceptable because it improves auditability and avoids hiding which shared-memory item introduced the reviewer.
+- Ordering is deterministic: iterate configured `conversation_patterns` in config order, then memory entries in their existing conversation-memory order.
+- Duplicate reason strings are collapsed in insertion order so duplicate configured patterns or duplicate memory entries do not inflate persisted output with identical reasons.
+- Gate behavior remains unchanged: `risk_min`, `max_files`, `changed_lines_min`, and `changed_files_min` must pass before selectors can select.
+- This issue does not alter prompt execution, reviewer context packaging, quality classification, approval, writer behavior, or durable deduplication.
 
 ## Files
 
 Likely implementation files:
 
-- `src/reviewgraph/github.py`
-- `src/reviewgraph/memory.py`
-- `src/reviewgraph/models.py`
-- `src/reviewgraph/render.py`
-- `src/reviewgraph/reviewer_context.py`
-
-Likely test files:
-
-- `tests/test_github_memory_trust.py`
-- `tests/test_github_pagination.py`
-- `tests/test_memory.py`
-- `tests/test_reviewer_context.py`
-- `tests/test_routing.py`
-
-Likely docs:
-
-- `docs/architecture/github-integration.md`
+- `src/reviewgraph/routing.py`
+- `docs/architecture/reviewer-config.md`
 - `docs/architecture/state-graph.md`
 - `docs/harnesses/harness-engineering.md`
 
+Likely tests:
+
+- `tests/test_conversation_routing.py`
+- `tests/test_routing.py`
+- `tests/test_cli.py`
+- `tests/test_prompt_injection_memory.py`
+- `tests/test_github_memory_trust.py`
+
 ## Implementation Steps
 
-1. Add focused failing tests in `tests/test_github_memory_trust.py`.
-2. Add explicit provenance/seen-state fields with backwards-compatible defaults.
-3. Update the paginated fake GitHub adapter to mark GitHub-derived comments, review comments, and reviews with non-payload-controlled provenance.
-4. Update memory trust eligibility so only explicit fixture-trusted or GitHub-derived items can be classified by author policy.
-5. Preserve review-thread IDs in memory, reviewer context trace/prompt metadata, and rendered JSON.
-6. Use namespaced GitHub memory IDs and raw `source_id` so seen-state is preserved without collisions.
-7. Add candidate-payload/public-boundary proof for GitHub-derived passive memory, including trusted-but-passive review summaries and resolved/unknown threads.
-8. Add quality/local-verdict proof for a reviewer output that cites passive GitHub memory by ID.
-9. Gate positive GitHub `conversation_patterns` routing until `AUR-236`, while preserving negative routing proof for untrusted/passive GitHub memory.
-10. Keep unknown labels and unknown provenance default-denied.
-11. Update AUR-214 pagination expectations from temporary untrusted memory defaults to provenance plus memory-classified trust where applicable.
-12. Add or adjust docs for the new boundary: source provenance is not trust; memory emits final trusted/untrusted classification.
+1. Add `tests/test_conversation_routing.py` with focused GitHub/fixture memory routing cases:
+   - trusted actionable GitHub issue comment routes and reason includes memory ID/trust/source provider
+   - trusted unresolved GitHub review-thread comment routes
+   - trusted resolved and unknown GitHub review-thread comments do not route
+   - untrusted human and unlisted bot GitHub comments do not route
+   - malicious untrusted fixture/GitHub memory does not route
+   - fixture trusted actionable memory still routes
+   - duplicate pattern/memory matches are deterministic and do not duplicate identical reason strings
+   - actionable memory plus a failing gate does not select or persist reviewer state
+2. Update `routing.py` so conversation-pattern matching iterates eligible actionable memory entries and records matched-memory reason metadata.
+3. Add active-stage persistence coverage proving the richer reason appears in `review_state.selected_reviewers`, reviewer run status remains registered, CLI JSON renders the richer reason, and reviewer context packages carry the selected-reviewer reason unchanged.
+4. Update existing routing/CLI/prompt-injection tests that assert the old short conversation-pattern reason string.
+5. Remove or invert the AUR-215 temporary negative GitHub-routing assertion in `tests/test_github_memory_trust.py`; AUR-236 owns positive routing.
+6. Update docs where they currently say GitHub actionable memory cannot route until AUR-236.
+7. Keep all passive-memory body suppression behavior unchanged.
 
 ## Validation Plan
 
 Focused harness:
 
 ```bash
-python -m pytest tests/test_github_memory_trust.py -q
+python -m pytest tests/test_conversation_routing.py -q
 ```
 
 Regression harness:
 
 ```bash
-python -m pytest tests/test_github_pagination.py tests/test_memory.py tests/test_routing.py tests/test_reviewer_context.py tests/test_prompt_injection_memory.py tests/test_quality.py tests/test_render.py -q
+python -m pytest tests/test_routing.py tests/test_github_memory_trust.py tests/test_prompt_injection_memory.py tests/test_cli.py -q
 ```
 
 Full validation before completion:
@@ -131,8 +125,8 @@ git diff --check
 
 ## Out Of Scope
 
-- Changing `conversation_patterns` selection reason format or adding matched memory IDs. That is `AUR-236`.
-- GitHub PR dry-run CLI wiring. That is `AUR-239`.
-- Live read. That is `AUR-216`.
-- Approval prompts, finalization, writer behavior, or public posting.
-- Requiring comment URLs for trust. URL is useful metadata, but source IDs plus adapter provenance are the planned trust boundary for this slice.
+- Prompt execution or reviewer adapter behavior.
+- Quality classification or finding evidence policy.
+- Approval input, finalization, writer behavior, or GitHub posting.
+- Semantic deduplication or durable seen-state storage.
+- Regex support for `conversation_patterns` beyond the existing substring-style config semantics.
