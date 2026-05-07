@@ -25,3 +25,6 @@ reviewgraph = ["fixtures_data/**/*.json"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "live_read: opt-in read-only GitHub live smoke tests skipped unless REVIEWGRAPH_LIVE_READ=1",
+]

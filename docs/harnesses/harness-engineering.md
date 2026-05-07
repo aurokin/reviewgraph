@@ -121,6 +121,9 @@ Golden tests should protect product behavior without freezing incidental wording
 - Changed-line metadata from GitHub reads must satisfy the same structural protocol used by quality and diff-anchor code. Parseable modified, added, and renamed patches expose target hunk ranges when the hunk has target-side additions; unsupported or unavailable patches degrade explicitly instead of producing false ranges.
 - GitHub-read boundary tests must prove the fake read adapter does not directly or transitively import live network clients, approval/finalization code, posting payload builders, or writer modules.
 - Read-gap policy tests must stay descriptor-only until pagination is implemented. AUR-247 may prove that omitted page-2 content would have affected routing, trust, or redaction, but it must not implement real page traversal.
+- `tests/test_live_read_smoke.py` owns the PRD 0006 live-read smoke contract. Default collection skips `@pytest.mark.live_read` unless `REVIEWGRAPH_LIVE_READ=1`; unmarked tests prove prerequisite blockers, read-only `gh api` REST command construction, redacted artifact shape, and writer-boundary imports without network or credentials.
+- Live smoke execution requires `REVIEWGRAPH_LIVE_READ=1`, `REVIEWGRAPH_LIVE_READ_PR`, `gh`, and a token from `GITHUB_TOKEN`, `GH_TOKEN`, or `gh auth token`. `REVIEWGRAPH_LIVE_READ_OUT` may point at a local JSON artifact path. Missing prerequisites are blocked/skipped results, not default-test failures.
+- PRD 0006 live smoke is REST-only. If review-comment thread state cannot be fetched in the contract shape, the result must fail closed with a read gap instead of marking memory actionable. GraphQL thread-state completion is future work and needs its own read-only policy and harness.
 
 ### Reviewer Boundaries
 

@@ -11,6 +11,8 @@ Read operations may use either:
 
 Read mode should use least-privilege credentials. Write mode must show the authenticated GitHub actor and fail closed before approval if the actor or permission level cannot be determined or is insufficient.
 
+Live read smoke is opt-in and read-only. The smoke harness lives outside the pure fake/read adapter module so `src/reviewgraph/github.py` remains free of shelling, network clients, writer code, approval code, finalization code, and posting payload builders. The live smoke module may invoke `gh api` REST read endpoints with `GH_PROMPT_DISABLED=1`, bounded timeouts, argument-list execution, and redacted stderr. It must not invoke `gh pr review`, `gh pr comment`, `gh issue comment`, `gh api --method POST`, `gh api graphql`, or any mutation endpoint in PRD 0006.
+
 Required context:
 
 - owner/repo
@@ -51,9 +53,22 @@ The paginated fake read path extends the adapter contract to files, issue commen
 
 Review comments are attached to review threads only when matching thread state was fetched. A fetched review comment without matching thread state is a required `thread_state_unknown` gap. GitHub transport payloads cannot self-declare trust or provenance: inbound `trust_label` and `source_provider` fields are ignored, adapter-created comments and reviews are marked with `source_provider="github"`, and conversation memory derives final trust only from GitHub actor policy.
 
+The PRD 0006 live smoke is REST-only. Because REST review-comment endpoints do not provide the full review-thread resolution state needed by the existing actionability contract, the live smoke must fail closed with `thread_state_unknown` when review comments cannot be joined to fetched thread state. A future GraphQL read policy may make live thread state complete, but it must remain read-only and explicitly tested before trusted/actionable memory relies on it.
+
 Patch-derived changed ranges are deliberately conservative target hunk ranges for the diff-anchor protocol. Parseable modified, added, and renamed files with target-side additions can produce anchor metadata; renamed files preserve `previous_path`. Deleted files, binary or unavailable patches, oversized patches, unsupported hunk headers, malformed hunk body lines, target-empty hunks, or hunks without target-side additions produce anchor-unavailable metadata instead of false changed ranges.
 
 Raw typed PR context may exist in memory for graph use. Anything serialized for logs, traces, markdown, JSON, errors, or local notes must use the adapter's redacted serialization/status path.
+
+Live read smoke artifacts use a stable local JSON shape:
+
+- `status`: `blocked`, `skipped`, `succeeded`, or `fail_closed`
+- `reason`: stable machine reason such as `missing_opt_in`, `missing_pr_ref`, `missing_gh`, `missing_token`, `live_read_failed`, or `read_gap`
+- `pr_ref`: parsed PR ref when available
+- `github_read`: redacted `GitHubReadResult` on success
+- `fail_closed`: redacted fail-closed read-gap envelope when required context is unavailable
+- `read_gaps`, `page_gap_descriptors`, `truncation_notes`, `command_summary`, and `redaction_status`
+
+The smoke path does not run reviewers, create posting plans, prompt for approval, finalize payloads, or make writer modules reachable.
 
 Conversation data is review memory, not an instruction stream. The graph should preserve it as structured context and let reviewer agents cite it when relevant.
 
