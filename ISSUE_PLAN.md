@@ -137,6 +137,41 @@ Run the full suite because this issue touches render/finalization side-effect sa
 python -m pytest -q
 ```
 
+## Completion Evidence
+
+Implemented on 2026-05-07.
+
+- Added `WriterReleasePreflightResult` state and `evaluate_writer_release_preflight(...)` as the AUR-222 handoff guard.
+- Preserved item-level approval terminology with `approved_item_ids`; no `approved_finding_ids` compatibility field was added.
+- Blocks `post_disabled`, failed approval builds with nested proof/actor reasons, missing approval, rejected approval, duplicate approved item IDs, duplicate approved fingerprints, unknown approved IDs, and non-public approved items before finalization or writer input.
+- Rechecks approved item eligibility against the current posting plan and descriptor surface before finalization.
+- Keeps candidate payloads separate from final payload/writer input; normal dry-run candidate runs do not evaluate writer release preflight.
+- Adds `public_payload_preparation` for local-only/no-public-payload dry-run explanations without collapsing them into missing approval.
+- Documents the `writer_release_preflight` state field, rejected-approval routing through preflight, and no-approved harness coverage.
+- Fresh code review passed with no material issues after review fixes.
+
+Validated:
+
+```bash
+python -m pytest tests/test_no_approved_findings.py -q
+# 26 passed
+
+python -m pytest tests/test_no_approved_findings.py tests/test_approval.py tests/test_target_freshness.py tests/test_cli.py tests/test_clarification.py tests/test_quality_testing.py tests/test_render.py tests/test_posting.py tests/test_payload_validation.py tests/test_models.py tests/test_contract_boundaries.py tests/test_non_interactive_posting.py -q
+# 587 passed
+
+python scripts/check_docs.py
+# documentation contract check: ok
+
+git diff --check
+# passed
+
+python -m py_compile src/reviewgraph/*.py
+# passed
+
+python -m pytest -q
+# 1109 passed, 1 skipped, 209 warnings
+```
+
 ## Out Of Scope
 
 - Fake top-level comment writer.
