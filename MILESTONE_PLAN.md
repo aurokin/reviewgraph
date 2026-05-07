@@ -9,8 +9,8 @@ Active execution artifact for this milestone. Linear remains the durable source 
 - Current execution status as of 2026-05-07: all active implementation issues are `Backlog`; `AUR-261` is the milestone gate.
 - Active implementation issues:
   - `AUR-244` / `RG-055: Define Payload Hash Domains And Golden Tests` / `Backlog`
-  - `AUR-217` / `RG-028: Model Item-Level Approval And Final Hash` / `Backlog`
   - `AUR-218` / `RG-029: Validate Top-Level Issue Comment Payloads` / `Backlog`
+  - `AUR-217` / `RG-028: Model Item-Level Approval And Final Hash` / `Backlog`
   - `AUR-219` / `RG-030: Gate Posting On Actor And Permission` / `Backlog`
   - `AUR-243` / `RG-054: Bind Approval To Actor And Permission Snapshot` / `Backlog`
   - `AUR-220` / `RG-031: Fail Closed On Stale Review Target` / `Backlog`
@@ -30,6 +30,8 @@ Active execution artifact for this milestone. Linear remains the durable source 
   - `AUR-251` / duplicate of non-interactive posting block scope
 - Linear descriptions for `AUR-219`, `AUR-243`, `AUR-245`, `AUR-246`, `AUR-222`, `AUR-241`, `AUR-224`, and `AUR-261` were tightened on 2026-05-07 so the high-risk side-effect guards in this plan are also represented in Linear.
 - `AUR-228` from PRD 0005 was reconciled on 2026-05-07 as already implemented, with Linear evidence showing the context-budget and omitted-context harnesses pass. It no longer leaves the prior milestone chain inconsistent before PRD 0007 begins.
+- The stale Linear blocker from `AUR-260` to `AUR-244` was removed on 2026-05-07 because live LLM work belongs to PRD 0008 and must not block PRD 0007 side-effect hash work.
+- `AUR-218` now runs before `AUR-217` so the candidate/final payload schema split exists before approval final-hash binding.
 
 ## Milestone Intent
 
@@ -48,8 +50,8 @@ The product point is controlled side effects. Reviewers do not write to GitHub, 
 ## Execution Order
 
 1. `AUR-244` first: define canonical payload hash domains and golden tests for visible body, full final body, marker payload hash, findings hash, newline normalization, marker whitespace, target ordering, and duplicate fingerprints. `marker.payload` equals `visible_body_hash(final_body_without_marker)`, while `final_payload_hash` equals the hash of the full final body including the exact marker line. Duplicate postable or approved finding fingerprints are fail-closed input errors, not deduplicated lists or multisets. Later approval, finalization, marker, and writer code must reuse these primitives.
-2. `AUR-217` second: model item-level approval and final hash binding using the `AUR-244` hash primitives. Approval records approved item IDs, review target binding, final full payload hash, actor metadata placeholders, and rejects stale candidate hashes before any writer exists.
-3. `AUR-218` third: validate top-level issue-comment payloads and reject formal PR review payloads/endpoints. Final payload schema includes explicit marker components and marker line. Candidate payload schema carries candidate visible body and findings hash inputs only; it must not contain a final marker line and must not be accepted as writer input.
+2. `AUR-218` second: validate top-level issue-comment payloads and reject formal PR review payloads/endpoints. Final payload schema includes explicit marker components and marker line. Candidate payload schema carries candidate visible body and findings hash inputs only; it must not contain a final marker line and must not be accepted as writer input.
+3. `AUR-217` third: model item-level approval and final hash binding using the `AUR-244` hash primitives and the `AUR-218` candidate/final schema split. Approval records approved item IDs, review target binding, final full payload hash, actor metadata placeholders, and rejects stale candidate hashes before any writer exists.
 4. `AUR-219` fourth: add actor and permission discovery/gate state for write mode. `ActorPermissionGateResult` is endpoint-specific for top-level issue-comment posting: authenticated actor, credential principal/source, repo or installation permission, ability to call `POST /repos/{owner}/{repo}/issues/{pr_number}/comments`, check method, checked target, checked-at time, and stable failure code. Unknown actor, unknown credential source, unknown permission, insufficient endpoint permission, missing check timestamp, timeout, rate limit, forbidden, not found, unavailable, malformed response, or stale cached data blocks approval/posting with a redacted transport summary. Fake cases must include repo-role-write but token/app lacks issue-comment write ability.
 5. `AUR-243` fifth: bind approval to the actor/permission snapshot from `AUR-219` and require finalization to verify the current actor/permission still matches before writer reachability. Re-check failures use the same fail-closed transport taxonomy as `AUR-219`; cached success cannot substitute for an unknown or failed current check.
 6. `AUR-220` sixth: implement target freshness finalization gates. Head, base, merge-base, owner/repo, PR number, and diff-basis drift all fail closed with dry-run output before writer invocation. Target refetch timeout, rate limit, forbidden, not found, unavailable, malformed response, or stale cached data also fail closed with stable machine reason, retryability, request ID when available, and zero final payload construction or writer reachability. Finalization order is preflight first: validate approval shape, approved IDs, non-empty approved findings, and duplicate fingerprints; re-read actor, permission, and target freshness; then, only if those checks pass, build the final body/hash, validate redaction, reconcile markers, and release writer input.
@@ -81,8 +83,8 @@ For milestone gates and any issue that changes blockers/order, also run `python 
 ## Harness Strategy
 
 - `AUR-244` focused harness: payload hash domain and marker hash golden tests, likely in `tests/test_posting_hashes.py` or `tests/test_posting.py`.
-- `AUR-217` focused harness: approval model/final-hash binding tests, likely in `tests/test_approval.py`.
 - `AUR-218` focused harness: payload validation tests rejecting formal PR reviews and non-issue-comment endpoints.
+- `AUR-217` focused harness: approval model/final-hash binding tests using distinct candidate/final payload fixtures, likely in `tests/test_approval.py`.
 - `AUR-219` focused harness: actor/permission gate tests with fake permission transport, endpoint-specific issue-comment write ability, transport failure taxonomy, stale-cache rejection, and role/token mismatch cases.
 - `AUR-243` focused harness: approval actor/permission snapshot binding and finalization mismatch tests.
 - `AUR-220` focused harness: stale target/freshness finalization tests with fake current target transport, transport failure taxonomy, stale-cache rejection, stable reason codes, and proof that final payload construction is unreachable on unknown freshness.
