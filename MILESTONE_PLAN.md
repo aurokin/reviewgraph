@@ -6,14 +6,14 @@ Active execution artifact for this milestone. Linear remains the durable source 
 
 - Milestone: `PRD 0007: Side Effects`
 - Milestone ID: `c6087171-c932-43a9-81b1-5cf3ddec025a`
-- Current execution status as of 2026-05-07 after the AUR-243 evidence update: `AUR-244`, `AUR-218`, `AUR-217`, `AUR-219`, and `AUR-243` are `Done`; `AUR-220` is `In Progress`; remaining active implementation issues are `Backlog`; `AUR-261` is the milestone gate.
+- Current execution status as of 2026-05-07 after the AUR-220 evidence update: `AUR-244`, `AUR-218`, `AUR-217`, `AUR-219`, `AUR-243`, and `AUR-220` are `Done`; remaining active implementation issues are `Backlog`; `AUR-261` is the milestone gate.
 - Active implementation issues:
   - `AUR-244` / `RG-055: Define Payload Hash Domains And Golden Tests` / `Done`
   - `AUR-218` / `RG-029: Validate Top-Level Issue Comment Payloads` / `Done`
   - `AUR-217` / `RG-028: Model Item-Level Approval And Final Hash` / `Done`
   - `AUR-219` / `RG-030: Gate Posting On Actor And Permission` / `Done`
   - `AUR-243` / `RG-054: Bind Approval To Actor And Permission Snapshot` / `Done`
-  - `AUR-220` / `RG-031: Fail Closed On Stale Review Target` / `In Progress`
+  - `AUR-220` / `RG-031: Fail Closed On Stale Review Target` / `Done`
   - `AUR-221` / `RG-032: Reconcile Embedded ReviewGraph Markers` / `Backlog`
   - `AUR-245` / `RG-056: Harden Marker Author Pagination Reconciliation` / `Backlog`
   - `AUR-246` / `RG-057: Block Non-Interactive Posting Mode` / `Backlog`
