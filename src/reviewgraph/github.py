@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, replace
 from enum import StrEnum
+from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import urlparse
 
@@ -25,6 +27,16 @@ from reviewgraph.read_gaps import (
     classify_github_read_gap,
 )
 from reviewgraph.redaction import redact_data, redact_text
+
+
+MAX_GITHUB_FAKE_DATA_BYTES = 1_048_576
+_PAGINATED_FAKE_RESOURCE_KEYS = (
+    "files",
+    "issue_comments",
+    "review_comments",
+    "reviews",
+    "review_threads",
+)
 
 
 class GitHubReadScope(StrEnum):
@@ -86,6 +98,43 @@ class GitHubPaginatedFakeReadTransport(Protocol):
         pr_number: int,
         cursor: object | None,
     ) -> dict[str, object]: ...
+
+
+@dataclass
+class PaginatedFakeGitHubTransport:
+    pull_request: dict[str, object]
+    files: dict[object | None, dict[str, object]]
+    issue_comments: dict[object | None, dict[str, object]]
+    review_comments: dict[object | None, dict[str, object]]
+    reviews: dict[object | None, dict[str, object]]
+    review_threads: dict[object | None, dict[str, object]]
+
+    def __post_init__(self) -> None:
+        self.calls: list[tuple[str, str, int, object | None]] = []
+
+    def get_pull_request(self, owner_repo: str, pr_number: int) -> dict[str, object]:
+        self.calls.append(("get_pull_request", owner_repo, pr_number, None))
+        return self.pull_request
+
+    def get_changed_files_page(self, owner_repo: str, pr_number: int, cursor: object | None) -> dict[str, object]:
+        self.calls.append(("get_changed_files_page", owner_repo, pr_number, cursor))
+        return self.files[cursor]
+
+    def get_issue_comments_page(self, owner_repo: str, pr_number: int, cursor: object | None) -> dict[str, object]:
+        self.calls.append(("get_issue_comments_page", owner_repo, pr_number, cursor))
+        return self.issue_comments[cursor]
+
+    def get_review_comments_page(self, owner_repo: str, pr_number: int, cursor: object | None) -> dict[str, object]:
+        self.calls.append(("get_review_comments_page", owner_repo, pr_number, cursor))
+        return self.review_comments[cursor]
+
+    def get_reviews_page(self, owner_repo: str, pr_number: int, cursor: object | None) -> dict[str, object]:
+        self.calls.append(("get_reviews_page", owner_repo, pr_number, cursor))
+        return self.reviews[cursor]
+
+    def get_review_threads_page(self, owner_repo: str, pr_number: int, cursor: object | None) -> dict[str, object]:
+        self.calls.append(("get_review_threads_page", owner_repo, pr_number, cursor))
+        return self.review_threads[cursor]
 
 
 @dataclass(frozen=True)
@@ -502,8 +551,182 @@ def read_github_pr_with_paginated_fake_transport(
     ))
 
 
+def load_paginated_fake_github_transport(
+    path: str | Path,
+) -> tuple[PaginatedFakeGitHubTransport, tuple[dict[str, Any], ...]]:
+    data = _read_fake_data_json(Path(path))
+    _require_exact_keys(data, ("transport", "raw_reviewer_outputs"), "github fake data")
+    transport_data = data["transport"]
+    if not isinstance(transport_data, dict):
+        raise GitHubReadError("invalid_fake_data", "github fake data transport must be an object")
+    _require_exact_keys(transport_data, ("pull_request", *_PAGINATED_FAKE_RESOURCE_KEYS), "github fake data transport")
+    pull_request = transport_data["pull_request"]
+    if not isinstance(pull_request, dict):
+        raise GitHubReadError("invalid_fake_data", "github fake data transport.pull_request must be an object")
+    raw_reviewer_outputs = data["raw_reviewer_outputs"]
+    if (
+        not isinstance(raw_reviewer_outputs, list)
+        or not raw_reviewer_outputs
+        or any(not isinstance(output, dict) for output in raw_reviewer_outputs)
+    ):
+        raise GitHubReadError(
+            "invalid_fake_data",
+            "github fake data raw_reviewer_outputs must be a non-empty list of objects",
+        )
+    return (
+        PaginatedFakeGitHubTransport(
+            pull_request=dict(pull_request),
+            files=_load_page_map(transport_data["files"], "files"),
+            issue_comments=_load_page_map(transport_data["issue_comments"], "issue_comments"),
+            review_comments=_load_page_map(transport_data["review_comments"], "review_comments"),
+            reviews=_load_page_map(transport_data["reviews"], "reviews"),
+            review_threads=_load_page_map(transport_data["review_threads"], "review_threads"),
+        ),
+        tuple(dict(output) for output in raw_reviewer_outputs),
+    )
+
+
 def _raise_invalid_ref(value: str) -> None:
     raise GitHubReadError("invalid_pr_ref", "invalid GitHub PR reference")
+
+
+def _read_fake_data_json(path: Path) -> dict[str, Any]:
+    try:
+        if not path.is_file():
+            raise GitHubReadError("invalid_fake_data", f"github fake data path must be a regular file: {_redact(path)}")
+        with path.open("rb") as handle:
+            raw = handle.read(MAX_GITHUB_FAKE_DATA_BYTES + 1)
+    except OSError as exc:
+        raise GitHubReadError("invalid_fake_data", f"github fake data file is not readable: {_redact(path)}") from exc
+    if len(raw) > MAX_GITHUB_FAKE_DATA_BYTES:
+        raise GitHubReadError(
+            "invalid_fake_data",
+            f"github fake data file exceeds {MAX_GITHUB_FAKE_DATA_BYTES} bytes: {_redact(path)}",
+        )
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        raise GitHubReadError("invalid_fake_data", f"github fake data JSON is invalid at line {exc.lineno}: {exc.msg}") from exc
+    except UnicodeDecodeError as exc:
+        raise GitHubReadError("invalid_fake_data", "github fake data JSON must be UTF-8") from exc
+    if not isinstance(data, dict):
+        raise GitHubReadError("invalid_fake_data", "github fake data JSON must be an object")
+    return data
+
+
+def _load_page_map(value: object, resource: str) -> dict[object | None, dict[str, object]]:
+    if not isinstance(value, dict):
+        raise GitHubReadError("invalid_fake_data", f"github fake data transport.{resource} must be an object")
+    _require_exact_keys(value, ("pages",), f"github fake data transport.{resource}")
+    pages = value["pages"]
+    if not isinstance(pages, list) or not pages:
+        raise GitHubReadError(
+            "invalid_fake_data",
+            f"github fake data transport.{resource}.pages must be a non-empty list",
+        )
+    page_map: dict[object | None, dict[str, object]] = {}
+    cursor: object | None = None
+    for index, page in enumerate(pages, start=1):
+        if not isinstance(page, dict):
+            raise GitHubReadError(
+                "invalid_fake_data",
+                f"github fake data transport.{resource}.pages[{index}] must be an object",
+            )
+        if cursor in page_map:
+            raise GitHubReadError(
+                "invalid_fake_data",
+                f"github fake data transport.{resource}.pages[{index}] repeats pagination cursor",
+            )
+        page_map[cursor] = dict(page)
+        if "error" in page:
+            _validate_fake_error_page(page, resource, index)
+            if index != len(pages):
+                raise GitHubReadError(
+                    "invalid_fake_data",
+                    f"github fake data transport.{resource}.pages[{index}] error page must be final",
+                )
+            return page_map
+        _validate_fake_items_page(page, resource, index)
+        if page["has_next_page"] is False:
+            if index != len(pages):
+                raise GitHubReadError(
+                    "invalid_fake_data",
+                    f"github fake data transport.{resource}.pages[{index}] leaves unreachable pages",
+                )
+            return page_map
+        cursor = page["next_cursor"]
+    raise GitHubReadError(
+        "invalid_fake_data",
+        f"github fake data transport.{resource}.pages ended before has_next_page=false",
+    )
+
+
+def _validate_fake_items_page(page: dict[str, object], resource: str, index: int) -> None:
+    allowed = {"items", "has_next_page", "next_cursor"}
+    _reject_unknown_keys(page, allowed, f"github fake data transport.{resource}.pages[{index}]")
+    items = page.get("items")
+    if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
+        raise GitHubReadError(
+            "invalid_fake_data",
+            f"github fake data transport.{resource}.pages[{index}].items must be a list of objects",
+        )
+    if type(page.get("has_next_page")) is not bool:
+        raise GitHubReadError(
+            "invalid_fake_data",
+            f"github fake data transport.{resource}.pages[{index}].has_next_page must be a boolean",
+        )
+    if page["has_next_page"] is True:
+        next_cursor = page.get("next_cursor")
+        if not isinstance(next_cursor, str) or not next_cursor:
+            raise GitHubReadError(
+                "invalid_fake_data",
+                f"github fake data transport.{resource}.pages[{index}].next_cursor must be a non-empty string",
+            )
+    elif "next_cursor" in page:
+        raise GitHubReadError(
+            "invalid_fake_data",
+            f"github fake data transport.{resource}.pages[{index}].next_cursor requires has_next_page=true",
+        )
+
+
+def _validate_fake_error_page(page: dict[str, object], resource: str, index: int) -> None:
+    _require_exact_keys(page, ("error",), f"github fake data transport.{resource}.pages[{index}]")
+    error = page["error"]
+    if not isinstance(error, dict):
+        raise GitHubReadError(
+            "invalid_fake_data",
+            f"github fake data transport.{resource}.pages[{index}].error must be an object",
+        )
+    _reject_unknown_keys(error, {"reason", "message"}, f"github fake data transport.{resource}.pages[{index}].error")
+    reason = error.get("reason")
+    if reason is not None and (not isinstance(reason, str) or not reason):
+        raise GitHubReadError(
+            "invalid_fake_data",
+            f"github fake data transport.{resource}.pages[{index}].error.reason must be a non-empty string or null",
+        )
+    message = error.get("message")
+    if message is not None and not isinstance(message, str):
+        raise GitHubReadError(
+            "invalid_fake_data",
+            f"github fake data transport.{resource}.pages[{index}].error.message must be a string or null",
+        )
+
+
+def _require_exact_keys(data: dict[str, object], keys: tuple[str, ...], label: str) -> None:
+    missing = sorted(set(keys) - set(data))
+    if missing:
+        raise GitHubReadError("invalid_fake_data", f"{label}.{missing[0]} is required")
+    _reject_unknown_keys(data, set(keys), label)
+
+
+def _reject_unknown_keys(data: dict[str, object], allowed: set[str], label: str) -> None:
+    extra = sorted(set(data) - allowed)
+    if extra:
+        raise GitHubReadError("invalid_fake_data", f"{label}.{extra[0]} is not supported")
+
+
+def _redact(path: Path) -> str:
+    return redact_text(str(path)).text
 
 
 def _metadata_files_only_read_gaps() -> tuple[ReadGap, ...]:

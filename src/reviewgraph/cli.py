@@ -8,6 +8,7 @@ from typing import TextIO
 
 from reviewgraph.fixtures import FixtureError, redact_for_error
 from reviewgraph.runner import RunnerError, run_fixture_dry_run
+from reviewgraph.targets import run_github_fake_dry_run
 
 
 class _RedactingArgumentParser(argparse.ArgumentParser):
@@ -20,13 +21,25 @@ def main(argv: list[str] | None = None) -> int:
     parser = _parser()
     try:
         args = parser.parse_args(argv)
+        _validate_target_args(parser, args)
     except SystemExit as exc:
         return int(exc.code) if isinstance(exc.code, int) else 2
     try:
-        result = run_fixture_dry_run(
-            fixture_ref=args.fixture_pr,
-            reviewer_config_path=args.reviewer_config,
-        )
+        if args.github_pr is not None:
+            if args.github_live_read:
+                raise RunnerError(
+                    "GitHub live read is deferred to a later milestone; use --github-fake-data for this dry-run."
+                )
+            result = run_github_fake_dry_run(
+                github_pr_ref=args.github_pr,
+                github_fake_data_path=args.github_fake_data,
+                reviewer_config_path=args.reviewer_config,
+            )
+        else:
+            result = run_fixture_dry_run(
+                fixture_ref=args.fixture_pr or "basic-pr",
+                reviewer_config_path=args.reviewer_config,
+            )
         if args.markdown_out is not None:
             _write_text(Path(args.markdown_out), result.markdown)
         if args.json_out is not None:
@@ -41,10 +54,26 @@ def main(argv: list[str] | None = None) -> int:
 
 def _parser() -> argparse.ArgumentParser:
     parser = _RedactingArgumentParser(description="Run a ReviewGraph fixture dry-run.")
-    parser.add_argument(
+    target = parser.add_mutually_exclusive_group()
+    target.add_argument(
         "--fixture-pr",
-        default="basic-pr",
+        default=None,
         help="Fixture PR ID from package data or explicit fixture JSON path.",
+    )
+    target.add_argument(
+        "--github-pr",
+        default=None,
+        help="GitHub PR target as owner/repo#number or https://github.com/owner/repo/pull/number.",
+    )
+    parser.add_argument(
+        "--github-fake-data",
+        default=None,
+        help="Path to paginated fake GitHub read data for --github-pr.",
+    )
+    parser.add_argument(
+        "--github-live-read",
+        action="store_true",
+        help="Opt into live read-only GitHub mode. Deferred in this milestone.",
     )
     parser.add_argument(
         "--reviewer-config",
@@ -55,6 +84,17 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--json-out", default=None, help="Path to write deterministic JSON envelope.")
     parser.add_argument("--print-markdown", action="store_true", help="Print rendered markdown to stdout.")
     return parser
+
+
+def _validate_target_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    if args.github_fake_data is not None and args.github_pr is None:
+        parser.error("--github-fake-data requires --github-pr")
+    if args.github_live_read and args.github_pr is None:
+        parser.error("--github-live-read requires --github-pr")
+    if args.github_pr is not None and args.github_fake_data is not None and args.github_live_read:
+        parser.error("--github-fake-data and --github-live-read cannot be combined")
+    if args.github_pr is not None and args.github_fake_data is None and not args.github_live_read:
+        parser.error("--github-pr requires --github-fake-data or --github-live-read")
 
 
 def _write_text(path: Path, text: str) -> None:

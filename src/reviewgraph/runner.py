@@ -35,6 +35,7 @@ from reviewgraph.models import (
     ClarificationAnswer,
     ClassifiedFinding,
     ContextBudget,
+    GateStatus,
     GraphError,
     LocalNote,
     MemoryReference,
@@ -51,6 +52,7 @@ from reviewgraph.models import (
     RunMode,
     SelectedReviewer,
     TruncationNotice,
+    RedactionStatus,
 )
 from reviewgraph.posting import (
     CandidateIssueCommentPayload,
@@ -62,6 +64,7 @@ from reviewgraph.posting import (
 )
 from reviewgraph.quality import classify_review_quality
 from reviewgraph.redaction import redact_data
+from reviewgraph.read_gaps import FailClosedReadOutcome
 from reviewgraph.render import RenderedReview, render_review
 from reviewgraph.risk import classify_change_risk, risk_assessment_to_json
 from reviewgraph.routing import select_reviewers_for_active_stage
@@ -82,6 +85,19 @@ class DryRunResult:
     json_data: dict[str, Any]
     rendered: RenderedReview
     writer_call_count: int
+
+
+@dataclass(frozen=True)
+class _DryRunInput:
+    source_type: str
+    source_id: str
+    source_ref: str
+    pr: Any
+    review_target: ReviewTarget
+    changed_files: tuple[Any, ...]
+    raw_reviewer_outputs: tuple[dict[str, Any], ...]
+    truncation: tuple[TruncationNotice, ...] = ()
+    github_read: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -107,24 +123,113 @@ def run_fixture_dry_run(
     writer_call_count_before = _writer_call_count(writer_sentinel)
     fixture = load_fixture_pr(fixture_ref)
     config = load_reviewer_config(reviewer_config_path)
+    return _run_dry_run_core(
+        dry_run_input=_input_from_fixture(fixture),
+        config=config,
+        writer_call_count_before=writer_call_count_before,
+        writer_sentinel=writer_sentinel,
+        clarification_answers=clarification_answers,
+    )
+
+
+def _fail_closed_dry_run_result(*, outcome: FailClosedReadOutcome, writer_call_count: int) -> DryRunResult:
+    outcome_data = outcome.to_dict()
+    review_target = outcome_data.get("review_target")
+    pr_ref = outcome_data.get("pr_ref")
+    source_ref = _github_source_ref(pr_ref)
+    review_data = {
+        "review_target": review_target,
+        "selected_reviewers": [],
+        "classified_output": {
+            "postable_findings": [],
+            "local_notes": [],
+            "clarification_requests": [],
+            "suggested_replies": [],
+            "suppressed": [],
+            "suppressed_count": 0,
+        },
+        "local_verdict": None,
+        "posting_plan": None,
+        "memory": [],
+        "read_gaps": outcome_data["read_gaps"],
+        "errors": outcome_data["errors"],
+        "truncation": [],
+        "context_budget": None,
+        "candidate_payload_preview": None,
+        "redaction_status": outcome_data["redaction_status"],
+    }
+    data = _redact_json_value({
+        "run_mode": "dry_run",
+        "post_enabled": False,
+        "source_type": "github",
+        "source_id": source_ref,
+        "source_ref": source_ref,
+        "github_read": outcome_data,
+        "partial_review": {
+            "has_partial_review": False,
+            "failed_optional_reviewers": [],
+        },
+        "graph_trace": outcome_data["graph_trace"],
+        "local_verdict": None,
+        "pending_clarification_ids": [],
+        "blocking_clarification_ids": [],
+        "clarification_status": {},
+        "errors": outcome_data["errors"],
+        "read_gaps": outcome_data["read_gaps"],
+        "page_gap_descriptors": outcome_data["page_gap_descriptors"],
+        "selected_reviewers": [],
+        "reviewer_run_status": [],
+        "reviewer_results": [],
+        "findings": [],
+        "posting_plan": None,
+        "candidate_payload_preview": None,
+        "side_effects": {
+            "writer_called": writer_call_count > 0,
+            "writer_call_count": writer_call_count,
+        },
+        "review": review_data,
+        "redaction_status": outcome_data["redaction_status"],
+    })
+    redaction_status = _redaction_status_from_json(data.get("redaction_status"))
+    rendered = RenderedReview(
+        markdown=_fail_closed_markdown(data),
+        json_data=review_data,
+        redaction_status=redaction_status,
+    )
+    return DryRunResult(
+        markdown=rendered.markdown,
+        json_data=data,
+        rendered=rendered,
+        writer_call_count=writer_call_count,
+    )
+
+
+def _run_dry_run_core(
+    *,
+    dry_run_input: _DryRunInput,
+    config: ReviewerConfig,
+    writer_call_count_before: int,
+    writer_sentinel: object | None,
+    clarification_answers: tuple[ClarificationAnswer, ...] = (),
+) -> DryRunResult:
     conversation_memory = build_conversation_memory(
-        fixture.pr,
+        dry_run_input.pr,
         trusted_operator_authors=set(config.trusted_operator_authors),
         trusted_bot_authors=set(config.trusted_bot_authors),
     )
     context_budget_limits = config.context_budget or default_context_budget()
     budgeted_context = apply_input_context_budget(
-        pr=fixture.pr,
+        pr=dry_run_input.pr,
         memory=conversation_memory,
         limits=context_budget_limits,
-        existing_truncation=_truncation_notices(fixture),
+        existing_truncation=dry_run_input.truncation,
     )
     memory_references = budgeted_context.memory.entries
-    budgeted_fixture = _budgeted_fixture_view(fixture, budgeted_context)
-    risk_assessment = classify_change_risk(fixture.pr)
+    budgeted_input = _budgeted_dry_run_input_view(dry_run_input, budgeted_context)
+    risk_assessment = classify_change_risk(dry_run_input.pr)
     stage_run = _run_review_stages(
         config,
-        budgeted_fixture,
+        budgeted_input,
         memory_references=memory_references,
         budget_limits=context_budget_limits,
         budgeted_context=budgeted_context,
@@ -135,7 +240,7 @@ def run_fixture_dry_run(
     )
     selected_reviewers = stage_run.selected_reviewers
     graph_trace = stage_run.graph_trace
-    review_target = _review_target(fixture)
+    review_target = dry_run_input.review_target
     context_budget = merge_context_budgets(budgeted_context.context_budget, stage_run.context_budget)
     truncation_notices = context_budget.truncation
     classified = {
@@ -143,7 +248,7 @@ def run_fixture_dry_run(
         "local_notes": budgeted_context.local_notes + stage_run.classified["local_notes"],
     }
     classified["findings"] = attach_diff_anchors(
-        changed_files=budgeted_fixture.changed_files,
+        changed_files=budgeted_input.changed_files,
         review_target=review_target,
         findings=classified["findings"],
     )
@@ -201,7 +306,7 @@ def run_fixture_dry_run(
     )
     writer_call_count = _writer_call_count(writer_sentinel) - writer_call_count_before
     envelope = _json_envelope(
-        fixture=fixture,
+        dry_run_input=budgeted_input,
         post_enabled=post_enabled,
         local_verdict=local_verdict,
         risk=risk_assessment,
@@ -225,7 +330,7 @@ def run_fixture_dry_run(
 
 def _run_review_stages(
     config: ReviewerConfig,
-    fixture: FixturePR,
+    dry_run_input: _DryRunInput,
     *,
     memory_references: tuple[MemoryReference, ...],
     budget_limits: ContextBudget,
@@ -239,12 +344,12 @@ def _run_review_stages(
         answer.request_id: answer
         for answer in clarification_answers
     }
-    raw_outputs_by_key = _raw_outputs_by_key(fixture)
+    raw_outputs_by_key = _raw_outputs_by_key(dry_run_input)
     fake_adapter = FakeReviewerAdapter(
-        fixture_id=fixture.id,
+        fixture_id=dry_run_input.source_id,
         registry=fake_registry_from_fixture_outputs(
-            fixture_id=fixture.id,
-            outputs=fixture.raw_reviewer_outputs,
+            fixture_id=dry_run_input.source_id,
+            outputs=dry_run_input.raw_reviewer_outputs,
         ),
     )
     selected_reviewers: list[SelectedReviewer] = []
@@ -259,7 +364,7 @@ def _run_review_stages(
     cursor = initial_stage_cursor()
     routing_state = _routing_review_state(
         config,
-        fixture,
+        dry_run_input,
         memory_references=memory_references,
         context_budget=budget_limits,
         risk=risk,
@@ -350,7 +455,7 @@ def _run_review_stages(
                 raise RunnerError(reason)
             try:
                 _classify_normalized_reviewer_output(
-                    fixture,
+                    dry_run_input,
                     reviewer_result=reviewer_result,
                     classified=classified,
                     memory_references=memory_references,
@@ -464,20 +569,20 @@ def _ingest_available_clarification_answers(
 
 def _routing_review_state(
     config: ReviewerConfig,
-    fixture: FixturePR,
+    dry_run_input: _DryRunInput,
     *,
     memory_references: tuple[MemoryReference, ...],
     context_budget: ContextBudget,
     risk: RiskAssessment,
 ) -> ReviewState:
     return ReviewState(
-        run_id=f"fixture-routing:{fixture.id}",
+        run_id=f"{dry_run_input.source_type}-routing:{dry_run_input.source_id}",
         run_mode=RunMode.DRY_RUN,
         post_enabled=False,
-        pr_ref=fixture.pr_ref,
-        review_target=_review_target(fixture),
+        pr_ref=dry_run_input.source_ref,
+        review_target=dry_run_input.review_target,
         posting_target=None,
-        pr=fixture.pr,
+        pr=dry_run_input.pr,
         conversation_memory=PRConversationMemory(entries=memory_references),
         read_gaps=[],
         config=config,
@@ -649,38 +754,45 @@ def _context_budget_hash_payload(context_budget: ContextBudget | None) -> dict[s
     }
 
 
-def _review_target(fixture: FixturePR) -> ReviewTarget:
-    target = fixture.target
-    return ReviewTarget(
-        owner_repo=target["owner_repo"],
-        pr_number=target["pr_number"],
-        base_sha=target["base_sha"],
-        head_sha=target["head_sha"],
-        merge_base_sha=target.get("merge_base_sha"),
-        diff_basis=target["diff_basis"],
+def _input_from_fixture(fixture: FixturePR) -> _DryRunInput:
+    return _DryRunInput(
+        source_type="fixture",
+        source_id=fixture.id,
+        source_ref=fixture.pr_ref,
+        pr=fixture.pr,
+        review_target=fixture.review_target,
+        changed_files=fixture.changed_files,
+        raw_reviewer_outputs=fixture.raw_reviewer_outputs,
+        truncation=_truncation_notices(fixture),
     )
 
 
-def _budgeted_fixture_view(fixture: FixturePR, budgeted_context: BudgetedInputContext) -> FixturePR:
+def _budgeted_dry_run_input_view(
+    dry_run_input: _DryRunInput,
+    budgeted_context: BudgetedInputContext,
+) -> _DryRunInput:
     budgeted_files = {changed_file.path: changed_file for changed_file in budgeted_context.pr.changed_files}
-    changed_files: list[ChangedFile] = []
-    for original in fixture.changed_files:
+    changed_files: list[Any] = []
+    for original in dry_run_input.changed_files:
         budgeted_file = budgeted_files.get(original.path)
         if budgeted_file is None:
             continue
-        changed_files.append(
-            replace(
-                original,
-                patch=budgeted_file.patch,
-                additions=budgeted_file.additions,
-                deletions=budgeted_file.deletions,
-                status=budgeted_file.status,
-                previous_path=budgeted_file.previous_path,
-                patch_status=budgeted_file.patch_status,
+        if isinstance(original, ChangedFile):
+            changed_files.append(
+                replace(
+                    original,
+                    patch=budgeted_file.patch,
+                    additions=budgeted_file.additions,
+                    deletions=budgeted_file.deletions,
+                    status=budgeted_file.status,
+                    previous_path=budgeted_file.previous_path,
+                    patch_status=budgeted_file.patch_status,
+                )
             )
-        )
+        else:
+            changed_files.append(original)
     return replace(
-        fixture,
+        dry_run_input,
         pr=budgeted_context.pr,
         changed_files=tuple(changed_files),
     )
@@ -704,9 +816,9 @@ def _truncation_notices(fixture: FixturePR) -> tuple[TruncationNotice, ...]:
     return tuple(notices)
 
 
-def _raw_outputs_by_key(fixture: FixturePR) -> dict[tuple[str, str], dict[str, Any]]:
+def _raw_outputs_by_key(dry_run_input: _DryRunInput) -> dict[tuple[str, str], dict[str, Any]]:
     raw_outputs: dict[tuple[str, str], dict[str, Any]] = {}
-    for reviewer_output in fixture.raw_reviewer_outputs:
+    for reviewer_output in dry_run_input.raw_reviewer_outputs:
         if not isinstance(reviewer_output, dict):
             raise RunnerError("raw_reviewer_outputs entries must be objects")
         reviewer = _required_str(reviewer_output, "reviewer", "raw_reviewer_outputs[]")
@@ -728,7 +840,7 @@ def _empty_classified_lists() -> dict[str, list[Any]]:
 
 
 def _classify_normalized_reviewer_output(
-    fixture: FixturePR,
+    dry_run_input: _DryRunInput,
     *,
     reviewer_result: ReviewerResult,
     classified: dict[str, list[Any]],
@@ -737,7 +849,7 @@ def _classify_normalized_reviewer_output(
     omitted_memory_ids: tuple[str, ...] = (),
 ) -> None:
     result = classify_review_quality(
-        changed_files=fixture.changed_files,
+        changed_files=dry_run_input.changed_files,
         reviewer_result=reviewer_result,
         memory_references=memory_references,
         omitted_file_paths=omitted_file_paths,
@@ -870,9 +982,57 @@ def _writer_call_count(writer_sentinel: object | None) -> int:
     return value
 
 
+def _github_source_ref(pr_ref: object) -> str:
+    if isinstance(pr_ref, Mapping):
+        owner_repo = pr_ref.get("owner_repo")
+        pr_number = pr_ref.get("pr_number")
+        if isinstance(owner_repo, str) and type(pr_number) is int:
+            return f"github:{owner_repo}#{pr_number}"
+    return "github:unknown"
+
+
+def _redaction_status_from_json(value: object) -> RedactionStatus:
+    if not isinstance(value, Mapping):
+        return RedactionStatus(status=GateStatus.PASS, redacted=False, replacement_count=0, categories=())
+    return RedactionStatus(
+        status=GateStatus.PASS,
+        redacted=value.get("redacted") is True,
+        replacement_count=value.get("replacement_count") if type(value.get("replacement_count")) is int else 0,
+        categories=tuple(item for item in value.get("categories", ()) if isinstance(item, str)),
+    )
+
+
+def _fail_closed_markdown(data: dict[str, Any]) -> str:
+    source_ref = data.get("source_ref", "github:unknown")
+    lines = [
+        "# ReviewGraph Dry Run",
+        "",
+        "## GitHub Read Failure",
+        f"- Source: {source_ref}",
+        "- Post enabled: false",
+        "",
+        "## Read Gaps",
+    ]
+    for gap in data.get("read_gaps", []):
+        if isinstance(gap, Mapping):
+            lines.append(
+                f"- {gap.get('resource')}: required={str(gap.get('required')).lower()}, "
+                f"retryable={str(gap.get('retryable')).lower()} - {gap.get('reason')}"
+            )
+    if len(lines) == 7:
+        lines.append("- None")
+    lines.extend(["", "## Graph Errors"])
+    for error in data.get("errors", []):
+        if isinstance(error, Mapping):
+            lines.append(f"- {error.get('code')}: {error.get('message')}")
+    if lines[-1] == "## Graph Errors":
+        lines.append("- None")
+    return "\n".join(lines) + "\n"
+
+
 def _json_envelope(
     *,
-    fixture: FixturePR,
+    dry_run_input: _DryRunInput,
     post_enabled: bool,
     local_verdict: ReviewVerdict,
     risk: RiskAssessment,
@@ -889,8 +1049,11 @@ def _json_envelope(
     return _redact_json_value({
         "run_mode": "dry_run",
         "post_enabled": post_enabled,
-        "fixture_id": fixture.id,
-        "fixture_ref": fixture.pr_ref,
+        "source_type": dry_run_input.source_type,
+        "source_id": dry_run_input.source_id,
+        "source_ref": dry_run_input.source_ref,
+        **_legacy_fixture_fields(dry_run_input),
+        **({"github_read": dry_run_input.github_read} if dry_run_input.github_read is not None else {}),
         "partial_review": partial_review,
         "graph_trace": graph_trace,
         "local_verdict": local_verdict.value,
@@ -947,6 +1110,15 @@ def _json_envelope(
         },
         "review": rendered.json_data,
     })
+
+
+def _legacy_fixture_fields(dry_run_input: _DryRunInput) -> dict[str, str]:
+    if dry_run_input.source_type != "fixture":
+        return {}
+    return {
+        "fixture_id": dry_run_input.source_id,
+        "fixture_ref": dry_run_input.source_ref,
+    }
 
 
 def _optional_int(data: dict[str, Any], field: str, label: str) -> int | None:
