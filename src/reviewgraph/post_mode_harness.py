@@ -98,7 +98,11 @@ class _StaticMarkerTransport:
 
 
 class _PagesMarkerTransport:
-    def __init__(self, pages: dict[object | None, object], failures: dict[object | None, MarkerReconciliationReasonCode] | None = None) -> None:
+    def __init__(
+        self,
+        pages: dict[object | None, object],
+        failures: dict[object | None, object] | None = None,
+    ) -> None:
         self.pages = pages
         self.failures = failures or {}
 
@@ -110,7 +114,10 @@ class _PagesMarkerTransport:
         timeout_seconds: int,
     ):
         if cursor in self.failures:
-            raise MarkerScanTransportFailure(self.failures[cursor], request_id="REQ-marker-failure")
+            failure = self.failures[cursor]
+            if isinstance(failure, MarkerReconciliationReasonCode):
+                raise MarkerScanTransportFailure(failure, request_id="REQ-marker-failure")
+            raise RuntimeError("marker transport failed unexpectedly")
         return self.pages.get(cursor, MarkerCommentPage(comments=(), completed=True, request_id="REQ-pages"))
 
 
@@ -224,6 +231,42 @@ def run_fixture_fake_post_attempt(
         transport = _PagesMarkerTransport({None: MarkerCommentPage(comments=(), completed=False, next_cursor=None)})
     elif case == "marker_malformed_page":
         transport = _PagesMarkerTransport({None: object()})
+    elif case == "marker_repeated_cursor":
+        repeated = MarkerCommentPage(comments=(), completed=False, next_cursor="same", request_id="REQ-repeat")
+        transport = _PagesMarkerTransport({None: repeated, "same": repeated})
+    elif case == "marker_page_cap":
+        pages: dict[object | None, object] = {
+            None: MarkerCommentPage(comments=(), completed=False, next_cursor="page-1", request_id="REQ-0")
+        }
+        for index in range(1, 21):
+            pages[f"page-{index}"] = MarkerCommentPage(
+                comments=(),
+                completed=False,
+                next_cursor=f"page-{index + 1}",
+                request_id=f"REQ-{index}",
+            )
+        transport = _PagesMarkerTransport(pages)
+    elif case == "marker_comment_cap":
+        transport = _PagesMarkerTransport(
+            {
+                None: MarkerCommentPage(
+                    comments=tuple(
+                        PaginatedMarkerComment(
+                            comment_id=f"comment-{index}",
+                            body="Plain comment.\n",
+                            author_login="human",
+                            author_type="User",
+                            source_provider="github",
+                        )
+                        for index in range(1001)
+                    ),
+                    completed=True,
+                    request_id="REQ-comment-cap",
+                )
+            }
+        )
+    elif case == "marker_transport_unknown":
+        transport = _PagesMarkerTransport({}, failures={None: "unknown"})
     elif case in {
         "marker_timeout",
         "marker_rate_limited",

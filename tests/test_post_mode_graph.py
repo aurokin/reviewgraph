@@ -74,6 +74,10 @@ def test_retry_after_stored_fake_comment_reconciles_without_second_post() -> Non
         ("marker_not_found", "not_found"),
         ("marker_unavailable", "unavailable"),
         ("marker_malformed_page", "malformed_page"),
+        ("marker_repeated_cursor", "repeated_cursor"),
+        ("marker_page_cap", "page_cap_exceeded"),
+        ("marker_comment_cap", "comment_cap_exceeded"),
+        ("marker_transport_unknown", "transport_unknown"),
         ("marker_binding_mismatch", "marker_reconciliation_binding_mismatch"),
     ],
 )

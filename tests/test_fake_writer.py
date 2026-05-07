@@ -121,6 +121,23 @@ def test_fake_writer_returns_failed_without_transport_call_for_invalid_wrapped_p
     assert writer.comments == ()
 
 
+def test_fake_writer_rejects_approved_actor_mismatch_before_transport_call() -> None:
+    payload = _payload()
+    writer_input = build_finalized_issue_comment_writer_input(
+        finalization=_finalization(payload=payload),
+        approved_actor="reviewgraph-bot",
+        run_id="run-123",
+    )
+    writer = FakeIssueCommentWriter(author_login="other-bot")
+
+    result = writer.post_issue_comment(writer_input)
+
+    assert result.status == WriterStatus.FAILED
+    assert result.error == "approved_actor_mismatch"
+    assert writer.call_count == 0
+    assert writer.comments == ()
+
+
 def _finalization(payload) -> FinalizeGithubPayloadResult:
     return FinalizeGithubPayloadResult(
         actor_permission_finalization_check=None,

@@ -93,6 +93,14 @@ class FakeIssueCommentWriter:
     def post_issue_comment(self, writer_input: FinalizedIssueCommentWriterInput) -> GitHubWriterResult:
         if not isinstance(writer_input, FinalizedIssueCommentWriterInput):
             raise ValueError("fake writer accepts only finalized issue-comment writer input")
+        if self.author_login != writer_input.approved_actor:
+            return GitHubWriterResult(
+                status=WriterStatus.FAILED,
+                artifact_kind=ArtifactKind.ISSUE_COMMENT,
+                target_hash=writer_input.target_hash,
+                payload_hash=writer_input.final_payload_hash,
+                error="approved_actor_mismatch",
+            )
         validation = validate_final_issue_comment_payload(writer_input.final_payload)
         if validation.status.value != "pass":
             return GitHubWriterResult(
