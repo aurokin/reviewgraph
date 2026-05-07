@@ -56,6 +56,31 @@ It returns:
   "approved_github_actor": "reviewgraph-bot",
   "approved_permission": "write",
   "approved_permission_checked_at": "...",
+  "approved_credential_principal": "gh-user:reviewgraph-bot",
+  "approved_credential_source": "pat",
+  "approved_repo_permission": "write",
+  "approved_installation_permission": null,
+  "approved_endpoint_permission": null,
+  "approved_issue_comment_write": true,
+  "approved_permission_check_method": "fake_issue_comment_permission_probe",
+  "approved_permission_endpoint_method": "POST",
+  "approved_permission_checked_target": {
+    "owner_repo": "owner/repo",
+    "pr_number": 123,
+    "base_sha": "def456",
+    "head_sha": "abc123",
+    "merge_base_sha": "789abc",
+    "diff_basis": "merge_base"
+  },
+  "approved_permission_checked_target_hash": "sha256:...",
+  "approved_permission_endpoint": "/repos/owner/repo/issues/123/comments",
+  "approved_permission_endpoint_kind": "issue_comment",
+  "approved_permission_transport_summary": {
+    "endpoint_kind": "issue_comment_permission",
+    "retryable": false,
+    "reason_code": null,
+    "request_id": "REQ-123"
+  },
   "include_public_verdict": false,
   "approved_by": "local-user",
   "timestamp": "..."
@@ -73,6 +98,8 @@ The MVP endpoint check follows GitHub's issue-comment write behavior: broad repo
 Actor/permission proof freshness is deterministic in harnesses. The evaluator receives an explicit `evaluated_at` timestamp and rejects checked-at values that are missing, not UTC RFC3339 with trailing `Z`, older than the allowed proof age, or more than 60 seconds in the future. The permission proof target is the full canonical `ReviewTarget.to_ordered_dict()` plus `ReviewTarget.target_hash()`. This binds the proof to the target supplied to the gate; live ref freshness remains the responsibility of target freshness finalization.
 
 `finalize_github_payload` owns the last pre-writer gate. It first validates approval shape, approved IDs, non-empty approved findings, and duplicate approved fingerprints. It then re-reads current actor, endpoint permission, and target freshness. If any current read or preflight check fails, finalization records failure without setting `final_github_payload` or `final_payload_hash`; the writer adapter is unreachable and ReviewGraph emits dry-run output with the fail-closed reason.
+
+Actor/permission re-checks have their own explicit preflight state, `actor_permission_finalization_check`. That result is not full payload finalization: a pass means only that the current actor/permission proof still matches the approval snapshot. It carries stable machine reason codes, current checked-at time, redacted transport summary, and allowlisted mismatched fields for actor, credential, permission, endpoint, or checked-at drift. It rejects unknown status and never carries final payload hashes, marker reconciliation, or writer state. Later target freshness, redaction, marker reconciliation, and writer-release checks compose with this preflight before `finalization_status` can become finalized.
 
 Only after preflight passes may finalization build the final issue-comment body, compute the final hash, validate redaction status, reconcile markers, and release writer input.
 

@@ -44,6 +44,7 @@ class ReviewState(TypedDict):
     posting_plan: PostingPlan | None
     post_interaction_gate: PostInteractionGateResult | None
     actor_permission_gate: ActorPermissionGateResult | None
+    actor_permission_finalization_check: ActorPermissionFinalizationCheckResult | None
     payload_validation: PayloadValidationResult | None
     marker_reconciliation: MarkerReconciliationResult | None
     finalization_status: FinalizationStatus | None
@@ -114,6 +115,8 @@ START
       invalid -> END with dry-run output and error
   -> END
 ```
+
+`actor_permission_finalization_check` is a preflight result inside `finalize_github_payload`, not proof that the full payload is finalized. It records whether the current actor/permission probe still matches the approved snapshot before later target freshness, marker reconciliation, redaction, and payload-hash checks can release writer input.
 
 ## Review target
 

@@ -10,8 +10,13 @@ from reviewgraph.hashing import (
     visible_body_hash,
 )
 from reviewgraph.models import (
+    ApprovalDecision,
+    ApprovalDecisionBuildReasonCode,
+    ApprovalDecisionBuildResult,
     ApprovalProofReasonCode,
     ApprovalProofResult,
+    ActorPermissionGateResult,
+    ActorPermissionReasonCode,
     CandidateIssueCommentPayload,
     ClassifiedFinding,
     GateStatus,
@@ -147,6 +152,84 @@ def build_approval_proof(
     )
 
 
+def build_approval_decision(
+    *,
+    proof: ApprovalProofResult,
+    actor_permission_gate: ActorPermissionGateResult,
+    max_actor_permission_proof_age_seconds: int = 300,
+    max_actor_permission_future_skew_seconds: int = 60,
+) -> ApprovalDecisionBuildResult:
+    if proof.status != GateStatus.PASS:
+        return ApprovalDecisionBuildResult(
+            status=GateStatus.FAIL,
+            reason_code=ApprovalDecisionBuildReasonCode.APPROVAL_PROOF_FAILED,
+            reason="approval proof did not pass",
+        )
+    if actor_permission_gate.status != GateStatus.PASS:
+        return ApprovalDecisionBuildResult(
+            status=GateStatus.FAIL,
+            reason_code=ApprovalDecisionBuildReasonCode.ACTOR_PERMISSION_GATE_FAILED,
+            actor_permission_reason_code=actor_permission_gate.reason_code,
+            actor_permission_transport_summary=actor_permission_gate.transport_summary,
+            reason="actor permission gate did not pass",
+        )
+    gate_age_seconds = _utc_z_age_seconds(proof.timestamp, actor_permission_gate.checked_at)
+    if (
+        gate_age_seconds is None
+        or gate_age_seconds > max_actor_permission_proof_age_seconds
+        or gate_age_seconds < -max_actor_permission_future_skew_seconds
+    ):
+        return ApprovalDecisionBuildResult(
+            status=GateStatus.FAIL,
+            reason_code=ApprovalDecisionBuildReasonCode.ACTOR_PERMISSION_GATE_FAILED,
+            actor_permission_reason_code=ActorPermissionReasonCode.STALE_CACHED_PROOF,
+            actor_permission_transport_summary=actor_permission_gate.transport_summary,
+            reason="actor permission proof is stale at approval time",
+        )
+    target = proof.approved_review_target
+    if (
+        actor_permission_gate.checked_target != target.to_ordered_dict()
+        or actor_permission_gate.checked_target_hash != target.target_hash()
+        or actor_permission_gate.endpoint != _issue_comment_endpoint(target)
+        or actor_permission_gate.endpoint_kind != "issue_comment"
+    ):
+        return ApprovalDecisionBuildResult(
+            status=GateStatus.FAIL,
+            reason_code=ApprovalDecisionBuildReasonCode.ACTOR_PERMISSION_TARGET_MISMATCH,
+            reason="actor permission gate target did not match approval target",
+        )
+
+    return ApprovalDecisionBuildResult(
+        status=GateStatus.PASS,
+        approval=ApprovalDecision(
+            approved=True,
+            approved_item_ids=proof.approved_item_ids,
+            approved_final_payload_hash=proof.approved_final_payload_hash,
+            approved_review_target_hash=proof.approved_review_target_hash,
+            approved_review_target=target,
+            approved_github_actor=actor_permission_gate.actor,
+            approved_permission=actor_permission_gate.permission,
+            approved_permission_checked_at=actor_permission_gate.checked_at,
+            approved_credential_principal=actor_permission_gate.credential_principal,
+            approved_credential_source=actor_permission_gate.credential_source,
+            approved_repo_permission=actor_permission_gate.repo_permission,
+            approved_installation_permission=actor_permission_gate.installation_permission,
+            approved_endpoint_permission=actor_permission_gate.endpoint_permission,
+            approved_issue_comment_write=actor_permission_gate.issue_comment_write,
+            approved_permission_check_method=actor_permission_gate.check_method,
+            approved_permission_endpoint_method=actor_permission_gate.endpoint_method,
+            approved_permission_checked_target=actor_permission_gate.checked_target,
+            approved_permission_checked_target_hash=actor_permission_gate.checked_target_hash,
+            approved_permission_endpoint=actor_permission_gate.endpoint,
+            approved_permission_endpoint_kind=actor_permission_gate.endpoint_kind,
+            approved_permission_transport_summary=actor_permission_gate.transport_summary,
+            include_public_verdict=proof.include_public_verdict,
+            approved_by=proof.approved_by,
+            timestamp=proof.timestamp,
+        ),
+    )
+
+
 def _approved_visible_body(
     *,
     review_target: ReviewTarget,
@@ -188,6 +271,59 @@ def _is_valid_run_id(run_id: str) -> bool:
         "findings=sha256:0000000000000000000000000000000000000000000000000000000000000000 -->"
     )
     return is_exact_reviewgraph_v1_marker_line(marker)
+
+
+def _issue_comment_endpoint(target: ReviewTarget) -> str:
+    owner, repo = target.owner_repo.split("/", 1)
+    return f"/repos/{owner}/{repo}/issues/{target.pr_number}/comments"
+
+
+def _utc_z_age_seconds(later: str, earlier: str) -> float | None:
+    later_seconds = _utc_z_seconds(later)
+    earlier_seconds = _utc_z_seconds(earlier)
+    if later_seconds is None or earlier_seconds is None:
+        return None
+    return later_seconds - earlier_seconds
+
+
+def _utc_z_seconds(value: str) -> float | None:
+    if not isinstance(value, str) or not value.endswith("Z") or "T" not in value:
+        return None
+    date, time = value[:-1].split("T", 1)
+    if len(date) != 10 or date[4] != "-" or date[7] != "-":
+        return None
+    if len(time) < 8 or time[2] != ":" or time[5] != ":":
+        return None
+    try:
+        year = int(date[0:4])
+        month = int(date[5:7])
+        day = int(date[8:10])
+        hour = int(time[0:2])
+        minute = int(time[3:5])
+        second = int(time[6:8])
+    except ValueError:
+        return None
+    if not (1 <= month <= 12 and 1 <= day <= 31 and hour <= 23 and minute <= 59 and second <= 59):
+        return None
+    days_by_month = (31, 29 if _is_leap_year(year) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+    if day > days_by_month[month - 1]:
+        return None
+    fractional = time[8:]
+    fraction_seconds = 0.0
+    if fractional:
+        if len(fractional) == 1 or fractional[0] != "." or not fractional[1:].isdecimal():
+            return None
+        fraction_seconds = float(f"0.{fractional[1:]}")
+    days = 0
+    for current_year in range(1970, year):
+        days += 366 if _is_leap_year(current_year) else 365
+    days += sum(days_by_month[: month - 1])
+    days += day - 1
+    return days * 86400 + hour * 3600 + minute * 60 + second + fraction_seconds
+
+
+def _is_leap_year(year: int) -> bool:
+    return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
 
 
 def _fail(code: ApprovalProofReasonCode, reason: str) -> ApprovalProofResult:

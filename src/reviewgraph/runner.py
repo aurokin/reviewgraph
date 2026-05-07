@@ -614,6 +614,7 @@ def _routing_review_state(
         posting_plan=None,
         post_interaction_gate=None,
         actor_permission_gate=None,
+        actor_permission_finalization_check=None,
         payload_validation=None,
         marker_reconciliation=None,
         finalization_status=None,

@@ -103,6 +103,12 @@ class ApprovalProofReasonCode(StrEnum):
     REQUEST_CHANGES_PUBLIC_TEXT_DEFERRED = "request_changes_public_text_deferred"
 
 
+class ApprovalDecisionBuildReasonCode(StrEnum):
+    APPROVAL_PROOF_FAILED = "approval_proof_failed"
+    ACTOR_PERMISSION_GATE_FAILED = "actor_permission_gate_failed"
+    ACTOR_PERMISSION_TARGET_MISMATCH = "actor_permission_target_mismatch"
+
+
 class ActorPermissionReasonCode(StrEnum):
     UNKNOWN_ACTOR = "unknown_actor"
     UNKNOWN_CREDENTIAL_SOURCE = "unknown_credential_source"
@@ -120,6 +126,12 @@ class ActorPermissionReasonCode(StrEnum):
     UNAVAILABLE = "unavailable"
     MALFORMED_RESPONSE = "malformed_response"
     STALE_CACHED_PROOF = "stale_cached_proof"
+
+
+class ActorPermissionFinalizationReasonCode(StrEnum):
+    ACTOR_PERMISSION_GATE_FAILED = "actor_permission_gate_failed"
+    ACTOR_PERMISSION_SNAPSHOT_MISMATCH = "actor_permission_snapshot_mismatch"
+    ACTOR_PERMISSION_CHECKED_AT_REGRESSED = "actor_permission_checked_at_regressed"
 
 
 class FinalizationState(StrEnum):
@@ -190,6 +202,25 @@ ACTOR_PERMISSION_CHECK_METHOD = "fake_issue_comment_permission_probe"
 ACTOR_PERMISSION_ENDPOINT_KIND = "issue_comment"
 ACTOR_PERMISSION_ENDPOINT_METHOD = "POST"
 ACTOR_PERMISSION_TRANSPORT_ENDPOINT_KIND = "issue_comment_permission"
+ACTOR_PERMISSION_FINALIZATION_MISMATCH_FIELDS = frozenset(
+    {
+        "actor",
+        "credential_principal",
+        "credential_source",
+        "permission",
+        "repo_permission",
+        "installation_permission",
+        "endpoint_permission",
+        "issue_comment_write",
+        "check_method",
+        "endpoint_method",
+        "checked_target",
+        "checked_target_hash",
+        "endpoint",
+        "endpoint_kind",
+        "checked_at",
+    }
+)
 
 
 def validate_priority(priority: int) -> int:
@@ -1995,6 +2026,84 @@ class MarkerReconciliationResult:
 
 
 @dataclass(frozen=True)
+class ActorPermissionFinalizationCheckResult:
+    status: GateStatus
+    reason_code: ActorPermissionFinalizationReasonCode | None = None
+    actor_permission_reason_code: ActorPermissionReasonCode | None = None
+    actor_permission_transport_summary: ActorPermissionTransportSummary | None = None
+    current_actor_permission_checked_at: str | None = None
+    mismatched_fields: tuple[str, ...] = field(default_factory=tuple)
+    reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.status, GateStatus):
+            raise ValueError("actor permission finalization check status must be a GateStatus")
+        if self.status == GateStatus.UNKNOWN:
+            raise ValueError("actor permission finalization check status must be pass or fail")
+        if self.reason_code is not None and not isinstance(
+            self.reason_code, ActorPermissionFinalizationReasonCode
+        ):
+            raise ValueError("actor permission finalization check reason_code must be valid")
+        if self.actor_permission_reason_code is not None and not isinstance(
+            self.actor_permission_reason_code, ActorPermissionReasonCode
+        ):
+            raise ValueError("actor permission finalization check actor_permission_reason_code must be valid")
+        if self.actor_permission_transport_summary is not None and not isinstance(
+            self.actor_permission_transport_summary, ActorPermissionTransportSummary
+        ):
+            raise ValueError("actor permission finalization check transport summary must be valid")
+        _require_optional_non_empty(
+            self.current_actor_permission_checked_at,
+            "actor permission finalization check current_checked_at",
+        )
+        if self.current_actor_permission_checked_at is not None and not _is_realistic_rfc3339_utc_z(
+            self.current_actor_permission_checked_at
+        ):
+            raise ValueError("actor permission finalization check current_checked_at must be UTC RFC3339")
+        _require_allowed_str_tuple(
+            self.mismatched_fields,
+            "actor permission finalization check mismatched_fields",
+            ACTOR_PERMISSION_FINALIZATION_MISMATCH_FIELDS,
+        )
+        _require_optional_non_empty(self.reason, "actor permission finalization check reason")
+        if self.reason is not None and not _is_safe_actor_permission_reason(self.reason):
+            raise ValueError("actor permission finalization check reason must be allowlisted")
+        if self.status == GateStatus.PASS:
+            if self.actor_permission_transport_summary is None:
+                raise ValueError("actor permission finalization check pass requires transport summary")
+            if self.reason_code is not None:
+                raise ValueError("actor permission finalization check pass must not include reason_code")
+            if self.actor_permission_reason_code is not None:
+                raise ValueError("actor permission finalization check pass must not include actor reason")
+            if self.current_actor_permission_checked_at is None:
+                raise ValueError("actor permission finalization check pass requires current_checked_at")
+            if self.mismatched_fields:
+                raise ValueError("actor permission finalization check pass must not include mismatches")
+            if self.reason is not None:
+                raise ValueError("actor permission finalization check pass must not include reason")
+        else:
+            if self.actor_permission_transport_summary is None:
+                raise ValueError("actor permission finalization check failure requires transport summary")
+            if self.reason_code is None:
+                raise ValueError("actor permission finalization check failure requires reason_code")
+            if (
+                self.reason_code == ActorPermissionFinalizationReasonCode.ACTOR_PERMISSION_GATE_FAILED
+                and self.actor_permission_reason_code is None
+            ):
+                raise ValueError("actor permission gate failure requires actor_permission_reason_code")
+            if (
+                self.reason_code == ActorPermissionFinalizationReasonCode.ACTOR_PERMISSION_SNAPSHOT_MISMATCH
+                and not self.mismatched_fields
+            ):
+                raise ValueError("actor permission snapshot mismatch requires mismatched_fields")
+            if (
+                self.reason_code == ActorPermissionFinalizationReasonCode.ACTOR_PERMISSION_CHECKED_AT_REGRESSED
+                and self.mismatched_fields != ("checked_at",)
+            ):
+                raise ValueError("actor permission checked_at regression requires checked_at mismatch")
+
+
+@dataclass(frozen=True)
 class FinalizationStatus:
     state: FinalizationState
     final_payload_hash: str | None
@@ -2023,6 +2132,19 @@ class ApprovalDecision:
     approved_github_actor: str
     approved_permission: str
     approved_permission_checked_at: str
+    approved_credential_principal: str
+    approved_credential_source: str
+    approved_repo_permission: str | None
+    approved_installation_permission: str | None
+    approved_endpoint_permission: str | None
+    approved_issue_comment_write: bool
+    approved_permission_check_method: str
+    approved_permission_endpoint_method: str
+    approved_permission_checked_target: Mapping[str, object]
+    approved_permission_checked_target_hash: str
+    approved_permission_endpoint: str
+    approved_permission_endpoint_kind: str
+    approved_permission_transport_summary: ActorPermissionTransportSummary
     include_public_verdict: bool
     approved_by: str
     timestamp: str
@@ -2041,14 +2163,134 @@ class ApprovalDecision:
             "approved_github_actor",
             "approved_permission",
             "approved_permission_checked_at",
+            "approved_credential_principal",
+            "approved_credential_source",
+            "approved_permission_check_method",
+            "approved_permission_endpoint_method",
+            "approved_permission_endpoint",
+            "approved_permission_endpoint_kind",
             "approved_by",
             "timestamp",
         ):
             _require_non_empty(getattr(self, name), f"approval {name}")
+        if not _is_safe_actor_permission_identity(self.approved_github_actor):
+            raise ValueError("approval approved_github_actor must be allowlisted")
+        if not _is_safe_actor_permission_identity(self.approved_credential_principal):
+            raise ValueError("approval approved_credential_principal must be allowlisted")
+        if self.approved_credential_source not in ALLOWED_ACTOR_PERMISSION_CREDENTIAL_SOURCES:
+            raise ValueError("approval approved_credential_source is unsupported")
+        if self.approved_repo_permission is not None:
+            _require_non_empty(self.approved_repo_permission, "approval approved_repo_permission")
+            if self.approved_repo_permission not in ALLOWED_ACTOR_PERMISSION_REPO_PERMISSIONS:
+                raise ValueError("approval approved_repo_permission is unsupported")
+        if self.approved_installation_permission is not None:
+            _require_non_empty(self.approved_installation_permission, "approval approved_installation_permission")
+            if self.approved_installation_permission not in ALLOWED_ACTOR_PERMISSION_ENDPOINT_PERMISSIONS:
+                raise ValueError("approval approved_installation_permission is unsupported")
+        if self.approved_endpoint_permission is not None:
+            _require_non_empty(self.approved_endpoint_permission, "approval approved_endpoint_permission")
+            if self.approved_endpoint_permission not in ALLOWED_ACTOR_PERMISSION_ENDPOINT_PERMISSIONS:
+                raise ValueError("approval approved_endpoint_permission is unsupported")
+        if type(self.approved_issue_comment_write) is not bool:
+            raise ValueError("approval approved_issue_comment_write must be a boolean")
+        if self.approved_issue_comment_write is not True:
+            raise ValueError("approval requires issue-comment write proof")
+        if self.approved_permission_check_method != ACTOR_PERMISSION_CHECK_METHOD:
+            raise ValueError("approval approved_permission_check_method is unsupported")
+        if self.approved_permission_endpoint_method != ACTOR_PERMISSION_ENDPOINT_METHOD:
+            raise ValueError("approval approved_permission_endpoint_method is unsupported")
+        if self.approved_permission_endpoint_kind != ACTOR_PERMISSION_ENDPOINT_KIND:
+            raise ValueError("approval approved_permission_endpoint_kind is unsupported")
+        if not isinstance(self.approved_permission_checked_target, Mapping):
+            raise ValueError("approval approved_permission_checked_target must be a mapping")
+        if not all(isinstance(key, str) for key in self.approved_permission_checked_target):
+            raise ValueError("approval approved_permission_checked_target keys must be strings")
+        object.__setattr__(
+            self,
+            "approved_permission_checked_target",
+            MappingProxyType(dict(self.approved_permission_checked_target)),
+        )
+        _require_hash_like(
+            self.approved_permission_checked_target_hash,
+            "approval approved_permission_checked_target_hash",
+        )
+        if self.approved_permission_checked_target != self.approved_review_target.to_ordered_dict():
+            raise ValueError("approval permission checked_target must match approved_review_target")
+        if self.approved_permission_checked_target_hash != self.approved_review_target_hash:
+            raise ValueError("approval permission checked_target_hash must match approved_review_target_hash")
+        expected_endpoint = _actor_permission_expected_endpoint(self.approved_permission_checked_target)
+        if expected_endpoint is None or self.approved_permission_endpoint != expected_endpoint:
+            raise ValueError("approval permission endpoint must match approved_review_target")
+        if not _is_realistic_rfc3339_utc_z(self.approved_permission_checked_at):
+            raise ValueError("approval approved_permission_checked_at must be UTC RFC3339")
+        derived_permission = _actor_permission_derived_permission(
+            credential_source=self.approved_credential_source,
+            repo_permission=self.approved_repo_permission,
+            installation_permission=self.approved_installation_permission,
+            endpoint_permission=self.approved_endpoint_permission,
+        )
+        if derived_permission is None or self.approved_permission != derived_permission:
+            raise ValueError("approval permission proof is inconsistent")
+        if not isinstance(self.approved_permission_transport_summary, ActorPermissionTransportSummary):
+            raise ValueError("approval approved_permission_transport_summary must be valid")
+        if self.approved_permission_transport_summary.reason_code is not None:
+            raise ValueError("approval passing permission transport summary must not include reason_code")
+        if self.approved_permission_transport_summary.retryable:
+            raise ValueError("approval passing permission transport summary must not be retryable")
         if type(self.include_public_verdict) is not bool:
             raise ValueError("approval include_public_verdict must be a boolean")
         if self.approved and not self.approved_item_ids:
             raise ValueError("approved decision requires approved_item_ids")
+
+
+@dataclass(frozen=True)
+class ApprovalDecisionBuildResult:
+    status: GateStatus
+    approval: ApprovalDecision | None = None
+    reason_code: ApprovalDecisionBuildReasonCode | None = None
+    actor_permission_reason_code: ActorPermissionReasonCode | None = None
+    actor_permission_transport_summary: ActorPermissionTransportSummary | None = None
+    reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.status, GateStatus):
+            raise ValueError("approval decision build status must be a GateStatus")
+        if self.status == GateStatus.UNKNOWN:
+            raise ValueError("approval decision build status must be pass or fail")
+        if self.approval is not None and not isinstance(self.approval, ApprovalDecision):
+            raise ValueError("approval decision build approval must be an ApprovalDecision")
+        if self.reason_code is not None and not isinstance(
+            self.reason_code, ApprovalDecisionBuildReasonCode
+        ):
+            raise ValueError("approval decision build reason_code must be valid")
+        if self.actor_permission_reason_code is not None and not isinstance(
+            self.actor_permission_reason_code, ActorPermissionReasonCode
+        ):
+            raise ValueError("approval decision build actor_permission_reason_code must be valid")
+        if self.actor_permission_transport_summary is not None and not isinstance(
+            self.actor_permission_transport_summary, ActorPermissionTransportSummary
+        ):
+            raise ValueError("approval decision build transport summary must be valid")
+        _require_optional_non_empty(self.reason, "approval decision build reason")
+        if self.reason is not None and not _is_safe_actor_permission_reason(self.reason):
+            raise ValueError("approval decision build reason must be allowlisted")
+        if self.status == GateStatus.PASS:
+            if self.approval is None:
+                raise ValueError("approval decision build pass requires approval")
+            if self.reason_code is not None or self.actor_permission_reason_code is not None:
+                raise ValueError("approval decision build pass must not include reason codes")
+            if self.actor_permission_transport_summary is not None or self.reason is not None:
+                raise ValueError("approval decision build pass must not include failure diagnostics")
+        else:
+            if self.approval is not None:
+                raise ValueError("approval decision build failure must not include approval")
+            if self.reason_code is None:
+                raise ValueError("approval decision build failure requires reason_code")
+            if (
+                self.reason_code == ApprovalDecisionBuildReasonCode.ACTOR_PERMISSION_GATE_FAILED
+                and self.actor_permission_reason_code is None
+            ):
+                raise ValueError("approval decision build actor gate failure requires actor reason code")
 
 
 @dataclass(frozen=True)
@@ -2121,6 +2363,7 @@ class ReviewState:
     posting_plan: PostingPlan | None
     post_interaction_gate: PostInteractionGateResult | None
     actor_permission_gate: ActorPermissionGateResult | None
+    actor_permission_finalization_check: ActorPermissionFinalizationCheckResult | None
     payload_validation: PayloadValidationResult | None
     marker_reconciliation: MarkerReconciliationResult | None
     finalization_status: FinalizationStatus | None

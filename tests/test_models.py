@@ -8,9 +8,13 @@ import pytest
 
 from reviewgraph.models import (
     ActorPermissionGateResult,
+    ActorPermissionFinalizationCheckResult,
+    ActorPermissionFinalizationReasonCode,
     ActorPermissionReasonCode,
     ActorPermissionTransportSummary,
     ApprovalDecision,
+    ApprovalDecisionBuildReasonCode,
+    ApprovalDecisionBuildResult,
     ArtifactKind,
     CandidateIssueCommentPayload,
     ClarificationAnswer,
@@ -106,6 +110,7 @@ EXPECTED_STATE_FIELDS = (
     "posting_plan",
     "post_interaction_gate",
     "actor_permission_gate",
+    "actor_permission_finalization_check",
     "payload_validation",
     "marker_reconciliation",
     "finalization_status",
@@ -596,19 +601,7 @@ def test_side_effect_contracts_bind_approval_finalization_and_writer_metadata() 
         )
     )
     payload = _final_payload(target=target, fingerprints=("fp-1",), redaction=redaction)
-    approval = ApprovalDecision(
-        approved=True,
-        approved_item_ids=("finding-1",),
-        approved_final_payload_hash=payload.final_payload_hash,
-        approved_review_target_hash=target.target_hash(),
-        approved_review_target=target,
-        approved_github_actor="reviewgraph-bot",
-        approved_permission="write",
-        approved_permission_checked_at="2026-05-06T01:00:00Z",
-        include_public_verdict=False,
-        approved_by="local-user",
-        timestamp="2026-05-06T01:01:00Z",
-    )
+    approval = ApprovalDecision(**_approval_decision_kwargs(target, payload.final_payload_hash))
     actor_gate = ActorPermissionGateResult(
         status=GateStatus.PASS,
         actor="reviewgraph-bot",
@@ -1108,44 +1101,51 @@ def test_actionable_memory_requires_trusted_unresolved_supported_actor(kwargs: d
         lambda: FinalizationStatus(FinalizationState.FINALIZED, None, "sha256:target"),
         lambda: FinalizationStatus("finalized", "sha256:payload", "sha256:target"),
         lambda: FinalizationStatus(FinalizationState.FAILED_CLOSED, "payload", None),
-        lambda: ApprovalDecision(
-            approved=True,
-            approved_item_ids=["finding-1"],
-            approved_final_payload_hash="sha256:full",
-            approved_review_target_hash=_target().target_hash(),
-            approved_review_target=_target(),
-            approved_github_actor="reviewgraph-bot",
-            approved_permission="write",
-            approved_permission_checked_at="2026-05-06T01:00:00Z",
-            include_public_verdict=False,
-            approved_by="local-user",
-            timestamp="2026-05-06T01:01:00Z",
+        lambda: ActorPermissionFinalizationCheckResult(GateStatus.UNKNOWN),
+        lambda: ActorPermissionFinalizationCheckResult(GateStatus.PASS),
+        lambda: ActorPermissionFinalizationCheckResult(
+            GateStatus.PASS,
+            current_actor_permission_checked_at="2026-05-06T01:00:00Z",
+            mismatched_fields=("actor",),
+        ),
+        lambda: ActorPermissionFinalizationCheckResult(
+            GateStatus.FAIL,
+            reason_code=ActorPermissionFinalizationReasonCode.ACTOR_PERMISSION_SNAPSHOT_MISMATCH,
+        ),
+        lambda: ActorPermissionFinalizationCheckResult(
+            GateStatus.FAIL,
+            reason_code=ActorPermissionFinalizationReasonCode.ACTOR_PERMISSION_CHECKED_AT_REGRESSED,
+            mismatched_fields=("actor",),
+        ),
+        lambda: ApprovalDecisionBuildResult(GateStatus.UNKNOWN),
+        lambda: ApprovalDecisionBuildResult(GateStatus.PASS),
+        lambda: ApprovalDecisionBuildResult(
+            GateStatus.FAIL,
+            reason_code=ApprovalDecisionBuildReasonCode.ACTOR_PERMISSION_GATE_FAILED,
         ),
         lambda: ApprovalDecision(
-            approved=True,
-            approved_item_ids=("finding-1",),
-            approved_final_payload_hash="sha256:full",
-            approved_review_target_hash="sha256:not-target",
-            approved_review_target=_target(),
-            approved_github_actor="reviewgraph-bot",
-            approved_permission="write",
-            approved_permission_checked_at="2026-05-06T01:00:00Z",
-            include_public_verdict=False,
-            approved_by="local-user",
-            timestamp="2026-05-06T01:01:00Z",
+            **{**_approval_decision_kwargs(), "approved_item_ids": ["finding-1"]}
         ),
         lambda: ApprovalDecision(
-            approved=True,
-            approved_item_ids=(),
-            approved_final_payload_hash="sha256:full",
-            approved_review_target_hash=_target().target_hash(),
-            approved_review_target=_target(),
-            approved_github_actor="reviewgraph-bot",
-            approved_permission="write",
-            approved_permission_checked_at="2026-05-06T01:00:00Z",
-            include_public_verdict=False,
-            approved_by="local-user",
-            timestamp="2026-05-06T01:01:00Z",
+            **{**_approval_decision_kwargs(), "approved_review_target_hash": "sha256:not-target"}
+        ),
+        lambda: ApprovalDecision(
+            **{**_approval_decision_kwargs(), "approved_item_ids": ()}
+        ),
+        lambda: ApprovalDecision(
+            **{**_approval_decision_kwargs(), "approved_permission": "issues:write"}
+        ),
+        lambda: ApprovalDecision(
+            **{
+                **_approval_decision_kwargs(),
+                "approved_permission_checked_target_hash": "sha256:not-target",
+            }
+        ),
+        lambda: ApprovalDecision(
+            **{
+                **_approval_decision_kwargs(),
+                "approved_permission_endpoint": "/repos/acme/widgets/issues/43/comments",
+            }
         ),
         lambda: GitHubWriterResult(
             status="not_called",
@@ -1337,6 +1337,40 @@ def _valid_actor_permission_gate(target: ReviewTarget | None = None) -> ActorPer
     return ActorPermissionGateResult(**_actor_permission_gate_kwargs(review_target))
 
 
+def _approval_decision_kwargs(
+    target: ReviewTarget | None = None,
+    final_payload_hash: str = "sha256:full",
+) -> dict[str, object]:
+    review_target = target or _target()
+    gate_kwargs = _actor_permission_gate_kwargs(review_target)
+    return {
+        "approved": True,
+        "approved_item_ids": ("finding-1",),
+        "approved_final_payload_hash": final_payload_hash,
+        "approved_review_target_hash": review_target.target_hash(),
+        "approved_review_target": review_target,
+        "approved_github_actor": gate_kwargs["actor"],
+        "approved_permission": gate_kwargs["permission"],
+        "approved_permission_checked_at": gate_kwargs["checked_at"],
+        "approved_credential_principal": gate_kwargs["credential_principal"],
+        "approved_credential_source": gate_kwargs["credential_source"],
+        "approved_repo_permission": gate_kwargs["repo_permission"],
+        "approved_installation_permission": None,
+        "approved_endpoint_permission": None,
+        "approved_issue_comment_write": gate_kwargs["issue_comment_write"],
+        "approved_permission_check_method": gate_kwargs["check_method"],
+        "approved_permission_endpoint_method": gate_kwargs["endpoint_method"],
+        "approved_permission_checked_target": gate_kwargs["checked_target"],
+        "approved_permission_checked_target_hash": gate_kwargs["checked_target_hash"],
+        "approved_permission_endpoint": gate_kwargs["endpoint"],
+        "approved_permission_endpoint_kind": gate_kwargs["endpoint_kind"],
+        "approved_permission_transport_summary": gate_kwargs["transport_summary"],
+        "include_public_verdict": False,
+        "approved_by": "local-user",
+        "timestamp": "2026-05-06T01:01:00Z",
+    }
+
+
 def _actor_permission_gate_kwargs(target: ReviewTarget) -> dict[str, object]:
     return {
         "status": GateStatus.PASS,
@@ -1450,6 +1484,7 @@ def _review_state() -> ReviewState:
         posting_plan=PostingPlan(items=()),
         post_interaction_gate=None,
         actor_permission_gate=None,
+        actor_permission_finalization_check=None,
         payload_validation=None,
         marker_reconciliation=None,
         finalization_status=None,
