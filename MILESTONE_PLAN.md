@@ -28,7 +28,7 @@ Active execution artifact for this milestone. Linear remains the durable source 
   - `AUR-249` / duplicate of payload hash domain scope
   - `AUR-250` / duplicate of hardened marker reconciliation scope
   - `AUR-251` / duplicate of non-interactive posting block scope
-- Linear descriptions for `AUR-245`, `AUR-246`, `AUR-222`, `AUR-241`, and `AUR-224` were tightened on 2026-05-07 so the high-risk side-effect guards in this plan are also represented in Linear.
+- Linear descriptions for `AUR-219`, `AUR-243`, `AUR-245`, `AUR-246`, `AUR-222`, `AUR-241`, `AUR-224`, and `AUR-261` were tightened on 2026-05-07 so the high-risk side-effect guards in this plan are also represented in Linear.
 
 ## Milestone Intent
 
@@ -110,6 +110,7 @@ For each issue:
 - Suggested replies are local-only and never eligible for candidate/final GitHub payloads in MVP.
 - Empty approvals, local-note-only, suggested-reply-only, suppressed-only, and clarification-only runs never invoke a writer.
 - Marker reconciliation must paginate existing comments or fail closed. Trusted marker conflicts fail closed; untrusted/spoofed markers are ignored.
+- Marker trust is restricted to the approved actor or configured trusted ReviewGraph bot. It may reuse GitHub identity/provenance parsing, but it must not treat every trusted PR commenter as a trusted marker author.
 - Marker scans, actor/permission checks, and writer attempts must emit redacted transport summaries with endpoint kind, page count, retryability, stable failure code, and request ID when available. They must not log tokens, raw stderr, or unredacted payload bodies.
 - Marker and writer pagination must have explicit page caps, timeout handling, rate-limit classification, and fail-closed output for long PR comment histories.
 - Non-interactive mode cannot infer approval from config, CI, webhook context, or non-TTY execution.
