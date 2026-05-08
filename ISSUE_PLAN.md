@@ -51,10 +51,11 @@ Add explicit interface and harness coverage proving reviewer adapters are decoup
    - reviewer adapter callable signatures contain no forbidden handle-like parameter names such as `github_client`, `transport`, `writer`, `approval`, `finalization`, `payload`, `session`, `process`, or `provider_client`;
    - fake adapter package capability policy must match reviewer config capabilities and remain read-only/provider-off by default before execution;
    - unsupported or tool-like capabilities cannot be smuggled directly through a manually constructed package into adapter execution;
-   - future live adapter contract is represented by a provider-free validator/stub surface that accepts only an approved AUR-212 policy result with an execution plan and matching run key, then returns/permits a `ReviewerResult` contract without provider execution in this issue.
+   - future live adapter contract is represented by a provider-free validator/stub surface that shares the same package/run-key/capability preflight, accepts only an approved AUR-212 policy result with an execution plan, matching run key, matching package fingerprint, matching package-derived request preview, and an exact current-ledger reservation proof, then returns/permits a `ReviewerResult` contract without provider execution in this issue.
 2. Implement narrow boundary support in `src/reviewgraph/reviewers.py`:
    - define adapter protocols or type aliases for fake and future live reviewers if useful;
    - add deterministic boundary validators for `ReviewerContextPackage` capability policy, selected reviewer metadata, graph-owned run-key binding, and live policy result approval;
+   - ensure `llm_policy` uses the same package/run-key/capability preflight before provider preview construction or live-call reservation;
    - call the fake validator from `execute_fake_reviewer()` before any fake registry lookup;
    - keep normalization/repair behavior unchanged.
 3. Add static import/signature tests for `src/reviewgraph/reviewers.py`, `src/reviewgraph/reviewer_context.py`, and `src/reviewgraph/llm_policy.py` so future adapter code cannot bypass the intended boundaries.

@@ -160,11 +160,13 @@ Oversized context should be retained as marker-only metadata when possible. Revi
 
 ## Reviewer context boundary
 
-`run_reviewers` may pass only a `ReviewerContextPackage` to a reviewer adapter. The package is built from the selected reviewer, the selected reviewer config metadata, the immutable review target, budgeted changed files, structured conversation memory, truncation notices, omitted-context markers, local budget notes, and read-only capability policy.
+`run_reviewers` may pass only a `ReviewerContextPackage` to the structured reviewer execution boundary. The package is built from the selected reviewer, the selected reviewer config metadata, the immutable review target, budgeted changed files, structured conversation memory, truncation notices, omitted-context markers, local budget notes, and read-only capability policy.
 
 The package must not include the full reviewer config map, GitHub transports, approval state, finalization state, posting payload builders, writer clients, repository checkout handles, provider clients, process handles, or ambient tool callables. Tool names in reviewer config are inert metadata until a later explicit tool policy exists.
 
 Prompt input built from the package separates instructions from context data. PR conversation memory is labeled data; trusted actionable memory may include body text, while passive or untrusted memory is metadata-only in MVP. GitHub-derived memory also carries provider provenance (`source_provider`), raw resource identity (`source_id`), and review-thread identity (`thread_id`) when applicable so seen-state and citations do not rely on rendered prose. Passive or untrusted memory cannot become instructions, reviewer prompt body data, routing evidence, verdict pressure, approval input, or public payload text. Provider-bound previews are non-live harness artifacts: they serialize minimized package data, apply redaction, record redaction status, and keep raw-provider and raw-trace opt-ins disabled by default.
+
+Structured adapter boundaries are `execute_*` callables that return `ReviewerResult` from a graph-owned `ReviewerRunKey`. Raw fixture lookup helpers such as `FakeReviewerAdapter.run(package)` are not the structured adapter boundary. Shared adapter preflight must reject mismatched target, active stage, selected-reviewer stage, reviewer name, or capability policy before registry lookup, provider preview construction, provider execution, output parsing, normalization, or live-call reservation. Future live execution boundaries must run the same package/run-key/capability preflight, compare the live LLM policy result's package fingerprint to the current `ReviewerContextPackage`, and verify the current live-call ledger contains the exact policy reservation, including package fingerprint, request hash, and byte count. `none` and `diff_context` are the only MVP reviewer capabilities; both are valid boundary inputs.
 
 ## Staged reviewer introduction
 

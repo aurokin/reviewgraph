@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from reviewgraph.findings import normalize_reviewer_output
+from reviewgraph.llm_policy import LiveLLMBudgetLedger, LiveLLMPolicyResult, live_llm_package_fingerprint
 from reviewgraph.models import (
     NormalizationError,
     ReviewerRepairRecord,
@@ -13,7 +14,13 @@ from reviewgraph.models import (
     ReviewerRunKey,
     ReviewerRunStatusValue,
 )
-from reviewgraph.reviewer_context import ReviewerContextPackage
+from reviewgraph.reviewer_boundaries import (
+    ReviewerAdapterBoundaryError,
+    require_reviewer_run_key,
+    require_context_package,
+    validate_reviewer_adapter_input,
+)
+from reviewgraph.reviewer_context import ReviewerContextPackage, build_provider_request_preview
 
 
 FakeReviewerRegistry = Mapping[tuple[str, str, str], Mapping[str, Any]]
@@ -41,6 +48,7 @@ class FakeReviewerAdapter:
     registry: Mapping[tuple[str, str, str], object]
 
     def run(self, package: ReviewerContextPackage) -> object:
+        require_context_package(package)
         key = (self.fixture_id, package.reviewer.name, package.active_stage)
         if key not in self.registry:
             raise KeyError(
@@ -56,6 +64,7 @@ def execute_fake_reviewer(
     package: ReviewerContextPackage,
     run_key: ReviewerRunKey,
 ) -> ReviewerResult:
+    validate_reviewer_adapter_input(package=package, run_key=run_key)
     try:
         output = adapter.run(package)
     except KeyError as exc:
@@ -84,6 +93,67 @@ def execute_fake_reviewer(
             run_key=run_key,
         )
     return result
+
+
+def validate_live_policy_adapter_input(
+    *,
+    policy_result: LiveLLMPolicyResult,
+    package: ReviewerContextPackage,
+    run_key: ReviewerRunKey,
+    current_ledger: LiveLLMBudgetLedger,
+) -> LiveLLMPolicyResult:
+    validate_reviewer_adapter_input(package=package, run_key=run_key)
+    if not isinstance(current_ledger, LiveLLMBudgetLedger):
+        raise ReviewerAdapterBoundaryError("live reviewer adapter requires current live-call ledger")
+    if not isinstance(policy_result, LiveLLMPolicyResult):
+        raise ReviewerAdapterBoundaryError("live reviewer adapter requires LiveLLMPolicyResult")
+    require_reviewer_run_key(run_key)
+    if policy_result.status != "approved" or policy_result.execution_plan is None:
+        raise ReviewerAdapterBoundaryError("live reviewer adapter requires approved policy result with execution plan")
+    if policy_result.execution_plan.reviewer_run_key != run_key:
+        raise ReviewerAdapterBoundaryError("live reviewer adapter run key does not match policy result")
+    if policy_result.execution_plan.package_fingerprint != live_llm_package_fingerprint(package):
+        raise ReviewerAdapterBoundaryError("live reviewer adapter policy result does not match package")
+    reservation = current_ledger.reservation_for_run_key(run_key.stable_key())
+    if reservation is None:
+        raise ReviewerAdapterBoundaryError("live reviewer adapter ledger is missing reservation")
+    if reservation.reservation_key != policy_result.execution_plan.reservation_key:
+        raise ReviewerAdapterBoundaryError("live reviewer adapter ledger reservation does not match policy result")
+    if reservation.package_fingerprint != policy_result.execution_plan.package_fingerprint:
+        raise ReviewerAdapterBoundaryError("live reviewer adapter ledger reservation does not match policy result")
+    if reservation.request_hash != policy_result.execution_plan.request_hash:
+        raise ReviewerAdapterBoundaryError("live reviewer adapter ledger reservation does not match policy result")
+    if reservation.request_byte_count != policy_result.execution_plan.request_byte_count:
+        raise ReviewerAdapterBoundaryError("live reviewer adapter ledger reservation does not match policy result")
+    preview = build_provider_request_preview(
+        package,
+        provider=policy_result.execution_plan.provider,
+        raw_provider_submission_enabled=policy_result.execution_plan.raw_provider_submission_enabled,
+        raw_trace_persistence_enabled=policy_result.execution_plan.raw_trace_persistence_enabled,
+    )
+    if preview.request_text != policy_result.execution_plan.request_text:
+        raise ReviewerAdapterBoundaryError("live reviewer adapter policy result does not match package")
+    return policy_result
+
+
+def execute_live_policy_reviewer_stub(
+    *,
+    policy_result: LiveLLMPolicyResult,
+    package: ReviewerContextPackage,
+    run_key: ReviewerRunKey,
+    current_ledger: LiveLLMBudgetLedger,
+) -> ReviewerResult:
+    validate_live_policy_adapter_input(
+        policy_result=policy_result,
+        package=package,
+        run_key=run_key,
+        current_ledger=current_ledger,
+    )
+    return ReviewerResult(
+        run_key=run_key,
+        status=ReviewerRunStatusValue.FAILED,
+        errors=("live reviewer provider execution is not implemented in AUR-232",),
+    )
 
 
 def _execute_unrepaired_fake_output(output: object, *, run_key: ReviewerRunKey) -> ReviewerResult:

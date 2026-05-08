@@ -8,6 +8,7 @@ from typing import Any
 
 from reviewgraph.models import RedactionStatus, ReviewerRunKey
 from reviewgraph.redaction import redact_text
+from reviewgraph.reviewer_boundaries import ReviewerAdapterBoundaryError, validate_reviewer_adapter_input
 from reviewgraph.reviewer_context import (
     ProviderRequestPreview,
     ReviewerContextPackage,
@@ -23,6 +24,7 @@ class LiveLLMBlockedReasonCode(StrEnum):
     MISSING_PROVIDER = "missing_provider"
     MISSING_MODEL = "missing_model"
     REVIEWER_RUN_KEY_MISMATCH = "reviewer_run_key_mismatch"
+    REVIEWER_ADAPTER_BOUNDARY_FAILED = "reviewer_adapter_boundary_failed"
     LIVE_CALL_BUDGET_EXCEEDED = "live_call_budget_exceeded"
     LIVE_CALL_RESERVATION_CONFLICT = "live_call_reservation_conflict"
     RAW_PROVIDER_NOT_APPROVED = "raw_provider_not_approved"
@@ -97,6 +99,7 @@ class LiveLLMReservation:
     config_hash: str
     request_hash: str
     request_byte_count: int
+    package_fingerprint: str
 
     def to_ordered_dict(self) -> dict[str, Any]:
         return {
@@ -108,6 +111,7 @@ class LiveLLMReservation:
             "config_hash": self.config_hash,
             "request_hash": self.request_hash,
             "request_byte_count": self.request_byte_count,
+            "package_fingerprint": self.package_fingerprint,
         }
 
 
@@ -148,6 +152,7 @@ class LiveLLMProviderExecutionPlan:
     request_text: str
     request_hash: str
     request_byte_count: int
+    package_fingerprint: str
     redaction_status: RedactionStatus
     raw_provider_submission_enabled: bool
     raw_provider_submission_approved: bool
@@ -179,6 +184,7 @@ class LiveLLMPolicyAuditRecord:
     raw_trace_persistence: dict[str, Any]
     opt_in: dict[str, Any]
     budget: dict[str, Any]
+    package_fingerprint: str
     request_hash: str | None
     request_byte_count: int | None
     trace_request_text: str | None = None
@@ -201,6 +207,7 @@ class LiveLLMPolicyAuditRecord:
             "raw_trace_persistence": self.raw_trace_persistence,
             "opt_in": self.opt_in,
             "budget": self.budget,
+            "package_fingerprint": self.package_fingerprint,
             "request_hash": self.request_hash,
             "request_byte_count": self.request_byte_count,
         }
@@ -260,14 +267,20 @@ def evaluate_live_llm_policy(
     provider = _normalized_non_empty(policy_input.provider)
     model = _normalized_non_empty(policy_input.model)
 
-    if not _run_key_matches_package(policy_input.reviewer_run_key, package):
+    try:
+        validate_reviewer_adapter_input(package=package, run_key=policy_input.reviewer_run_key)
+    except ReviewerAdapterBoundaryError as exc:
         return _blocked(
             package,
             policy_input,
             ledger=ledger,
             provider=provider,
             model=model,
-            reason_code=LiveLLMBlockedReasonCode.REVIEWER_RUN_KEY_MISMATCH,
+            reason_code=(
+                LiveLLMBlockedReasonCode.REVIEWER_RUN_KEY_MISMATCH
+                if "run key" in str(exc)
+                else LiveLLMBlockedReasonCode.REVIEWER_ADAPTER_BOUNDARY_FAILED
+            ),
         )
 
     if not policy_input.live_llm_enabled or _normalized_non_empty(policy_input.live_llm_opt_in_source) is None:
@@ -353,6 +366,7 @@ def evaluate_live_llm_policy(
         },
     )
     request_byte_count = len(request_text.encode("utf-8"))
+    package_fingerprint = live_llm_package_fingerprint(package)
     reservation_key = _reservation_key(
         policy_input,
         provider=provider,
@@ -372,8 +386,39 @@ def evaluate_live_llm_policy(
                 reason_code=LiveLLMBlockedReasonCode.LIVE_CALL_RESERVATION_CONFLICT,
                 request_hash=request_hash,
                 request_byte_count=request_byte_count,
+                package_fingerprint=package_fingerprint,
                 reservation_key=reservation_key,
                 reservation_status="conflict",
+                redaction_status=preview.redaction_status,
+            )
+        if existing.package_fingerprint != package_fingerprint:
+            return _blocked(
+                package,
+                policy_input,
+                ledger=ledger,
+                provider=provider,
+                model=model,
+                reason_code=LiveLLMBlockedReasonCode.LIVE_CALL_RESERVATION_CONFLICT,
+                request_hash=request_hash,
+                request_byte_count=request_byte_count,
+                package_fingerprint=package_fingerprint,
+                reservation_key=reservation_key,
+                reservation_status="conflict",
+                redaction_status=preview.redaction_status,
+            )
+        if ledger.reserved_live_calls > package.context_budget.max_live_calls:
+            return _blocked(
+                package,
+                policy_input,
+                ledger=ledger,
+                provider=provider,
+                model=model,
+                reason_code=LiveLLMBlockedReasonCode.LIVE_CALL_BUDGET_EXCEEDED,
+                request_hash=request_hash,
+                request_byte_count=request_byte_count,
+                package_fingerprint=package_fingerprint,
+                reservation_key=reservation_key,
+                reservation_status="blocked",
                 redaction_status=preview.redaction_status,
             )
         return _approved(
@@ -386,6 +431,7 @@ def evaluate_live_llm_policy(
             request_text=request_text,
             request_hash=request_hash,
             request_byte_count=request_byte_count,
+            package_fingerprint=package_fingerprint,
             reservation_key=reservation_key,
             reservation_status="existing",
             budget_before=budget_before,
@@ -402,6 +448,7 @@ def evaluate_live_llm_policy(
             reason_code=LiveLLMBlockedReasonCode.LIVE_CALL_BUDGET_EXCEEDED,
             request_hash=request_hash,
             request_byte_count=request_byte_count,
+            package_fingerprint=package_fingerprint,
             reservation_key=reservation_key,
             reservation_status="blocked",
             redaction_status=preview.redaction_status,
@@ -416,6 +463,7 @@ def evaluate_live_llm_policy(
         config_hash=policy_input.reviewer_run_key.config_hash,
         request_hash=request_hash,
         request_byte_count=request_byte_count,
+        package_fingerprint=package_fingerprint,
     )
     next_ledger = ledger.reserve(reservation)
     return _approved(
@@ -428,6 +476,7 @@ def evaluate_live_llm_policy(
         request_text=request_text,
         request_hash=request_hash,
         request_byte_count=request_byte_count,
+        package_fingerprint=package_fingerprint,
         reservation_key=reservation_key,
         reservation_status="new",
         budget_before=budget_before,
@@ -479,6 +528,7 @@ def _approved(
     request_text: str,
     request_hash: str,
     request_byte_count: int,
+    package_fingerprint: str,
     reservation_key: str,
     reservation_status: str,
     budget_before: int,
@@ -496,6 +546,7 @@ def _approved(
         request_text=request_text,
         request_hash=request_hash,
         request_byte_count=request_byte_count,
+        package_fingerprint=package_fingerprint,
         redaction_status=preview.redaction_status,
         raw_provider_submission_enabled=policy_input.raw_provider_submission_enabled,
         raw_provider_submission_approved=policy_input.raw_provider_submission_approved,
@@ -526,6 +577,7 @@ def _approved(
             budget_after=budget_after,
             request_hash=request_hash,
             request_byte_count=request_byte_count,
+            package_fingerprint=package_fingerprint,
             redaction_status=preview.redaction_status,
             request_text=request_text,
         ),
@@ -542,6 +594,7 @@ def _blocked(
     reason_code: LiveLLMBlockedReasonCode,
     request_hash: str | None = None,
     request_byte_count: int | None = None,
+    package_fingerprint: str | None = None,
     reservation_key: str | None = None,
     reservation_status: str = "not_reserved",
     redaction_status: RedactionStatus | None = None,
@@ -565,6 +618,7 @@ def _blocked(
             budget_after=budget_before,
             request_hash=request_hash,
             request_byte_count=request_byte_count,
+            package_fingerprint=package_fingerprint or live_llm_package_fingerprint(package),
             redaction_status=redaction_status or _empty_redaction_status(),
             request_text=None,
         ),
@@ -585,6 +639,7 @@ def _audit_record(
     budget_after: int,
     request_hash: str | None,
     request_byte_count: int | None,
+    package_fingerprint: str,
     redaction_status: RedactionStatus,
     request_text: str | None,
 ) -> LiveLLMPolicyAuditRecord:
@@ -621,6 +676,7 @@ def _audit_record(
             "after": budget_after,
             "cost": LIVE_LLM_CALL_COST,
         },
+        package_fingerprint=package_fingerprint,
         request_hash=request_hash,
         request_byte_count=request_byte_count,
         trace_request_text=(
@@ -652,13 +708,118 @@ def _context_audit(package: ReviewerContextPackage) -> dict[str, Any]:
     }
 
 
-def _run_key_matches_package(run_key: ReviewerRunKey, package: ReviewerContextPackage) -> bool:
-    return (
-        run_key.target_hash == package.review_target.target_hash()
-        and run_key.reviewer == package.reviewer.name
-        and run_key.stage.value == package.active_stage
-        and run_key.stage.value == package.reviewer.stage
+def live_llm_package_fingerprint(package: ReviewerContextPackage) -> str:
+    return _domain_json_hash(
+        "reviewgraph.live_llm.package.v1",
+        {
+            "active_stage": package.active_stage,
+            "capability_policy": package.trace.capability_policy,
+            "changed_files": [
+                {
+                    "additions": changed_file.additions,
+                    "deletions": changed_file.deletions,
+                    "patch": changed_file.patch,
+                    "patch_status": changed_file.patch_status,
+                    "path": changed_file.path,
+                    "previous_path": changed_file.previous_path,
+                    "status": changed_file.status,
+                }
+                for changed_file in package.changed_files
+            ],
+            "config": package.trace.config,
+            "context_budget": _context_budget_fingerprint(package),
+            "local_notes": [
+                {
+                    "body": note.body,
+                    "evidence": note.evidence,
+                    "id": note.id,
+                    "title": note.title,
+                }
+                for note in package.local_notes
+            ],
+            "memory": [
+                {
+                    "actionable": memory.actionable,
+                    "body": memory.body,
+                    "id": memory.id,
+                    "passive_reason": memory.passive_reason,
+                    "resolved_status": memory.resolved_status,
+                    "source_id": memory.source_id,
+                    "source_provider": memory.source_provider,
+                    "source_type": memory.source_type,
+                    "thread_id": memory.thread_id,
+                    "trust_label": memory.trust_label,
+                }
+                for memory in package.memory_references
+            ],
+            "omitted_context": package.trace.omitted_context,
+            "review_target": package.review_target.to_ordered_dict(),
+            "reviewer": {
+                "name": package.reviewer.name,
+                "reasons": list(package.reviewer.reasons),
+                "stage": package.reviewer.stage,
+            },
+            "truncation": package.trace.truncation,
+        },
     )
+
+
+def _context_budget_fingerprint(package: ReviewerContextPackage) -> dict[str, Any]:
+    budget = package.context_budget
+    return {
+        "max_changed_files": budget.max_changed_files,
+        "max_live_calls": budget.max_live_calls,
+        "max_memory_bytes": budget.max_memory_bytes,
+        "max_patch_bytes": budget.max_patch_bytes,
+        "max_reviewers": budget.max_reviewers,
+        "original_changed_file_count": budget.original_changed_file_count,
+        "retained_changed_file_count": budget.retained_changed_file_count,
+        "original_patch_bytes": budget.original_patch_bytes,
+        "retained_patch_bytes": budget.retained_patch_bytes,
+        "original_memory_count": budget.original_memory_count,
+        "retained_memory_count": budget.retained_memory_count,
+        "original_memory_bytes": budget.original_memory_bytes,
+        "retained_memory_bytes": budget.retained_memory_bytes,
+        "original_reviewer_count": budget.original_reviewer_count,
+        "retained_reviewer_count": budget.retained_reviewer_count,
+        "omitted_file_paths": list(budget.omitted_file_paths),
+        "omitted_memory_ids": list(budget.omitted_memory_ids),
+        "planned_live_calls": budget.planned_live_calls,
+        "reasons": list(budget.reasons),
+        "retained_file_paths": list(budget.retained_file_paths),
+        "retained_memory_ids": list(budget.retained_memory_ids),
+        "retained_reviewer_ids": list(budget.retained_reviewer_ids),
+        "deferred_reviewer_ids": list(budget.deferred_reviewer_ids),
+        "retained_live_call_reviewer_ids": list(budget.retained_live_call_reviewer_ids),
+        "deferred_live_call_reviewer_ids": list(budget.deferred_live_call_reviewer_ids),
+        "generated_local_note_ids": list(budget.generated_local_note_ids),
+        "truncation": [
+            {
+                "note": notice.note,
+                "original_bytes": notice.original_bytes,
+                "original_count": notice.original_count,
+                "resource": notice.resource,
+                "retained_bytes": notice.retained_bytes,
+                "retained_count": notice.retained_count,
+                "truncated": notice.truncated,
+            }
+            for notice in budget.truncation
+        ],
+        "omitted_context": [
+            {
+                "affected_id": marker.affected_id,
+                "dimension": marker.dimension,
+                "id": marker.id,
+                "original_bytes": marker.original_bytes,
+                "original_count": marker.original_count,
+                "reason_code": marker.reason_code,
+                "retained_bytes": marker.retained_bytes,
+                "retained_count": marker.retained_count,
+                "source": marker.source,
+            }
+            for marker in budget.omitted_context
+        ],
+    }
 
 
 def _reservation_key(
