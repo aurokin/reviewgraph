@@ -1,108 +1,84 @@
-# ISSUE PLAN: AUR-260 Complete PRD 0008 Live LLM
+# ISSUE PLAN: AUR-242 Add Validation Command And Marker Contracts
 
-Active gate plan for `AUR-260` / `Complete PRD 0008: Live LLM`.
+Active issue plan for `AUR-242` / `RG-053: Add Validation Command And Marker Contracts`.
 
-Linear is the durable source for issue status, evidence comments, and milestone progress. This gate should not add new product scope unless the audit finds a concrete PRD 0008 gap. The expected output is a closed milestone gate with evidence, plus any narrow documentation/refactor commits needed to make PRD 0008 behavior discoverable for future agents.
+Linear is the durable source for issue status, evidence comments, and blocker relationships. This issue should make the harness contract easier to run and audit without adding new live behavior.
 
 ## Linear Snapshot
 
 - Project: `ReviewGraph`
 - Team: `Aurokin`
-- Milestone: `PRD 0008: Live LLM`
-- Milestone ID: `5f47c10d-993c-452c-b71f-4a816e8a5b0a`
-- Gate issue: `AUR-260`
-- Status when planned: `Backlog`
-- Implementation issues:
-  - `AUR-212` / `RG-023: Add Live LLM Data Handling Guardrails` / `Done`
-  - `AUR-232` / `RG-043: Enforce Reviewer Adapter Boundaries` / `Done`
-  - `AUR-240` / `RG-051: Add Opt-In Live LLM Reviewer Adapter` / `Done`
-- Downstream milestone: `PRD 0009: Harness Strategy`; first downstream implementation issue remains `AUR-242`.
+- Milestone: `PRD 0009: Harness Strategy`
+- Milestone ID: `9c76d492-a6f2-479d-bfee-37c00c5ef0b8`
+- Issue: `AUR-242`
+- Status when planned: `In Progress`
+- Upstream blocker: `AUR-260` / `Complete PRD 0008: Live LLM` / `Done`
+- Downstream gate: `AUR-262` / `Complete PRD 0009: Harness Strategy` / `Backlog`
 
 ## Objective
 
-Close PRD 0008 only after proving the implemented live LLM policy, adapter boundary, opt-in path, redaction/audit behavior, budget/retry behavior, and skipped-by-default live smoke discipline match the milestone contract.
+Define a default implementation-agent validation command and supporting docs that prove the existing local harness families without credentials, live provider calls, GitHub writes, or human input. Keep live read, live LLM, and live post smoke paths explicitly opt-in and skipped by default.
 
-## Gate Criteria
+## Acceptance Criteria
 
-- Every active PRD 0008 implementation issue is `Done` in Linear with an evidence comment.
-- Fresh Linear inventory proves no open PRD 0008 implementation issue remains besides the gate.
-- PRD 0009 remains ordered after PRD 0008; `AUR-260` must block `AUR-242`, or an explicitly equivalent first-PRD-0009 blocker must exist, and no PRD 0009 issue may be started before this gate and its docs closeout are complete.
-- Focused validation for AUR-212, AUR-232, and AUR-240 passes.
-- Full validation, docs check, py-compile, diff check, and backlog export check pass.
-- Durable docs explain the final live LLM guardrail, adapter, opt-in, redaction, budget, retry, failure, smoke-test, reviewer-context, and adapter-boundary contracts.
-- The milestone-complete documentation refactor/audit is complete before `AUR-260` moves to `Done`.
-- Fresh subagent review of code, tests, docs, Linear evidence, and gate evidence reports no material issues.
-- Default commands still cannot call live providers, write GitHub, require credentials, or require human input.
-- No `.ws/`, temporary Linear export, live LLM artifact, live-post artifact, audit scratch file, or subagent scratch file remains.
+- Default validation command covers fixture, schema/config, graph, quality, redaction, approval, marker/hash, fake writer, real-writer contract, GitHub dry-run, and live smoke prerequisite contracts without credentials.
+- `live_read`, `live_llm`, and `live_post` markers are registered and skipped by default.
+- Manual live post remains represented as an opt-in disposable-target contract, not a default command.
+- Marker/hash golden tests remain named as default validation coverage.
+- Real writer tests remain default-safe through fake transports only.
+- Documentation names the command an implementation agent should run before handing off a slice.
+- Full default suite, docs check, py-compile, and diff check pass.
 
 ## Plan
 
-1. Move `AUR-260` to `In Progress` after committing this plan.
-2. Audit Linear:
-   - Re-fetch PRD 0008 milestone and issues.
-   - Re-read AUR-212/AUR-232/AUR-240 evidence comments.
-   - Verify `AUR-260` blocks `AUR-242`, or record the exact equivalent first-PRD-0009 blocker.
-   - Inventory every PRD 0009 issue and verify none is `In Progress` or `Done` before this gate/docs closeout finishes.
-3. Audit repository docs:
+1. Audit existing validation surfaces:
+   - `pyproject.toml`
+   - `tests/conftest.py`
    - `README.md`
-   - `docs/architecture/llm-data-handling.md`
-   - `docs/architecture/reviewer-config.md`
-   - `docs/architecture/state-graph.md`
    - `docs/harnesses/harness-engineering.md`
-   - `docs/plans/implementation-plan.md`
-   - `docs/product/rules.md`
-   - `docs/prds/0008-live-llm.md`
-   - `docs/prds/0010-agent-context-and-adapter-boundaries.md`
-   - `docs/decisions/`
-4. Run validation:
-   - `.venv/bin/python -m pytest tests/test_llm_policy.py -q`
-   - `.venv/bin/python -m pytest tests/test_adapter_boundaries.py tests/test_contract_boundaries.py -q`
-   - `.venv/bin/python -m pytest tests/test_live_llm_adapter.py -q`
-   - `.venv/bin/python -m pytest tests/test_config.py tests/test_context_budget.py tests/test_reviewer_context.py tests/test_redaction.py -q`
-   - `.venv/bin/python -m pytest tests/test_cli.py tests/test_tracer_fixture_run.py tests/test_render.py tests/test_posting.py tests/test_payload_validation.py tests/test_payload_hashes.py -q`
+   - `docs/implementation/README.md`
+   - `docs/architecture/github-integration.md`
+   - `docs/architecture/side-effects.md`
+   - marker/hash, writer, live-read, live-LLM, and live-post tests
+2. Prefer a docs-first implementation unless audit proves a wrapper command is needed.
+3. If adding a wrapper command, make it default-safe:
+   - no credentials required;
+   - no live GitHub write;
+   - no live LLM call;
+   - no human prompt by default;
+   - exits non-zero on failed local checks.
+4. Update narrow durable docs so the default handoff command and opt-in live command separation are discoverable.
+5. Run focused validation:
+   - `.venv/bin/python -m pytest tests/test_tracer_fixture_run.py tests/test_config.py tests/test_stage_cursor.py tests/test_routing.py tests/test_reviewer_runs.py -q`
+   - `.venv/bin/python -m pytest tests/test_findings.py tests/test_reviewer_json_repair.py tests/test_quality.py tests/test_diff_anchor.py tests/test_quality_testing.py tests/test_clarification.py tests/test_clarification_resume.py tests/test_optional_reviewer_failure.py tests/test_verdict.py -q`
+   - `.venv/bin/python -m pytest tests/test_reviewer_context.py tests/test_prompt_injection_memory.py tests/test_redaction.py tests/test_contract_boundaries.py tests/test_adapter_boundaries.py -q`
+   - `.venv/bin/python -m pytest tests/test_payload_hashes.py tests/test_markers.py tests/test_marker_hardening.py tests/test_payload_validation.py tests/test_posting.py tests/test_approval.py -q`
+   - `.venv/bin/python -m pytest tests/test_no_approved_findings.py tests/test_fake_writer.py tests/test_post_mode_graph.py tests/test_github_writer.py tests/test_live_post_contract.py -q`
+   - `.venv/bin/python -m pytest tests/test_github_fake_read.py tests/test_github_read_gaps.py tests/test_github_pagination.py tests/test_github_memory_trust.py tests/test_conversation_routing.py tests/test_github_dry_run_cli.py tests/test_live_read_smoke.py tests/test_live_llm_adapter.py -q`
    - `.venv/bin/python -m pytest -q`
    - `.venv/bin/python -m py_compile src/reviewgraph/*.py`
    - `.venv/bin/python scripts/check_docs.py`
    - `git diff --check`
-5. Create a temporary Linear backlog export for PRD 0008/0009 ordering evidence. The export must include `AUR-212`, `AUR-232`, `AUR-240`, `AUR-260`, `AUR-242`, and all other PRD 0009 issues with statuses and blocker/blocking relationships. Run `scripts/check_docs.py --backlog-export <temp>`, record the check output and export hash for Linear evidence, then delete the export.
-6. Complete the milestone documentation refactor/audit before gate closure:
-   - Reconcile durable docs so a future agent can discover final PRD 0008 behavior without reading Linear comments first.
-   - Update only durable docs that are stale or missing key decisions; avoid changing docs that already state the contract accurately.
-   - Ensure docs cover progressive disclosure: top-level current slice in `README.md`, product guardrails in `docs/product/`, architecture contracts in `docs/architecture/`, harness commands in `docs/harnesses/`, PRD contract in `docs/prds/0008-live-llm.md`, and durable tradeoffs in `docs/decisions/` only if needed.
-   - Commit docs changes separately from validation/evidence commits.
-7. Re-run post-doc validation after any docs closeout commit:
-   - `.venv/bin/python scripts/check_docs.py`
-   - `git diff --check`
-   - Any focused docs-related tests or validators affected by changed docs.
-8. Use fresh subagents to review the gate evidence, docs refactor/audit, Linear relationships, and issue/milestone closure decision.
-9. Move `AUR-260` to `In Review`, add a Linear gate evidence comment, then move it to `Done` only after review is clean and the documentation refactor/audit is complete.
-10. After `AUR-260` is `Done`, add a project/milestone status update if Linear exposes one, and do not start PRD 0009 until the final gate evidence is attached.
+6. Use fresh subagents to review the issue implementation and docs until no material findings remain.
+7. Commit implementation/docs and any review fixes separately.
+8. Move `AUR-242` to `In Review`, add evidence comment, then move it to `Done`.
 
-## Acceptance Mapping
+## Expected Implementation Shape
 
-- Live opt-in/default fake behavior -> AUR-240 evidence, `tests/test_live_llm_adapter.py`, `tests/test_cli.py`.
-- Policy/audit/redaction/budget guardrails -> AUR-212 evidence, `tests/test_llm_policy.py`, `docs/architecture/llm-data-handling.md`.
-- Adapter boundaries -> AUR-232 evidence, `tests/test_adapter_boundaries.py`, `tests/test_contract_boundaries.py`.
-- Default-safe harness -> full default pytest, live markers skipped, docs harness text.
-- Milestone sequencing -> Linear milestone inventory plus backlog export check proving `AUR-260` blocks `AUR-242` or equivalent first-PRD-0009 blocker.
-- Documentation closeout -> durable docs audit/refactor completed before `AUR-260` is `Done`, with fresh subagent review and validation evidence.
+Likely durable edits:
 
-## Required Linear Gate Evidence Comment
+- `docs/harnesses/harness-engineering.md`: name the default handoff command and the focused command families; keep live API discipline separate.
+- `docs/implementation/README.md`: explain local validation versus backlog-order validation for agents working from Linear.
+- `README.md`: surface the default validation command near useful validation commands if needed.
 
-The final AUR-260 evidence comment must include:
+Potential code/script edit only if docs are insufficient:
 
-- Implementation issue inventory: `AUR-212`, `AUR-232`, and `AUR-240` statuses plus links to their evidence comments.
-- Validation matrix: focused AUR-212/AUR-232/AUR-240 commands, full test suite, py-compile, docs check, diff check, backlog export check outputs, and post-doc-closeout validation outputs.
-- Backlog/export proof: temp export hash, included issues, relationship proof for `AUR-260 -> AUR-242` or equivalent, and confirmation the temp export was deleted.
-- Documentation audit result: docs inspected, docs changed or explicitly left unchanged, commit hashes, and progressive-disclosure coverage.
-- Fresh subagent review outcomes: names/ids and final clean result.
-- Cleanup proof: no `.ws/`, temp export, live artifacts, live-post artifacts, audit scratch files, or subagent scratch files remain.
-- Acceptance mapping: live opt-in/default fake, policy/audit/redaction/budget, adapter boundaries, live smoke, default-safe tests, and milestone sequencing.
+- Add a tiny validation script that runs the default-safe checks and documents its exact scope. Do not add live/manual flags unless the existing docs need a stable command name for them.
 
 ## Out Of Scope
 
-- New live provider capabilities beyond the first opt-in HTTP transport path.
-- Tool-using reviewer agents.
-- Repository checkout/test execution by reviewers.
-- Public production posting.
-- PRD 0009 implementation.
+- Running live read, live LLM, or live post smoke by default.
+- Adding a production GitHub posting command.
+- Changing marker grammar, hash domains, approval semantics, or writer behavior unless the audit finds a direct documentation mismatch.
+- Reworking the fixture corpus or graph behavior.
+- Adding CI provider configuration.
