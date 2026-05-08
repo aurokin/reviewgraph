@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from threading import Lock
 from typing import Iterable, Protocol
 
 from reviewgraph.markers import (
@@ -165,6 +166,7 @@ class GitHubIssueCommentWriter:
         self.timeout_seconds = timeout_seconds
         self.marker_limits = marker_limits
         self._post_attempted_keys: set[tuple[str, str, str, str]] = set()
+        self._post_attempted_lock = Lock()
 
     def post_issue_comment(
         self,
@@ -186,7 +188,11 @@ class GitHubIssueCommentWriter:
             )
 
         key = _retry_sequence_key(writer_input)
-        if key in self._post_attempted_keys:
+        with self._post_attempted_lock:
+            already_attempted = key in self._post_attempted_keys
+            if not already_attempted:
+                self._post_attempted_keys.add(key)
+        if already_attempted:
             return self._recover_after_potential_acceptance(
                 writer_input,
                 post_attempt_count=0,
@@ -195,7 +201,6 @@ class GitHubIssueCommentWriter:
                 safe_to_post_retryable=False,
             )
 
-        self._post_attempted_keys.add(key)
         endpoint = _issue_comment_endpoint(writer_input)
         try:
             response = self.transport.post_issue_comment(
@@ -447,6 +452,9 @@ def _safe_request_id(request_id: str | None) -> str | None:
         return None
     redacted = redact_text(request_id)
     if redacted.redacted:
+        return None
+    lowered = request_id.casefold()
+    if any(secret in lowered for secret in ("token", "ghp_", "github_pat_", "gho_", "ghs_", "ghu_")):
         return None
     if len(request_id) > 128:
         return None

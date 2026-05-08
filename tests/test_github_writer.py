@@ -1,6 +1,7 @@
 from dataclasses import replace
 from pathlib import Path
 import ast
+from threading import Barrier, Thread
 
 import pytest
 
@@ -177,6 +178,17 @@ def test_github_writer_drops_unsafe_request_ids_from_evidence() -> None:
     assert result.transport_summary.request_id is None
 
 
+def test_github_writer_drops_plain_token_fragment_request_ids_from_evidence() -> None:
+    writer_input = _writer_input()
+    transport = _PostTransport(GitHubIssueCommentPostResponse("comment-1", "reviewgraph-bot", "REQ-token-123"))
+    writer = GitHubIssueCommentWriter(transport=transport)
+
+    result = writer.post_issue_comment(writer_input)
+
+    assert result.writer_result.status == WriterStatus.POSTED
+    assert result.transport_summary.request_id is None
+
+
 def test_ambiguous_reason_code_enters_recovery_without_extra_flag() -> None:
     writer_input = _writer_input()
     transport = _PostTransport(
@@ -275,6 +287,30 @@ def test_ambiguous_accepted_timeout_marker_empty_is_unresolved_and_retry_is_reco
     assert second.transport_summary.post_attempt_count == 0
     assert second.transport_summary.recovery_scan_count == 1
     assert len(transport.calls) == 1
+
+
+def test_concurrent_same_input_calls_only_post_once() -> None:
+    writer_input = _writer_input()
+    transport = _ConcurrentPostTransport(2, GitHubIssueCommentPostResponse("comment-1", "reviewgraph-bot"))
+    recovery = _PagesMarkerTransport(
+        {None: MarkerCommentPage(comments=(), completed=True, request_id="REQ-recovery")}
+    )
+    writer = GitHubIssueCommentWriter(transport=transport, recovery_marker_transport=recovery)
+    results = []
+
+    def post() -> None:
+        results.append(writer.post_issue_comment(writer_input))
+
+    threads = [Thread(target=post), Thread(target=post)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert len(transport.calls) == 1
+    statuses = sorted(result.writer_result.status.value for result in results)
+    assert statuses == ["failed", "posted"]
+    assert any(result.outcome_detail == GitHubIssueCommentWriterOutcomeDetail.FORBIDDEN_SECOND_POST for result in results)
 
 
 def test_ambiguous_recovery_trusted_conflict_fails_closed_without_second_post() -> None:
@@ -398,6 +434,25 @@ class _PostTransport:
         if self.failure is not None:
             raise self.failure
         return self.response
+
+
+class _ConcurrentPostTransport(_PostTransport):
+    def __init__(self, parties: int, response: object) -> None:
+        super().__init__(response)
+        self.barrier = Barrier(parties, timeout=1)
+
+    def post_issue_comment(
+        self,
+        owner_repo: str,
+        pr_number: int,
+        body: dict[str, str],
+        timeout_seconds: int,
+    ):
+        try:
+            self.barrier.wait()
+        except Exception:
+            pass
+        return super().post_issue_comment(owner_repo, pr_number, body, timeout_seconds)
 
 
 class _PagesMarkerTransport:

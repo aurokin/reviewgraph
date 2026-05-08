@@ -70,6 +70,8 @@ def build_finalized_issue_comment_writer_input(
         raise ValueError("finalized writer input requires finalization result")
     if not isinstance(approval, ApprovalDecision):
         raise ValueError("finalized writer input requires approval decision")
+    if not approval.approved:
+        raise ValueError("finalized writer input requires approved decision")
     if finalization.finalization_status.state != FinalizationState.FINALIZED:
         raise ValueError("finalized writer input requires finalized state")
     if not finalization.writer_input_released:

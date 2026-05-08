@@ -192,6 +192,17 @@ def test_finalized_writer_input_rejects_rebound_approval_actor() -> None:
         )
 
 
+def test_finalized_writer_input_rejects_rejected_approval() -> None:
+    payload = _payload()
+
+    with pytest.raises(ValueError, match="approved decision"):
+        build_finalized_issue_comment_writer_input(
+            finalization=_finalization(payload=payload),
+            approval=replace(_approval(payload=payload), approved=False),
+            run_id="run-123",
+        )
+
+
 def _finalization(payload) -> FinalizeGithubPayloadResult:
     return FinalizeGithubPayloadResult(
         actor_permission_finalization_check=ActorPermissionFinalizationCheckResult(
