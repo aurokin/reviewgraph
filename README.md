@@ -16,7 +16,18 @@ The current implementation includes the PRD 0002 fixture tracer bullet, the PRD 
 PYTHONPATH=src python -m reviewgraph.cli --fixture-pr basic-pr --print-markdown
 ```
 
-Useful validation commands:
+Default handoff validation:
+
+```bash
+python -m pytest -q
+python -m py_compile src/reviewgraph/*.py
+python scripts/check_docs.py
+git diff --check
+```
+
+This sequence is default-safe: it uses fixtures and fake transports, skips marked live smoke tests unless their opt-in environment variables are set, does not write to GitHub, does not call live LLM providers, and does not require credentials or human input.
+
+Focused validation commands:
 
 ```bash
 python -m pytest tests/test_tracer_fixture_run.py
@@ -25,9 +36,8 @@ python -m pytest tests/test_reviewer_context.py tests/test_prompt_injection_memo
 python -m pytest tests/test_findings.py tests/test_reviewer_json_repair.py tests/test_quality.py tests/test_diff_anchor.py tests/test_quality_testing.py tests/test_clarification.py tests/test_clarification_resume.py tests/test_optional_reviewer_failure.py tests/test_verdict.py -q
 python -m pytest tests/test_github_fake_read.py tests/test_github_read_gaps.py tests/test_github_pagination.py tests/test_github_memory_trust.py tests/test_conversation_routing.py tests/test_github_dry_run_cli.py tests/test_live_read_smoke.py -q
 python -m pytest tests/test_llm_policy.py tests/test_adapter_boundaries.py tests/test_live_llm_adapter.py -q
+python -m pytest tests/test_validation_contract.py -q
 python -m pytest tests/test_live_post_contract.py -q
-python -m pytest
-python scripts/check_docs.py
 ```
 
 ## Side-effect status

@@ -222,7 +222,18 @@ python scripts/check_docs.py
 git diff --check
 ```
 
-For milestone gates, also run the Linear backlog export check described in `docs/implementation/README.md` and delete the temporary export before handoff. The default matrix must not post to GitHub, call live LLMs, require credentials, or require human input.
+For implementation handoff, run the default validation sequence:
+
+```bash
+python -m pytest -q
+python -m py_compile src/reviewgraph/*.py
+python scripts/check_docs.py
+git diff --check
+```
+
+The default suite includes marker/hash golden tests, fake writer tests, real writer contract tests with fake transports, manual live-post contract tests with the marked smoke skipped, and unmarked live smoke prerequisite checks. It must not post to GitHub, call live LLMs, require credentials, or require human input.
+
+For milestone gates, also run the Linear backlog export check described in `docs/implementation/README.md` and delete the temporary export before handoff.
 
 ## Tracer Bullets
 
@@ -247,14 +258,16 @@ Command classes:
 pytest
 pytest -m live_read
 pytest -m live_llm
-pytest -m live_post --requires-human-approval
+pytest -m live_post
 ```
 
 Live read may run only after fake pagination and read-gap harnesses exist. Live LLM may run only after context package, redaction, minimization, budget, fake reviewer, policy, adapter, retry, failure, and smoke-prerequisite harnesses exist. Live post may run only against a disposable allowlisted PR after fake writer, approval, freshness, actor/permission, final hash, and marker reconciliation harnesses exist.
 
+The live read, live LLM, and live post command classes require their respective opt-in environment variables before marked smoke tests run: `REVIEWGRAPH_LIVE_READ=1`, `REVIEWGRAPH_LIVE_LLM=1`, or `REVIEWGRAPH_LIVE_POST=1`. Missing opt-in keeps the marked tests skipped. Missing prerequisites after opt-in produce blocked artifacts or skips instead of default-test failures.
+
 The live LLM command surface is explicitly opt-in. Default test commands skip the `live_llm` marker. Enabled smoke runs require `REVIEWGRAPH_LIVE_LLM=1`, provider, model, and credential environment variables; missing prerequisites produce a blocked artifact and no provider call.
 
-The manual live-post command surface is intentionally library-level for now. It requires a helper-created approved-post artifact whose source dry-run hash is distinct from the approved-post artifact hash, and its evidence must include manual cleanup guidance because automated comment cleanup is out of scope.
+The manual live-post command surface is intentionally library-level for now. It uses `pytest -m live_post` with `REVIEWGRAPH_LIVE_POST=1` plus the disposable-target prerequisites defined by `tests/test_live_post_contract.py`. It requires a helper-created approved-post artifact whose source dry-run hash is distinct from the approved-post artifact hash, and its evidence must include manual cleanup guidance because automated comment cleanup is out of scope.
 
 ## Documentation Contract Check
 

@@ -15,7 +15,18 @@ When a Linear issue exposes a missing durable rule, update the narrowest doc ins
 
 ## Validation
 
-Run the documentation contract check before handing off documentation or planning work:
+Run the default handoff validation sequence before handing off implementation work:
+
+```bash
+python -m pytest -q
+python -m py_compile src/reviewgraph/*.py
+python scripts/check_docs.py
+git diff --check
+```
+
+The default sequence must use fixtures and fake transports only. It must not require credentials, call live LLM providers, post to GitHub, or wait for human input. Marked live smoke tests are collected but skipped unless their explicit opt-in environment variables are set.
+
+Run the documentation contract check before handing off documentation-only or planning work:
 
 ```bash
 python scripts/check_docs.py
