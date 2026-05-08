@@ -30,7 +30,7 @@ This issue should introduce a smoke harness and contract tests, not a production
 - Live post can target only a top-level issue comment through the real writer adapter from `AUR-241`.
 - The real writer receives only `FinalizedIssueCommentWriterInput` produced by the existing finalization gates.
 - Approval is explicit, interactive, and human-owned. Non-TTY, CI, webhook, config-only, or fixture-only state cannot satisfy live post approval.
-- The human must see the live actor, credential source, endpoint-specific permission proof, target, marker scan result, dry-run artifact hash, and final payload hash before typing the exact final payload hash.
+- The human must see the live actor, credential source, endpoint-specific permission proof, target, marker scan result, dry-run artifact hash, exact final issue-comment payload, and final payload hash before typing the exact final payload hash. The exact payload may be printed to the TTY approval surface but must not be persisted in smoke evidence.
 - Live pre-writer proofs for actor/permission, target freshness, and marker pagination must be produced by read-only live transports immediately before approval and finalization.
 - Fixture state or prebuilt pass objects cannot substitute for live proof of actor, permission, target freshness, or marker pagination.
 - Disposable safety must be proven before any approval prompt or writer call by an explicit allowlist and a disposable PR marker convention in the live PR metadata, such as title/body/head branch text.
@@ -39,7 +39,7 @@ This issue should introduce a smoke harness and contract tests, not a production
 - All live read and writer attempt summaries are redacted and allowlisted: endpoint kind, page count when relevant, retryability, stable failure code, and GitHub request ID when available. No tokens, raw stderr, request headers, raw PR comment bodies, or raw final payload bodies.
 - Live-post proof objects must be module-owned. `github_live_post.py` must not accept caller-supplied `ActorPermissionProbeResult`, `TargetFreshnessProbeResult`, `MarkerReconciliationResult`, approval pass objects, or finalized writer input as live proof; it must derive them internally from a private live-proof envelope produced by the injected `gh` runner in the same smoke attempt.
 - The approval/finalization timing is two-phase: pre-approval live reads may be shown to the human, but after the typed approval hash is accepted the module must repeat the live actor/permission, target freshness, and marker reads and pass only those post-approval probes into `finalize_github_payload(...)`.
-- Live post mutating command construction has an exact allowlist: the only allowed write command is `gh api --method POST /repos/{owner}/{repo}/issues/{pr_number}/comments` with JSON body supplied via stdin or an injected transport body object containing only `{"body": final_payload.body}`. No GraphQL, `gh pr review`, `gh pr comment`, `gh issue comment`, form flags, extra fields, alternate methods, edits, deletes, or raw shell strings are permitted.
+- Live post mutating command construction has an exact allowlist: the only allowed write command is `gh api --method POST repos/{owner}/{repo}/issues/{pr_number}/comments --input -` with JSON body supplied via stdin or an injected transport body object containing only `{"body": final_payload.body}`. No GraphQL, `gh pr review`, `gh pr comment`, `gh issue comment`, form flags, extra fields, alternate methods, edits, deletes, or raw shell strings are permitted.
 
 ## Implementation Shape
 
@@ -81,12 +81,12 @@ This issue should introduce a smoke harness and contract tests, not a production
    - Reconstruct typed `PostingPlan`, selected `ClassifiedFinding` objects, and `CandidateIssueCommentPayload` from the artifact and rerun `build_approval_proof(...)` / `build_approval_decision(...)` with live pre-approval actor-permission proof. Do not directly instantiate approval pass objects from artifact fields.
    - Rebuild the final payload through `build_approved_final_issue_comment(...)` and verify it equals the artifact body/hash before any approval prompt. Hand-written artifacts, partial artifacts, direct final-body-only artifacts, and artifacts that cannot pass the normal candidate/approval/final builders fail closed.
    - Verify artifact hash, exact target, target hash, selected item/finding hash, marker hashes, run ID, artifact kind, endpoint, final payload body hash, and final payload hash before any approval prompt.
-   - Show actor, credential source, endpoint permission, target, marker state, dry-run artifact hash, and final hash to the human.
+   - Show actor, credential source, endpoint permission, target, marker state, dry-run artifact hash, exact final issue-comment payload, and final hash to the human.
    - Require a TTY/human approval surface and exact typed final-payload-hash confirmation.
-   - Evidence must record approval-surface booleans without raw body text: `tty_required=true`, `shown_actor=true`, `shown_permission=true`, `shown_dry_run_artifact_hash=true`, `shown_final_payload_hash=true`, and `typed_hash_matched=true`.
+   - Evidence must record approval-surface booleans without raw body text: `tty_required=true`, `shown_actor=true`, `shown_permission=true`, `shown_marker_scan=true`, `shown_dry_run_artifact_hash=true`, `shown_final_payload_hash=true`, and `typed_hash_matched=true`.
    - After typed hash confirmation, repeat live actor/permission, target freshness, and marker reads and only then call `finalize_github_payload(...)`.
    - Call `finalize_github_payload(...)`, `build_finalized_issue_comment_writer_input(...)`, and `GitHubIssueCommentWriter(...)` only after all preflight and approval checks pass.
-   - Use the real writer adapter and an injected `gh api --method POST /repos/{owner}/{repo}/issues/{pr_number}/comments` transport only in the manual opt-in path.
+   - Use the real writer adapter and an injected `gh api --method POST repos/{owner}/{repo}/issues/{pr_number}/comments --input -` transport only in the manual opt-in path.
    - Preserve the same one-POST guard and writer evidence from `AUR-241`.
    - `RECONCILED_EXISTING` reports no writer invocation and no POST command; `SAFE_TO_POST` is the only path that may build finalized writer input and reach the writer.
    - On `POSTED`, evidence must include comment ID or URL plus explicit manual cleanup/retention guidance. Automated cleanup is out of scope and must not delete or edit the comment.
@@ -112,7 +112,7 @@ Create `tests/test_live_post_contract.py` covering:
 - Live proof uses read-only `gh api` command construction for actor, permission, PR target, compare/merge-base, and existing issue-comment pagination before any POST command.
 - Permission proof supports only explicit `REVIEWGRAPH_LIVE_POST_CREDENTIAL_SOURCE=pat` in AUR-224; fine-grained PAT, GitHub App, unknown, or absent credential source blocks before approval.
 - Target freshness uses exact read-only compare endpoint `GET /repos/{owner}/{repo}/compare/{base_sha}...{head_sha}` and fails closed when `merge_base_commit.sha` is absent or mismatched.
-- Mutating `gh api --method POST /repos/{owner}/{repo}/issues/{pr_number}/comments` is rejected unless all gates pass and exact typed final hash confirmation matches; alternate write commands, GraphQL, form flags, extra JSON fields, edit/delete methods, and shell strings are rejected.
+- Mutating `gh api --method POST repos/{owner}/{repo}/issues/{pr_number}/comments --input -` is rejected unless all gates pass and exact typed final hash confirmation matches; alternate write commands, GraphQL, form flags, extra JSON fields, edit/delete methods, and shell strings are rejected.
 - Approved-post artifacts must reconstruct the normal `PostingPlan`, `ClassifiedFinding`, candidate payload, approval proof, and final payload builder path; direct approval-object or final-body-only bypasses fail.
 - Typed hash mismatch blocks before finalization/writer.
 - Live post supports only top-level issue-comment artifact kind and endpoint.

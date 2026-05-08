@@ -54,7 +54,7 @@ The PRD 0006 GitHub read/memory slice now proves these contracts in fake adapter
 - GitHub fake-read dry-run feeds the same renderer and graph contracts as fixture dry-run and proves no writer path is reachable;
 - live read smoke is opt-in, skipped by default, read-only, and separated from production review, approval, finalization, and writer paths.
 
-Remaining graph work is intentionally staged in later PRDs: production live GitHub review, live LLM reviewer execution, public production posting, and manual live post smoke. Approval/finalization gates, marker reconciliation, fake writer proof, and the real writer adapter contract are implemented behind default-safe harnesses.
+Remaining graph work is intentionally staged in later PRDs: production live GitHub review, live LLM reviewer execution, and public production posting. Approval/finalization gates, marker reconciliation, fake writer proof, the real writer adapter contract, and the manual disposable live-post smoke contract are implemented behind default-safe harnesses.
 
 ## MVP constraints
 

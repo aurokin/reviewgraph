@@ -27,4 +27,5 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 markers = [
     "live_read: opt-in read-only GitHub live smoke tests skipped unless REVIEWGRAPH_LIVE_READ=1",
+    "live_post: manual opt-in disposable PR GitHub post smoke tests skipped unless REVIEWGRAPH_LIVE_POST=1",
 ]

@@ -72,6 +72,35 @@ Live read smoke artifacts use a stable local JSON shape:
 
 The smoke path does not run reviewers, create posting plans, prompt for approval, finalize payloads, or make writer modules reachable.
 
+## Manual live post smoke
+
+Manual live post smoke is a narrow proof harness, not production posting. It lives outside the default GitHub read adapter and public CLI in `reviewgraph.github_live_post`, is skipped by default behind `@pytest.mark.live_post`, and requires `REVIEWGRAPH_LIVE_POST=1` plus all manual prerequisites before it can attempt a write.
+
+The live post smoke target must be disposable and exact:
+
+- `REVIEWGRAPH_LIVE_POST_PR` and `REVIEWGRAPH_LIVE_POST_ALLOWED_TARGET` must both be the same `owner/repo#pr_number`.
+- `REVIEWGRAPH_LIVE_POST_DISPOSABLE_MARKER` must equal `reviewgraph-disposable-live-post-ok`, and that exact text must appear in the live PR title, body, or head branch/ref.
+- Fork PRs are rejected in MVP live post smoke.
+- `REVIEWGRAPH_LIVE_POST_CREDENTIAL_SOURCE` must be `pat`; fine-grained PATs, GitHub App installation tokens, GitHub App user tokens, and unknown credential sources fail closed until a later read-only proof policy names exact fields.
+
+The smoke consumes a helper-created approved-post artifact, not generic dry-run JSON. The artifact preserves the full candidate posting plan, every candidate `ClassifiedFinding` referenced by public payload items, the candidate payload binding fields, the approved subset, the exact canonical final issue-comment body, a source dry-run artifact hash, and a separate canonical approved-post artifact hash. Validation reruns the normal posting, candidate payload, approval proof, approval decision, and final payload builders; hand-written, candidate-only, selected-only, final-body-only, or schema-drifted artifacts fail closed.
+
+Live pre-writer proof is two-phase. The smoke may show pre-approval live actor, permission, target, marker, source artifact hash, exact final issue-comment payload, and final payload hash evidence to the human, but after the typed final-payload-hash confirmation matches, it repeats live actor/permission, target freshness, and marker reads and passes only those post-approval probes into finalization.
+
+Read-only proof endpoints are allowlisted:
+
+- `GET /user` for the authenticated actor.
+- `GET /repos/{owner}/{repo}` for broad repo permission, mapped from authenticated-user `permissions`: `admin`, `maintain`, `push -> write`, `triage`, `pull -> read`.
+- `GET /repos/{owner}/{repo}/pulls/{pr_number}` for current base/head target fields.
+- `GET /repos/{owner}/{repo}/compare/{base_sha}...{head_sha}` for `merge_base_commit.sha`.
+- `GET /repos/{owner}/{repo}/issues/{pr_number}/comments?per_page=100&page=N` for complete marker pagination.
+
+Marker pagination caps are `per_page=100`, `max_pages=5`, `max_comments=500`, and `timeout_seconds=20`. Cap breaches, repeated cursors, malformed pages, timeout, rate limit, forbidden, not found, unavailable service, missing merge base, or unknown transport fail closed before writer input.
+
+The only allowed mutating command in the manual live-post boundary is exactly `gh api --method POST repos/{owner}/{repo}/issues/{pr_number}/comments --input -` with a JSON object containing only `{"body": final_payload.body}` supplied through stdin by the injected writer transport. GraphQL, `gh pr review`, `gh pr comment`, `gh issue comment`, form flags, extra JSON fields, alternate methods, edit/delete endpoints, and shell strings are rejected.
+
+Live post evidence records source dry-run artifact hash, approved-post artifact hash, final payload hash, actor and permission shown, typed hash matched, marker page/comment counts, retryability, reason codes, request IDs when available, POST attempt count, comment ID when posted, and manual cleanup/retention guidance. Evidence and transport summaries must not persist raw final payload bodies, raw PR comment bodies, request headers, tokens, or raw stderr. Automated cleanup is out of scope; disposable smoke comments must be removed manually when cleanup is desired.
+
 Conversation data is review memory, not an instruction stream. The graph should preserve it as structured context and let reviewer agents cite it when relevant.
 
 The review target should be explicit and stable in state. A run should know whether it reviewed a PR head SHA against a base SHA, a merge-base diff, or a custom fixture target; rendered output should include that target so findings can be interpreted against the right version of the diff.

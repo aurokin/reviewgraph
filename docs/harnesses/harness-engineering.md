@@ -185,6 +185,7 @@ python -m pytest tests/test_findings.py tests/test_reviewer_json_repair.py tests
 - Real writer harnesses must keep normal marker reconciliation finalization-owned while testing writer-local recovery for ambiguous accepted-write POST outcomes. Recovery tests should supply only finalized writer input plus recovery comment-scan transport/configuration, prove no second POST happens in the same approved run/retry sequence, and prove incomplete, empty, or failed recovery scans return fail-closed or retryable-unknown evidence.
 - Real writer adapter tests must use fake transports by default, assert the exact `POST /repos/{owner}/{repo}/issues/{pr_number}/comments` request shape, validate response-author binding to the approved actor, assert typed writer outcome evidence, and prove the module has no ambient network, credential, shell, `gh`, requests, or GitHub SDK dependency. Repeated same-input calls after ambiguous or malformed accepted outcomes must be recovery-only and post zero additional comments.
 - Writer idempotency harnesses prove retry safety for one approved run/retry sequence. Cross-process duplicate prevention is deferred unless an external lock/storage design is added.
+- Manual live-post contract tests live in `tests/test_live_post_contract.py`. Unmarked tests run in the default suite with fake runners only. The single marked smoke is skipped unless `REVIEWGRAPH_LIVE_POST=1`; even then it blocks without exact `owner/repo#pr` allowlist, disposable marker, `pat` credential-source declaration, approved-post artifact, TTY approval surface, typed final hash match, live post-approval actor/permission proof, target freshness proof with compare-derived merge base, and complete marker pagination. The contract rejects fake proof objects, hand-written artifacts, candidate-only artifacts, alternate write commands, fork PRs, and non-top-level issue-comment payloads.
 
 ## Tracer Bullets
 
@@ -213,6 +214,8 @@ pytest -m live_post --requires-human-approval
 ```
 
 Live read may run only after fake pagination and read-gap harnesses exist. Live LLM may run only after context package, redaction, minimization, budget, and fake reviewer harnesses exist. Live post may run only against a disposable allowlisted PR after fake writer, approval, freshness, actor/permission, final hash, and marker reconciliation harnesses exist.
+
+The manual live-post command surface is intentionally library-level for now. It requires a helper-created approved-post artifact whose source dry-run hash is distinct from the approved-post artifact hash, and its evidence must include manual cleanup guidance because automated comment cleanup is out of scope.
 
 ## Documentation Contract Check
 

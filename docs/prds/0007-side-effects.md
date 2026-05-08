@@ -35,6 +35,7 @@ Implement side effects only after dry-run, quality classification, posting plan 
 - The writer receives only finalized writer input after marker reconciliation returns `SAFE_TO_POST`.
 - The real writer may perform marker rescans only as writer-local recovery after an ambiguous accepted-write POST result; normal pre-write marker reconciliation remains finalization-owned, and ambiguous recovery must not issue a second POST in the same approved run/retry sequence.
 - The real writer uses typed redacted transport evidence and records a same-sequence one-POST guard before potentially accepted write attempts.
+- Manual live post smoke is opt-in, skipped by default, disposable-PR-only, exact-target allowlisted, TTY/human approved, typed-final-hash confirmed, and uses the real writer only after live post-approval actor/permission, target freshness, marker pagination, and finalization gates pass.
 - If the PR target changes before posting, ReviewGraph fails closed and emits dry-run output.
 - If no findings are approved, the writer is not invoked.
 
@@ -44,7 +45,7 @@ Implement side effects only after dry-run, quality classification, posting plan 
 - Tests assert `event: COMMENT` and `/pulls/{pr}/reviews` payloads are rejected.
 - Tests assert approving a subset changes the final payload hash and stale final payload hashes are rejected. Candidate payloads expose only visible-body and findings hash inputs; they are never accepted as writer input.
 - Tests assert a pre-seeded marker prevents duplicate posting after process restart.
-- Live post smoke is manual and only against disposable PRs.
+- Live post smoke tests are fake-contract/default-safe by default; the marked live smoke is manual and only against disposable exact-target PRs. The smoke records source dry-run artifact hash, approved-post artifact hash, final hash, one-POST evidence, marker pagination evidence, actor/permission display evidence, and manual cleanup expectations.
 
 ## Out of Scope
 

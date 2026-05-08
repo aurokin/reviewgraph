@@ -107,6 +107,18 @@ Only after preflight passes may finalization build the final issue-comment body,
 
 External read failures during approval or finalization fail closed. Timeout, rate limit, forbidden, not found, unavailable service, malformed response, unknown credential source, stale cached data, or missing checked-at timestamp cannot be treated as approval or freshness proof. These failures must emit redacted transport summaries with endpoint kind, retryability, stable failure code, and request ID when available.
 
+## Manual Live Post Smoke
+
+Manual live post smoke uses the same approval, finalization, marker reconciliation, finalized writer-input, and real writer contracts as the fake writer route. It is not a production post mode and is not exposed through the public CLI.
+
+The smoke can run only when a human opts in, a TTY is available, the target is an exact allowlisted disposable `owner/repo#pr_number`, the disposable marker `reviewgraph-disposable-live-post-ok` is present on the live PR, and the human types the exact final payload hash. Non-interactive contexts, fixture refs, fork PRs, missing approved-post artifacts, unsupported credential sources, stale target reads, missing merge-base proof, marker scan failure, or hash mismatch fail closed before writer reachability.
+
+The approved-post artifact is a structured bridge between dry-run/fake approval proof and live finalization. It contains the full candidate posting plan and candidate findings, plus the approved subset. The live post module validates that artifact by rerunning normal candidate payload, approval proof, and final payload construction. It must not accept caller-supplied approval pass objects, target probes, actor probes, marker results, finalized writer input, or final-body-only artifacts as live proof.
+
+Live proof is repeated after approval. Pre-approval reads are display evidence only; post-approval actor/permission, target freshness, and marker scans are the probes used by `finalize_github_payload`.
+
+When the manual smoke posts, evidence records one POST max and the created comment ID. Automated cleanup, editing, or deletion is not part of MVP; the disposable PR comment remains until a human removes it.
+
 ## Non-interactive mode
 
 In CI, webhook, config-only, or non-TTY CLI mode, MVP refuses post mode before approval input and before final payload construction. Do not infer approval from config alone, environment variables, previous approvals, or automation context. This is an explicit graph routing gate between `render_review` and `approval_gate`, not a prompt convention.
