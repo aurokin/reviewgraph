@@ -79,16 +79,17 @@ For milestone gates and blocker/order changes, also run `python scripts/check_do
 python -m pytest tests/test_tracer_fixture_run.py tests/test_config.py tests/test_stage_cursor.py tests/test_routing.py tests/test_reviewer_runs.py -q
 python -m pytest tests/test_findings.py tests/test_reviewer_json_repair.py tests/test_quality.py tests/test_diff_anchor.py tests/test_quality_testing.py tests/test_clarification.py tests/test_clarification_resume.py tests/test_optional_reviewer_failure.py tests/test_verdict.py -q
 python -m pytest tests/test_reviewer_context.py tests/test_prompt_injection_memory.py tests/test_redaction.py tests/test_contract_boundaries.py tests/test_adapter_boundaries.py -q
-python -m pytest tests/test_payload_hashes.py tests/test_markers.py tests/test_marker_hardening.py tests/test_payload_validation.py tests/test_posting.py tests/test_approval.py -q
+python -m pytest tests/test_payload_hashes.py tests/test_markers.py tests/test_marker_hardening.py tests/test_payload_validation.py tests/test_posting.py tests/test_approval.py tests/test_permissions.py tests/test_actor_permission_binding.py tests/test_target_freshness.py tests/test_non_interactive_posting.py -q
 python -m pytest tests/test_no_approved_findings.py tests/test_fake_writer.py tests/test_post_mode_graph.py tests/test_github_writer.py tests/test_live_post_contract.py -q
 python -m pytest tests/test_github_fake_read.py tests/test_github_read_gaps.py tests/test_github_pagination.py tests/test_github_memory_trust.py tests/test_conversation_routing.py tests/test_github_dry_run_cli.py tests/test_live_read_smoke.py tests/test_live_llm_adapter.py -q
+python -m pytest tests/test_validation_contract.py -q
 python -m pytest -q
 python -m py_compile src/reviewgraph/*.py
 python scripts/check_docs.py
 git diff --check
 ```
 
-If a wrapper command is added, it must run only default-safe checks unless explicitly passed a live/manual flag. It must not require credentials, mutate GitHub, call live LLMs, or require human input by default.
+The named default handoff validation sequence is full pytest, py-compile, docs check, and diff check. Focused commands are non-exhaustive aids for local iteration. If a wrapper command is added, it must run only default-safe checks unless explicitly passed a live/manual flag. It must not require credentials, mutate GitHub, call live LLMs, or require human input by default.
 
 ## Contract Guardrails
 
@@ -119,6 +120,7 @@ The milestone is complete when ReviewGraph proves:
 - live read, live LLM, and live post tests are marked and skipped by default;
 - live opt-in commands are documented separately from default validation;
 - marker/hash golden tests and fake writer/real writer contract tests are included in default-safe validation;
+- unmarked tests prove live marker registration and default skip wiring for `live_read`, `live_llm`, and `live_post`;
 - manual live-post smoke remains represented as an opt-in contract, not a default command;
 - full test suite, docs check, py-compile, diff check, and backlog export check pass;
 - AUR-242 and AUR-262 both have Linear evidence comments before Done.
