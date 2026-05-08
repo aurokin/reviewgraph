@@ -11,6 +11,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -137,7 +138,7 @@ def check_markdown_link_targets(relative: str, text: str) -> list[str]:
             or link.startswith("mailto:")
         ):
             continue
-        target = link.split("#", 1)[0]
+        target, fragment = split_markdown_target(link)
         if not target:
             continue
         target_path = (source_dir / target).resolve()
@@ -148,7 +149,50 @@ def check_markdown_link_targets(relative: str, text: str) -> list[str]:
             continue
         if not target_path.exists():
             errors.append(f"{relative}: link target does not exist: {link!r}")
+            continue
+        if fragment and target_path.suffix.lower() == ".md":
+            anchors = markdown_heading_anchors(target_path.read_text(encoding="utf-8"))
+            if fragment not in anchors:
+                errors.append(f"{relative}: link anchor does not exist: {link!r}")
     return errors
+
+
+def split_markdown_target(link: str) -> tuple[str, str | None]:
+    target, separator, fragment = link.partition("#")
+    if not separator:
+        return link, None
+    return target, unquote(fragment)
+
+
+def markdown_heading_anchors(text: str) -> set[str]:
+    anchors: set[str] = set()
+    counts: dict[str, int] = {}
+    in_fence = False
+    for line in text.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        match = re.match(r"^(#{1,6})\s+(.+?)\s*#*\s*$", line)
+        if not match:
+            continue
+        base = github_heading_slug(match.group(2))
+        count = counts.get(base, 0)
+        counts[base] = count + 1
+        anchors.add(base if count == 0 else f"{base}-{count}")
+    return anchors
+
+
+def github_heading_slug(text: str) -> str:
+    slug = text.strip().lower()
+    slug = re.sub(r"`([^`]*)`", r"\1", slug)
+    slug = re.sub(r"<[^>]+>", "", slug)
+    slug = re.sub(r"[^\w\s-]", "", slug)
+    slug = re.sub(r"\s+", "-", slug)
+    slug = re.sub(r"-+", "-", slug)
+    return slug.strip("-")
 
 
 def parse_backlog_export(path: Path) -> tuple[dict[str, Any], list[Issue], int]:
