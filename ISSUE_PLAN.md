@@ -28,7 +28,8 @@ Add deterministic live LLM data-handling guardrails before any live provider ada
 - Provider-bound request data must come from `ReviewerContextPackage`, not raw PR objects, full config maps, GitHub transports, side-effect state, or ambient process state.
 - Provider-bound request text is minimized and redacted by default.
 - Raw provider submission and raw trace persistence are separate explicit choices; live opt-in alone does not permit raw submission.
-- Live-call caps are enforced before provider execution. A passing provider execution plan carries explicit `live_call_budget_cost=1`.
+- Live-call caps are enforced before provider execution. A passing provider execution plan carries explicit `live_call_budget_cost=1` and returns an updated run-level budget reservation ledger so later reviewers cannot double-spend the same cap.
+- Provider execution data and persisted audit data are separate. Full request text may exist in memory for immediate provider submission, but default serialization records only audit-safe fields, hashes, sizes, context inventory, redaction status, raw flags, and opt-in proof.
 - Provider failures are represented by typed redacted summaries with stable reason codes.
 - Default tests cannot call live providers, require credentials, write GitHub, or require human input.
 
@@ -50,22 +51,30 @@ Add deterministic live LLM data-handling guardrails before any live provider ada
    - provider-bound request is built from `ReviewerContextPackage` and is redacted by default;
    - raw provider submission and raw trace persistence are separately gated and recorded;
    - live-call budget cost is explicit and rejected/deferred when `max_live_calls=0`, cumulative planned calls would exceed the cap, or multiple reviewers would exceed a positive cap;
-   - guardrail output records provider, model, reviewer, target hash, context policy, truncation status, redaction status, and budget cost;
+   - budget reservation is stateful: a cap of `1` with two live reviewer policy attempts passes the first, returns a ledger with one reserved call, and blocks/deferred the second before any provider execution plan can be used;
+   - guardrail output records provider, model, reviewer, canonical target fields, target hash, context policy, retained file paths, retained memory IDs, omitted context IDs/reasons, truncation notices, redaction status, raw flags, opt-in proof, and budget cost;
+   - default policy result serialization omits full provider request text and private PR content while retaining hashes, byte counts, context inventory, redaction categories, and raw opt-in proof;
    - provider failure summaries redact token-like text and expose stable reason codes for missing credentials, timeout, rate limit, malformed response, unavailable provider, and unknown provider error;
    - a fixture with token-like PR title/body/diff/review/comment data flows through the exact policy result serialization without leaking the token fragments by default;
    - no provider client, network transport, GitHub transport, approval/finalization, posting, or writer module is imported.
 2. Implement `src/reviewgraph/llm_policy.py` as a pure policy/preview module:
-   - typed policy input, provider execution plan, blocked result, and redacted provider failure dataclasses if existing models are not sufficient;
-   - pure functions that evaluate opt-in, provider/model requirements, context package preview, redaction, raw opt-ins, and live-call budget cost;
+   - typed policy input, run-level budget ledger/reservation, provider execution plan, blocked result, public audit record, and redacted provider failure dataclasses if existing models are not sufficient;
+   - pure functions that evaluate opt-in, provider/model requirements, context package preview, redaction, raw opt-ins, live-call budget cost, and run-level reservation updates;
    - stable blocked reason codes such as `missing_live_opt_in`, `missing_provider`, `missing_model`, `live_call_budget_exceeded`, `raw_provider_not_approved`, and `raw_trace_not_approved`;
+   - stable provider failure reason codes including `missing_credentials`, `timeout`, `rate_limited`, `retry_exhausted`, `malformed_response`, `provider_unavailable`, and `unknown_provider_error`;
+   - a default-safe audit serialization method that excludes request text unless raw trace persistence is approved and otherwise records only hashes, byte counts, context inventory, redaction summaries, raw opt-in proof, and reason/status fields;
    - no SDK/network/provider execution behavior.
-3. Add boundary checks so `llm_policy` stays import-safe and default-safe.
-4. Update narrow docs only if needed:
+3. Define the persistence boundary in docs/tests for AUR-212:
+   - `llm_policy` owns serializable per-reviewer policy audit records now;
+   - AUR-240/AUR-232 own attaching those records to `ReviewState` or `ReviewerResult` when live adapters are wired;
+   - until adapter wiring exists, AUR-212 proves the exact default audit JSON shape and keeps it free of full request text/private PR content.
+4. Add boundary checks so `llm_policy` stays import-safe and default-safe.
+5. Update narrow docs only if needed:
    - `docs/architecture/llm-data-handling.md` for policy result shape;
    - `docs/harnesses/harness-engineering.md` if the focused harness should be named under Live LLM discipline.
-5. Run focused and regression validation.
-6. Use fresh subagents for code/docs review until no material findings remain.
-7. Commit implementation and review-fix batches separately, then update Linear with evidence.
+6. Run focused and regression validation.
+7. Use fresh subagents for code/docs review until no material findings remain.
+8. Commit implementation and review-fix batches separately, then update Linear with evidence.
 
 ## Focused Harness
 
@@ -90,7 +99,8 @@ git diff --check
 - Fake reviewers remain default -> existing fake reviewer tests plus new guardrail default-mode tests.
 - Redaction covers provider-bound requests and default output surfaces -> provider preview/redaction tests plus existing redaction regressions.
 - Provider-bound live request payloads minimized/redacted -> request preview built from `ReviewerContextPackage` only.
-- Live-call caps enforced -> policy/budget tests with `max_live_calls=0`, cumulative planned calls, and positive-cap multi-reviewer cases.
+- Live-call caps enforced -> policy/budget tests with `max_live_calls=0`, cumulative planned calls, positive-cap multi-reviewer cases, and returned reservation ledger reuse.
+- Default-safe recording -> policy audit serialization tests prove request text/private PR content is excluded while audit hashes/sizes/context inventory are retained.
 - Provider failures redacted -> typed provider failure summary tests with token-like error text.
 
 ## Out Of Scope
