@@ -1,83 +1,94 @@
-# ISSUE PLAN: AUR-232 Enforce Reviewer Adapter Boundaries
+# ISSUE PLAN: AUR-240 Add Opt-In Live LLM Reviewer Adapter
 
-Active issue plan for `AUR-232` / `RG-043: Enforce Reviewer Adapter Boundaries`.
+Active issue plan for `AUR-240` / `RG-051: Add Opt-In Live LLM Reviewer Adapter`.
 
-Linear is the durable source for status and acceptance criteria. Repository docs are the durable behavior contracts. This issue hardens reviewer adapter interfaces and harnesses only; it must not add a live LLM provider integration.
+Linear is the durable source for status and acceptance criteria. Repository docs are the durable behavior contracts. This issue adds the first live reviewer adapter boundary and fake-provider harness; it must not add tool-using agents, repository checkout, test execution, or provider-specific prompt optimization.
 
 ## Linear Snapshot
 
 - Project: `ReviewGraph`
 - Team: `Aurokin`
 - Milestone: `PRD 0008: Live LLM`
-- Issue: `AUR-232`
-- Status when planned: `Backlog`
-- Blocking issue: `AUR-212` is `Done`
-- Linear handoff names likely files: `src/reviewgraph/reviewers.py`, `tests/test_adapter_boundaries.py`
-- Focused harness from Linear: `python -m pytest tests/test_adapter_boundaries.py`
-- Out of scope from Linear: live LLM provider integration
+- Issue: `AUR-240`
+- Status when planned: `In Progress`
+- Blocking issues: `AUR-212` and `AUR-232` are `Done`
+- Linear handoff names likely files: `src/reviewgraph/llm.py`, `src/reviewgraph/reviewers.py`, `tests/test_live_llm_adapter.py`
+- Focused harness from Linear: `python -m pytest tests/test_live_llm_adapter.py`; live smoke skipped by default
+- Out of scope from Linear: tool-using agents and repository checkout
 
 ## Objective
 
-Add explicit interface and harness coverage proving reviewer adapters are decoupled from GitHub transports, side-effect payload builders, approval/finalization state, provider clients, and ambient process/network handles. This issue should create the adapter contract that both fake reviewers and future live reviewers must share.
+Add the first live LLM reviewer adapter behind explicit opt-in, using `ReviewerContextPackage`, the AUR-212 live LLM policy result, the AUR-232 adapter boundary validator, and the same `ReviewerResult` output contract as fake reviewers.
+
+The default behavior must remain fake reviewers, no credentials, no live provider calls, no GitHub writes, and no human input.
 
 ## Contracts To Preserve
 
-- The structured reviewer adapter boundary is the `execute_*` callable, not the raw fixture-output lookup method. `FakeReviewerAdapter.run(package)` remains a raw fixture source; `execute_fake_reviewer(adapter, package, run_key)` is the fake structured adapter boundary.
-- Structured reviewer adapter boundaries accept only a scoped `ReviewerContextPackage` or, for future live adapters, a passing live LLM policy result built from that package, plus a graph-owned `ReviewerRunKey`.
-- Structured reviewer adapter boundaries return `ReviewerResult` values from the graph-owned `ReviewerRunKey`.
-- Reviewer adapters must not receive GitHub read transports, GitHub write transports, approval state, finalization state, posting payload builders, writer clients, provider clients, process handles, or ambient network/session clients.
-- Reviewer capabilities must be validated before adapter execution. Unsupported capabilities remain config errors or pre-execution boundary failures, not prompt-time decisions.
-- Fake reviewer behavior remains default, deterministic, provider-free, and compatible with existing fake reviewer repair/normalization semantics.
-- `llm_policy` remains the canonical provider-bound request gate for future live adapters; bypassing it should be a boundary-test failure when live adapter code is introduced.
+- Fake reviewers remain the default for normal fixture/GitHub dry-runs and default tests.
+- Config model metadata alone cannot call a live provider.
+- Live execution requires run-level explicit opt-in, provider, model, an approved `LiveLLMPolicyResult`, and the exact current live-call ledger reservation proof.
+- Provider-bound request text is built only by `llm_policy` from `ReviewerContextPackage`.
+- The live adapter receives no GitHub transports, approval/finalization state, posting payload builders, writer clients, shell handles, or ambient network/session clients.
+- Provider transport is injected into the adapter. The module must not import provider SDKs, `requests`, shell/process modules, or `gh`.
+- Provider/model/reviewer/target/context/truncation/redaction/budget metadata is recorded on policy audit data and live adapter result evidence.
+- Provider timeout, retry exhaustion, rate limit, outage, malformed response, and missing credentials map to failed `ReviewerResult` values. Required/optional reviewer semantics remain owned by existing runner policy.
+- Live smoke tests are marked `live_llm` and skipped unless `REVIEWGRAPH_LIVE_LLM=1`.
 
 ## Current Code Context
 
-- `src/reviewgraph/reviewers.py` currently exposes `FakeReviewerAdapter.run(package)` and `execute_fake_reviewer(adapter, package, run_key)`.
-- `FakeReviewerAdapter.run()` already accepts only `ReviewerContextPackage` but returns raw fixture output. `execute_fake_reviewer()` returns `ReviewerResult` and is the canonical fake adapter execution boundary, but it accepts an adapter object without a shared adapter protocol or explicit capability/run-key preflight.
-- `tests/test_reviewers_fake.py` already asserts the fake adapter run signature accepts only `package` and that fake reviewers have no provider behavior.
-- `tests/test_contract_boundaries.py` already contains import-boundary checks for models, config, findings, GitHub fake read, and reviewer context, but there is no `tests/test_adapter_boundaries.py` focused on reviewer adapter modules and shared adapter contracts.
-- `src/reviewgraph/llm_policy.py` from AUR-212 is provider-SDK-free and returns policy results/failure summaries without provider execution.
-- `src/reviewgraph/config.py` and `ReviewerAgentConfig` already reject unsupported capabilities during config parsing/model validation.
+- `src/reviewgraph/llm_policy.py` approves or blocks provider-bound execution plans, redacts provider-bound request text by default, reserves live-call budget, records audit metadata, and summarizes provider failures.
+- `src/reviewgraph/reviewer_boundaries.py` validates `ReviewerContextPackage`, `ReviewerRunKey`, stage/reviewer/target binding, and read-only capability policy.
+- `src/reviewgraph/reviewers.py` has `execute_fake_reviewer`, `validate_live_policy_adapter_input`, and a provider-free `execute_live_policy_reviewer_stub`.
+- `src/reviewgraph/runner.py` always executes fake reviewers today; it already has reviewer-budget hooks for `live_call_costs` but does not pass costs because no live execution mode exists.
+- `src/reviewgraph/cli.py` has no live LLM flags yet. Public CLI currently exposes fixture and fake GitHub dry-run paths only.
+- `pyproject.toml` has `live_read` and `live_post` markers but no `live_llm` marker.
 
 ## Plan
 
-1. Add focused tests in `tests/test_adapter_boundaries.py` before implementation:
-   - `FakeReviewerAdapter.run` accepts only `package` and is documented/tested as a raw fixture source, not the structured adapter boundary;
-   - `execute_fake_reviewer` is the canonical fake structured adapter boundary, accepts only `adapter`, `package`, and graph-owned `run_key`, and returns `ReviewerResult`;
-   - adapter functions reject non-`ReviewerContextPackage` package inputs before registry lookup or reviewer output parsing;
-   - fake execution rejects mismatched run keys before registry lookup: wrong target hash, reviewer name, selected-reviewer stage, or active stage must fail as boundary violations;
-   - `execute_fake_reviewer` returns `ReviewerResult` for valid fake output and never a raw mapping/string;
-   - reviewer adapter modules do not import GitHub read/write transports, approval/finalization/posting/writer modules, provider SDKs, network/process modules, or global client modules;
-   - reviewer adapter callable signatures contain no forbidden handle-like parameter names such as `github_client`, `transport`, `writer`, `approval`, `finalization`, `payload`, `session`, `process`, or `provider_client`;
-   - fake adapter package capability policy must match reviewer config capabilities and remain read-only/provider-off by default before execution;
-   - unsupported or tool-like capabilities cannot be smuggled directly through a manually constructed package into adapter execution;
-   - future live adapter contract is represented by a provider-free validator/stub surface that shares the same package/run-key/capability preflight, accepts only an approved AUR-212 policy result with an execution plan, matching run key, matching package fingerprint, matching package-derived request preview, and an exact current-ledger reservation proof, then returns/permits a `ReviewerResult` contract without provider execution in this issue.
-2. Implement narrow boundary support in `src/reviewgraph/reviewers.py`:
-   - define adapter protocols or type aliases for fake and future live reviewers if useful;
-   - add deterministic boundary validators for `ReviewerContextPackage` capability policy, selected reviewer metadata, graph-owned run-key binding, and live policy result approval;
-   - ensure `llm_policy` uses the same package/run-key/capability preflight before provider preview construction or live-call reservation;
-   - call the fake validator from `execute_fake_reviewer()` before any fake registry lookup;
-   - keep normalization/repair behavior unchanged.
-3. Add static import/signature tests for `src/reviewgraph/reviewers.py`, `src/reviewgraph/reviewer_context.py`, and `src/reviewgraph/llm_policy.py` so future adapter code cannot bypass the intended boundaries.
-4. Update narrow docs only if needed:
-   - `docs/architecture/state-graph.md` reviewer context boundary;
-   - `docs/harnesses/harness-engineering.md` reviewer boundary harness expectations.
-5. Run focused and regression validation.
-6. Use fresh subagents for code/docs review until no material findings remain.
-7. Commit implementation and review-fix batches separately, then update Linear with evidence.
+1. Add `tests/test_live_llm_adapter.py` first:
+   - fake reviewers remain default when config includes `model`;
+   - live adapter execution requires approved policy result plus current ledger proof;
+   - fake provider transport receives exactly the approved policy request text, provider, model, reviewer, target hash, request hash, timeout, and attempt metadata;
+   - successful provider JSON becomes a `ReviewerResult` with normalized findings/local notes/clarifications/suggested replies/suppressed outputs;
+   - malformed JSON/invalid schema becomes a failed `ReviewerResult`;
+   - missing credentials, timeout, rate limit, provider outage, and retry exhaustion produce redacted typed failure evidence and failed `ReviewerResult`;
+   - retryable provider failures are retried only up to the configured cap;
+   - default adapter tests do not require credentials, network, or live provider calls;
+   - the `live_llm` smoke test is marked and skipped by default.
+2. Add `src/reviewgraph/llm.py`:
+   - define provider request/response dataclasses and a `LiveLLMProviderTransport` protocol/callable contract;
+   - define a deterministic fake provider transport for tests;
+   - implement `execute_live_llm_reviewer(...)` that validates the AUR-232 live policy adapter boundary, calls only the injected transport, normalizes provider JSON into `ReviewerResult`, and maps provider failures with `summarize_provider_failure`;
+   - implement bounded retry behavior for retryable provider failures, with stable reason codes and redacted evidence.
+3. Refactor only the smallest shared reviewer-output normalization helper from `src/reviewgraph/reviewers.py` if needed so fake and live adapters share the output contract without duplicating normalization policy.
+4. Add explicit CLI/config opt-in surface:
+   - add `--live-llm`, `--live-llm-provider`, and `--live-llm-model`;
+   - fail closed if live is requested without provider or model;
+   - keep normal dry-run default fake-only;
+   - if public CLI cannot safely provide a real transport in this slice, expose the live adapter through library/fake harnesses and make CLI live execution fail with a clear deferred-provider error before any provider call.
+5. Add `live_llm` pytest marker to `pyproject.toml`.
+6. Update narrow docs:
+   - `docs/architecture/llm-data-handling.md` for live adapter opt-in, injected transport, audit/result evidence, and failure mapping;
+   - `docs/architecture/state-graph.md` if runner/live adapter state changes;
+   - `docs/harnesses/harness-engineering.md` for AUR-240 harness and skipped smoke discipline;
+   - `README.md` if the current runnable slice/status changes.
+7. Run focused and regression validation.
+8. Use fresh subagents for plan review before implementation and code/docs review after implementation until no material findings remain.
+9. Commit the plan before implementation, then commit implementation and any review-fix batches separately, then update Linear with evidence.
 
 ## Focused Harness
 
 ```bash
-.venv/bin/python -m pytest tests/test_adapter_boundaries.py -q
+.venv/bin/python -m pytest tests/test_live_llm_adapter.py -q
 ```
 
 ## Regression Harness
 
 ```bash
-.venv/bin/python -m pytest tests/test_adapter_boundaries.py tests/test_contract_boundaries.py -q
+.venv/bin/python -m pytest tests/test_live_llm_adapter.py tests/test_llm_policy.py tests/test_adapter_boundaries.py -q
 .venv/bin/python -m pytest tests/test_reviewers_fake.py tests/test_reviewer_json_repair.py -q
-.venv/bin/python -m pytest tests/test_llm_policy.py tests/test_reviewer_context.py tests/test_prompt_injection_memory.py -q
+.venv/bin/python -m pytest tests/test_config.py tests/test_context_budget.py tests/test_reviewer_context.py tests/test_redaction.py -q
+.venv/bin/python -m pytest tests/test_cli.py tests/test_tracer_fixture_run.py -q
 .venv/bin/python -m py_compile src/reviewgraph/*.py
 .venv/bin/python scripts/check_docs.py
 git diff --check
@@ -85,17 +96,19 @@ git diff --check
 
 ## Acceptance Mapping
 
-- Adapters accept only context package and return structured reviewer results -> adapter signature tests plus fake execution result tests.
-- No GitHub transports/approval/writer payload builders -> static import and callable-parameter boundary tests.
-- Capabilities validated before execution -> package/capability preflight tests, including manually constructed invalid package cases.
-- Run-key binding validated before execution -> fake adapter tests prove mismatched target/stage/reviewer fails before registry lookup.
-- Boundary tests fail on direct imports or ambient clients -> AST import tests and transitive import smoke tests.
-- Fake/live share input/output contract -> fake `execute_*` boundary and future live policy-result validator tests without provider SDK calls.
+- Fake reviewer default -> default runner/CLI tests plus live adapter tests proving config model alone stays fake.
+- Explicit opt-in -> CLI arg validation and policy-input tests requiring `--live-llm`, provider, and model.
+- Recorded provider/model/reviewer/target/context/truncation/redaction -> policy audit assertions and live adapter result evidence assertions.
+- Minimized/redacted provider payload -> approved policy request assertions and no-secret serialization tests.
+- Timeout/retry/rate-limit/outage mapping -> fake transport failure tests with bounded attempt counts and `ReviewerResult(status=FAILED)`.
+- Live smoke skipped by default -> `pytest.mark.live_llm` test skipped unless `REVIEWGRAPH_LIVE_LLM=1`.
 
 ## Out Of Scope
 
-- Live LLM provider calls.
-- CLI `--live-llm` surface.
-- Provider SDKs, retry loops, timeouts, or fake live transport execution.
-- GitHub read/write behavior changes.
-- Refactoring fake reviewer normalization, repair, quality classification, or runner stage flow beyond what the boundary validator requires.
+- Real provider SDK integration.
+- Tool-using agents.
+- Repository checkout.
+- Running repository tests from a reviewer.
+- Public production posting.
+- Provider-specific prompt tuning.
+- Persisting raw provider request/response bodies by default.
