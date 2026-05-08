@@ -14,7 +14,8 @@ Linear is the durable source for milestone issue status, blockers, and completio
 - Active implementation issues currently fetched from Linear as `Done`: `AUR-244`, `AUR-218`, `AUR-217`, `AUR-219`, `AUR-243`, `AUR-220`, `AUR-221`, `AUR-245`, `AUR-246`, `AUR-223`, `AUR-222`, `AUR-241`, and `AUR-224`.
 - Gate issue currently active: `AUR-261`.
 - Known canceled duplicates currently fetched from Linear as `Duplicate`: `AUR-248`, `AUR-249`, `AUR-250`, and `AUR-251`.
-- Current repo state at planning: clean working tree on `main`, ahead of `origin/main` by 19 commits, with no `.ws/` directory found by `find . -maxdepth 2 -type d -name .ws`.
+- Current repo state at planning: clean working tree on `main`, ahead of `origin/main` by 19 commits before the planning commit and 20 commits after it, with no `.ws/` directory found by `find . -maxdepth 2 -type d -name .ws`.
+- Downstream relation fetched during plan review: `AUR-261` blocks `AUR-242` in the later `PRD 0009: Harness Strategy` milestone. AUR-242 must not start until this PRD 0007 gate is closed.
 
 ## Objective
 
@@ -42,8 +43,10 @@ This is a gate and documentation-refactor issue. It should not implement PRD 000
    - Fix material plan gaps and commit review fixes before audit/doc changes.
 3. Completion audit:
    - Build a prompt-to-artifact checklist for every AUR-261 gate criterion.
-   - Map every active PRD 0007 issue to status, evidence comment where known, focused harness, code/doc artifacts, and acceptance coverage.
+   - Map every active PRD 0007 issue to status, evidence comment, focused harness, code/doc artifacts, and acceptance coverage.
+   - Treat any active implementation issue without `Done` status or a Linear evidence comment as a hard blocker.
    - Map every canceled duplicate to duplicate rationale and replacement issue.
+   - Required duplicate mapping: `AUR-248 -> AUR-243`, `AUR-249 -> AUR-244`, `AUR-250 -> AUR-245`, and `AUR-251 -> AUR-246`.
    - Check for temporary artifacts: `.ws/`, Linear exports, live-post artifacts, scratch files, and subagent scratch output.
 4. Focused validation matrix:
    - Run PRD 0007 focused harnesses:
@@ -66,7 +69,9 @@ This is a gate and documentation-refactor issue. It should not implement PRD 000
      - `.venv/bin/python -m pytest -q`
      - `.venv/bin/python -m py_compile src/reviewgraph/*.py`
      - `.venv/bin/python scripts/check_docs.py`
+     - `.venv/bin/python scripts/check_docs.py --backlog-export <canonical-temporary-linear-export.json>`
      - `git diff --check`
+   - The backlog export used for validation is temporary evidence only and must be deleted before final push.
 5. Progressive-disclosure docs refactor:
    - Read current docs in AGENTS order plus PRD 0007, side-effect architecture, GitHub integration, harness engineering, decisions, and implementation plan.
    - Refactor only durable docs needed for agents dropping into side-effect code.
@@ -79,11 +84,16 @@ This is a gate and documentation-refactor issue. It should not implement PRD 000
 6. Code/docs review:
    - Use fresh subagents to review code, tests, docs, Linear evidence, and AUR-261 audit until no material issues remain.
    - Commit every review-fix batch separately.
-7. Linear closeout:
+7. Final validation after docs and review fixes:
+   - Rerun the focused validation matrix, broader gate validation, docs checks, py-compile, and diff check after all docs changes and review-fix batches.
+   - Record commit IDs and command timestamps/results in the final AUR-261 evidence comment.
+   - Re-run temporary artifact cleanup checks after validation and delete the backlog export before push.
+8. Linear closeout:
    - Move AUR-261 to `In Review` with an evidence comment containing checklist, validation commands, doc updates, and subagent review results.
+   - The evidence comment must include the final gate table: Linear status, evidence comment presence, duplicate mapping, blocker/downstream relation, command results, doc changes, temp-artifact check, and final subagent review result.
    - Move AUR-261 to `Done` only after final review is clean.
    - Update the PRD 0007 milestone/project status if the Linear tools expose the necessary project/milestone status operation.
-8. Push only after the milestone gate and documentation refactor are complete, the final completion audit passes, Linear is updated, and no required work remains.
+9. Push only after the milestone gate and documentation refactor are complete, the final completion audit passes, Linear is updated, temporary artifacts are removed, and no required work remains.
 
 ## Focused Evidence Checklist
 

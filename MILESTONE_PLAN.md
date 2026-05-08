@@ -24,10 +24,12 @@ Active execution artifact for this milestone. Linear remains the durable source 
 - Gate issue:
   - `AUR-261` / `Complete PRD 0007: Side Effects` / `In Progress`
 - Canceled duplicates known from earlier Linear inventory:
-  - `AUR-248` / duplicate of actor/permission approval binding scope
-  - `AUR-249` / duplicate of payload hash domain scope
-  - `AUR-250` / duplicate of hardened marker reconciliation scope
-  - `AUR-251` / duplicate of non-interactive posting block scope
+  - `AUR-248` / duplicate of `AUR-243` actor/permission approval binding scope; replacement coverage is approval snapshot binding and final actor/permission re-check.
+  - `AUR-249` / duplicate of `AUR-244` payload hash domain scope; replacement coverage is canonical hash-domain primitives and golden tests.
+  - `AUR-250` / duplicate of `AUR-245` hardened marker reconciliation scope; replacement coverage is pagination, author trust, malformed marker, conflict, and duplicate fingerprint hardening.
+  - `AUR-251` / duplicate of `AUR-246` non-interactive posting block scope; replacement coverage is fail-closed non-TTY/CI/config-only post-mode gating.
+- Downstream relation fetched during AUR-261 plan review:
+  - `AUR-261` blocks `AUR-242` / `RG-053: Add Validation Command And Marker Contracts` in `PRD 0009: Harness Strategy`; do not start AUR-242 until PRD 0007 is closed.
 - Linear descriptions for `AUR-219`, `AUR-243`, `AUR-245`, `AUR-246`, `AUR-222`, `AUR-241`, `AUR-224`, and `AUR-261` were tightened on 2026-05-07 so the high-risk side-effect guards in this plan are also represented in Linear.
 - `AUR-228` from PRD 0005 was reconciled on 2026-05-07 as already implemented, with Linear evidence showing the context-budget and omitted-context harnesses pass. It no longer leaves the prior milestone chain inconsistent before PRD 0007 begins.
 - The stale Linear blocker from `AUR-260` to `AUR-244` was removed on 2026-05-07 because live LLM work belongs to PRD 0008 and must not block PRD 0007 side-effect hash work.
@@ -83,7 +85,7 @@ For milestone gates and any issue that changes blockers/order, also run `python 
 
 ## Harness Strategy
 
-- `AUR-244` focused harness: payload hash domain and marker hash golden tests, likely in `tests/test_posting_hashes.py` or `tests/test_posting.py`.
+- `AUR-244` focused harness: payload hash domain and marker hash golden tests in `tests/test_payload_hashes.py`.
 - `AUR-218` focused harness: payload validation tests rejecting formal PR reviews and non-issue-comment endpoints.
 - `AUR-217` focused harness: approval model/final-hash binding tests using distinct candidate/final payload fixtures, likely in `tests/test_approval.py`.
 - `AUR-219` focused harness: actor/permission gate tests with fake permission transport, endpoint-specific issue-comment write ability, transport failure taxonomy, stale-cache rejection, and role/token mismatch cases.
