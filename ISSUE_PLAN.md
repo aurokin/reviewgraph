@@ -17,16 +17,19 @@ Linear is the durable source for status and acceptance criteria. Repository docs
 
 ## Objective
 
-Add deterministic live LLM data-handling guardrails before any live provider adapter exists. The implementation should make it impossible for a future live adapter to skip explicit opt-in, provider/model disclosure, redacted provider-bound request construction, raw-provider/raw-trace opt-in separation, and live-call budget accounting.
+Add deterministic live LLM data-handling guardrails before any live provider adapter exists. The implementation should define the canonical policy gate a future live adapter must consume before provider execution: explicit opt-in, provider/model disclosure, redacted provider-bound request construction, raw-provider/raw-trace opt-in gating, redacted provider failure summaries, and live-call budget accounting.
 
 ## Contracts To Preserve
 
 - Fake reviewers remain default for tests and normal dry-runs.
 - Config metadata such as `model` or inert `tools` cannot trigger a live provider call.
+- AUR-212 defines policy inputs only; CLI/config/provider resolution and provider execution are deferred to AUR-240.
+- Run-level live opt-in is required for live readiness. Live opt-in without provider/model fails closed.
 - Provider-bound request data must come from `ReviewerContextPackage`, not raw PR objects, full config maps, GitHub transports, side-effect state, or ambient process state.
 - Provider-bound request text is minimized and redacted by default.
-- Raw provider submission and raw trace persistence are separate explicit choices.
-- Live-call caps are enforced before provider execution.
+- Raw provider submission and raw trace persistence are separate explicit choices; live opt-in alone does not permit raw submission.
+- Live-call caps are enforced before provider execution. A passing provider execution plan carries explicit `live_call_budget_cost=1`.
+- Provider failures are represented by typed redacted summaries with stable reason codes.
 - Default tests cannot call live providers, require credentials, write GitHub, or require human input.
 
 ## Current Code Context
@@ -40,17 +43,21 @@ Add deterministic live LLM data-handling guardrails before any live provider ada
 ## Plan
 
 1. Add focused tests in `tests/test_llm_policy.py` that define the guardrail contract before implementation:
-   - live mode requires explicit opt-in;
+   - live mode requires explicit run-level opt-in;
    - provider and model are required for live-ready requests;
    - fake/default mode is not live-ready even when reviewer config contains a model;
+   - opt-in truth table: no opt-in, config model only, live opt-in without provider, live opt-in without model, raw provider requested without raw-provider opt-in, raw trace requested without raw-trace opt-in, and passing redacted request;
    - provider-bound request is built from `ReviewerContextPackage` and is redacted by default;
-   - raw provider submission and raw trace persistence are separately recorded;
-   - live-call budget cost is explicit and rejected/deferred when `max_live_calls=0`;
+   - raw provider submission and raw trace persistence are separately gated and recorded;
+   - live-call budget cost is explicit and rejected/deferred when `max_live_calls=0`, cumulative planned calls would exceed the cap, or multiple reviewers would exceed a positive cap;
    - guardrail output records provider, model, reviewer, target hash, context policy, truncation status, redaction status, and budget cost;
+   - provider failure summaries redact token-like text and expose stable reason codes for missing credentials, timeout, rate limit, malformed response, unavailable provider, and unknown provider error;
+   - a fixture with token-like PR title/body/diff/review/comment data flows through the exact policy result serialization without leaking the token fragments by default;
    - no provider client, network transport, GitHub transport, approval/finalization, posting, or writer module is imported.
 2. Implement `src/reviewgraph/llm_policy.py` as a pure policy/preview module:
-   - typed request/policy result dataclasses if existing models are not sufficient;
+   - typed policy input, provider execution plan, blocked result, and redacted provider failure dataclasses if existing models are not sufficient;
    - pure functions that evaluate opt-in, provider/model requirements, context package preview, redaction, raw opt-ins, and live-call budget cost;
+   - stable blocked reason codes such as `missing_live_opt_in`, `missing_provider`, `missing_model`, `live_call_budget_exceeded`, `raw_provider_not_approved`, and `raw_trace_not_approved`;
    - no SDK/network/provider execution behavior.
 3. Add boundary checks so `llm_policy` stays import-safe and default-safe.
 4. Update narrow docs only if needed:
@@ -69,7 +76,7 @@ Add deterministic live LLM data-handling guardrails before any live provider ada
 ## Regression Harness
 
 ```bash
-.venv/bin/python -m pytest tests/test_reviewer_context.py tests/test_redaction.py tests/test_context_budget.py tests/test_contract_boundaries.py -q
+.venv/bin/python -m pytest tests/test_config.py tests/test_reviewer_context.py tests/test_redaction.py tests/test_context_budget.py tests/test_contract_boundaries.py -q
 .venv/bin/python -m pytest tests/test_reviewers_fake.py tests/test_cli.py -q
 .venv/bin/python -m py_compile src/reviewgraph/*.py
 .venv/bin/python scripts/check_docs.py
@@ -83,13 +90,14 @@ git diff --check
 - Fake reviewers remain default -> existing fake reviewer tests plus new guardrail default-mode tests.
 - Redaction covers provider-bound requests and default output surfaces -> provider preview/redaction tests plus existing redaction regressions.
 - Provider-bound live request payloads minimized/redacted -> request preview built from `ReviewerContextPackage` only.
-- Live-call caps enforced -> policy/budget test with `max_live_calls=0` and cost `1`.
+- Live-call caps enforced -> policy/budget tests with `max_live_calls=0`, cumulative planned calls, and positive-cap multi-reviewer cases.
+- Provider failures redacted -> typed provider failure summary tests with token-like error text.
 
 ## Out Of Scope
 
 - Provider SDK calls.
 - Live LLM smoke execution.
-- CLI `--live-llm` surface unless needed as a non-executing validation placeholder.
+- CLI `--live-llm` surface and provider/config resolution. AUR-212 defines the policy input shape; AUR-240 wires user-facing opt-in and adapter behavior.
 - Tool-using agents.
-- Repository checkout or test execution.
+- Reviewer-agent repository checkout or project test execution.
 - Changes to GitHub write/read behavior.

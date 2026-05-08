@@ -40,14 +40,15 @@ The milestone should prove:
 - `src/reviewgraph/context_budget.py` already models `max_live_calls`, retained/deferred live-call reviewer IDs, and deterministic live-call deferral.
 - `src/reviewgraph/config.py` already validates reviewer `model`, inert `tools`, `context`, `capabilities`, and `context_budget.max_live_calls`.
 - `src/reviewgraph/reviewers.py` currently contains the fake reviewer adapter and execution path only; it has no live provider abstraction.
+- `src/reviewgraph/runner.py` currently applies reviewer budgets without live-call costs because no live-enabled reviewer execution path exists yet. PRD 0008 must make live-call cost explicit before any provider execution can be added.
 - `tests/test_reviewer_context.py`, `tests/test_redaction.py`, `tests/test_context_budget.py`, `tests/test_contract_boundaries.py`, and `tests/test_reviewers_fake.py` already cover much of the guardrail surface. PRD 0008 should extend these contracts without coupling reviewer code to side effects.
 - `pyproject.toml` currently marks `live_read` and `live_post`, but not `live_llm`.
 
 ## Execution Order
 
-1. `AUR-212` first: add the live LLM data-handling guardrail layer. This should focus on policy/state/previews, not provider SDK calls. Expected implementation likely includes `src/reviewgraph/llm_policy.py` and `tests/test_llm_policy.py`, plus narrow updates to docs or existing helpers if needed.
-2. `AUR-232` second: harden reviewer adapter boundaries for both fake and future live adapters. This should prove reviewer adapters accept only context packages, return structured reviewer results, validate capabilities before execution, and cannot import/ambiently access GitHub transports, approval/finalization, posting payload builders, provider clients, shell/process handles, or side-effect modules.
-3. `AUR-240` third: add the first opt-in live LLM reviewer adapter behind explicit CLI/config/API opt-in using the same context and output contracts as fake reviewers. Default tests use fake provider transports; the real live smoke is marked and skipped by default.
+1. `AUR-212` first: add the canonical live LLM data-handling policy gate. This should focus on policy/state/previews/failure summaries, not provider SDK calls. Expected implementation likely includes `src/reviewgraph/llm_policy.py` and `tests/test_llm_policy.py`, plus narrow updates to docs or existing helpers if needed. The policy gate must accept only `ReviewerContextPackage` plus explicit policy inputs and produce a passing provider execution plan or a blocked result with stable reason code.
+2. `AUR-232` second: harden reviewer adapter boundaries for both fake and future live adapters. This should prove reviewer adapters accept only context packages or a passing live LLM policy result, return structured reviewer results, validate capabilities before execution, and cannot import/ambiently access GitHub transports, approval/finalization, posting payload builders, provider clients, shell/process handles, or side-effect modules. It should also make bypassing `llm_policy` a boundary-test failure for future live adapters.
+3. `AUR-240` third: add the first opt-in live LLM reviewer adapter behind explicit CLI/config/API opt-in using the same context and output contracts as fake reviewers. The adapter must consume the `AUR-212` policy result before provider execution. Default tests use fake provider transports; the real live smoke is marked and skipped by default.
 4. `AUR-260` last: close the milestone only after all active implementation issues are `Done`, Linear evidence exists, focused/full validation passes, durable docs explain live LLM contracts, and fresh subagent review reports no material gaps.
 
 ## Linear Relationship Plan
@@ -83,6 +84,7 @@ For milestone gates and blocker/order changes, also run `python scripts/check_do
 - `AUR-232` focused harness: `python -m pytest tests/test_adapter_boundaries.py tests/test_contract_boundaries.py -q`
 - `AUR-240` focused harness: `python -m pytest tests/test_live_llm_adapter.py -q`
 - Milestone regression set after shared LLM/reviewer changes:
+  - `python -m pytest tests/test_config.py tests/test_context_budget.py tests/test_reviewer_context.py tests/test_redaction.py -q`
   - `python -m pytest tests/test_reviewer_context.py tests/test_redaction.py tests/test_context_budget.py tests/test_reviewers_fake.py -q`
   - `python -m pytest tests/test_prompt_injection_memory.py tests/test_contract_boundaries.py -q`
   - `python -m pytest tests/test_tracer_fixture_run.py tests/test_cli.py -q`
@@ -91,19 +93,22 @@ For milestone gates and blocker/order changes, also run `python scripts/check_do
   - `python scripts/check_docs.py`
   - `git diff --check`
 
-Default validation must not call live providers, require credentials, or require human input. Live smoke tests must be marked `live_llm` and skipped unless explicit environment opt-in is present.
+Default validation must not call live providers, require credentials, or require human input. Add a `live_llm` pytest marker before live smoke tests land; live smoke tests must be marked `live_llm` and skipped unless explicit environment opt-in is present.
 
 ## Contract Guardrails
 
 - Fake reviewers remain default.
-- Live LLM calls require explicit opt-in; config metadata alone cannot trigger a live provider call.
+- Live LLM calls require explicit run-level opt-in; config metadata alone cannot trigger a live provider call.
+- `AUR-212` owns the opt-in truth table: model without live opt-in is preview metadata only; live opt-in without provider/model fails closed; raw provider submission and raw trace persistence require separate explicit opt-ins.
+- `llm_policy` is the canonical request-construction API for provider-bound execution. Future live adapters must consume its passing policy result before invoking any provider transport.
 - Provider-bound request payloads must be built from `ReviewerContextPackage`, not raw PR objects, full config maps, GitHub transports, side-effect state, or ambient process state.
 - Provider-bound request text is minimized and redacted by default.
-- Raw provider submission and raw trace persistence are separate explicit opt-ins; neither implies the other.
+- Raw provider submission and raw trace persistence are separate explicit opt-ins; neither implies the other, and live opt-in alone does not permit raw submission.
 - Provider/model/reviewer/target/context policy/truncation/redaction status must be recorded for any provider-bound request or live adapter result.
-- Live-call budget is graph/policy state and must fail closed or defer deterministically before provider execution.
+- Live-call budget is graph/policy state and must fail closed or defer deterministically before provider execution. A passing live provider execution plan carries `live_call_budget_cost=1` unless a later policy proves a different cost.
 - Live adapter outputs must flow through the same normalization, repair/failure, quality classification, clarification, and required/optional reviewer failure policy as fake outputs.
-- Provider timeout, rate limit, retry exhaustion, malformed response, unavailable service, missing credentials, or missing opt-in cannot produce postable findings by themselves.
+- Provider timeout, rate limit, retry exhaustion, malformed response, unavailable service, missing credentials, missing opt-in, missing provider, missing model, live-call budget exceeded, raw provider not approved, or raw trace not approved cannot produce postable findings by themselves.
+- Provider failures must use a redacted typed summary with stable reason codes and no raw request headers, raw response bodies, tokens, or private PR text.
 - Tool-using agents, repository checkout, test execution, and provider-specific prompt optimization remain out of scope.
 - Reviewer adapters must not import or accept GitHub read transports, GitHub write transports, approval/finalization state, posting payload builders, writer clients, provider clients outside the explicit live adapter transport boundary, shell handles, or ambient network/session clients.
 
@@ -127,6 +132,8 @@ The milestone is complete when ReviewGraph proves:
 - token-like secrets are absent from provider-bound default payloads, logs/traces/default JSON, rendered markdown, and candidate/final payloads;
 - provider/model/reviewer/target/context policy/truncation/redaction state is recorded;
 - live-call caps defer or block reviewers deterministically before provider execution;
+- raw provider submission and raw trace persistence are separately gated and recorded;
+- provider failure summaries are typed and redacted;
 - reviewer adapter boundaries cover both fake and live adapter paths;
 - fake and live reviewer adapters share the same structured input/output result contract;
 - provider failures map into existing reviewer result/status semantics;
