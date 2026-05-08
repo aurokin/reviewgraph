@@ -29,6 +29,7 @@ Add deterministic live LLM data-handling guardrails before any live provider ada
 - Provider-bound request text is minimized and redacted by default.
 - Raw provider submission and raw trace persistence are separate explicit choices; live opt-in alone does not permit raw submission.
 - Live-call caps are enforced before provider execution. A passing provider execution plan carries explicit `live_call_budget_cost=1` and returns an updated run-level budget reservation ledger so later reviewers cannot double-spend the same cap.
+- Live-call reservations are keyed by reviewer execution identity: reviewer run key plus target/config/provider/model/request hash. Duplicate evaluation for the same run key and same request hash is idempotent and does not consume another call; duplicate evaluation for the same run key with a different request hash fails closed with `live_call_reservation_conflict`. Retry attempts and clarification-bound runs have distinct run keys and consume fresh budget.
 - Provider execution data and persisted audit data are separate. Full request text may exist in memory for immediate provider submission, but default serialization records only audit-safe fields, hashes, sizes, context inventory, redaction status, raw flags, and opt-in proof.
 - Provider failures are represented by typed redacted summaries with stable reason codes.
 - Default tests cannot call live providers, require credentials, write GitHub, or require human input.
@@ -52,17 +53,18 @@ Add deterministic live LLM data-handling guardrails before any live provider ada
    - raw provider submission and raw trace persistence are separately gated and recorded;
    - live-call budget cost is explicit and rejected/deferred when `max_live_calls=0`, cumulative planned calls would exceed the cap, or multiple reviewers would exceed a positive cap;
    - budget reservation is stateful: a cap of `1` with two live reviewer policy attempts passes the first, returns a ledger with one reserved call, and blocks/deferred the second before any provider execution plan can be used;
+   - reservation identity is idempotent: repeated policy evaluation for the same reviewer run key and same request hash reuses the prior reservation, repeated evaluation for the same run key and different request hash fails with `live_call_reservation_conflict`, and a retry attempt with a distinct run key consumes a fresh budget slot;
    - guardrail output records provider, model, reviewer, canonical target fields, target hash, context policy, retained file paths, retained memory IDs, omitted context IDs/reasons, truncation notices, redaction status, raw flags, opt-in proof, and budget cost;
-   - default policy result serialization omits full provider request text and private PR content while retaining hashes, byte counts, context inventory, redaction categories, and raw opt-in proof;
+   - default policy result serialization omits full provider request text and private PR content while retaining reservation key/status, budget before/after counts, request hash, byte counts, context inventory, redaction categories, and raw opt-in proof;
    - provider failure summaries redact token-like text and expose stable reason codes for missing credentials, timeout, rate limit, malformed response, unavailable provider, and unknown provider error;
    - a fixture with token-like PR title/body/diff/review/comment data flows through the exact policy result serialization without leaking the token fragments by default;
    - no provider client, network transport, GitHub transport, approval/finalization, posting, or writer module is imported.
 2. Implement `src/reviewgraph/llm_policy.py` as a pure policy/preview module:
    - typed policy input, run-level budget ledger/reservation, provider execution plan, blocked result, public audit record, and redacted provider failure dataclasses if existing models are not sufficient;
    - pure functions that evaluate opt-in, provider/model requirements, context package preview, redaction, raw opt-ins, live-call budget cost, and run-level reservation updates;
-   - stable blocked reason codes such as `missing_live_opt_in`, `missing_provider`, `missing_model`, `live_call_budget_exceeded`, `raw_provider_not_approved`, and `raw_trace_not_approved`;
+   - stable blocked reason codes such as `missing_live_opt_in`, `missing_provider`, `missing_model`, `live_call_budget_exceeded`, `live_call_reservation_conflict`, `raw_provider_not_approved`, and `raw_trace_not_approved`;
    - stable provider failure reason codes including `missing_credentials`, `timeout`, `rate_limited`, `retry_exhausted`, `malformed_response`, `provider_unavailable`, and `unknown_provider_error`;
-   - a default-safe audit serialization method that excludes request text unless raw trace persistence is approved and otherwise records only hashes, byte counts, context inventory, redaction summaries, raw opt-in proof, and reason/status fields;
+   - a default-safe audit serialization method that excludes request text unless raw trace persistence is approved and otherwise records only reservation key/status, budget before/after counts, hashes, byte counts, context inventory, redaction summaries, raw opt-in proof, and reason/status fields;
    - no SDK/network/provider execution behavior.
 3. Define the persistence boundary in docs/tests for AUR-212:
    - `llm_policy` owns serializable per-reviewer policy audit records now;
@@ -99,7 +101,7 @@ git diff --check
 - Fake reviewers remain default -> existing fake reviewer tests plus new guardrail default-mode tests.
 - Redaction covers provider-bound requests and default output surfaces -> provider preview/redaction tests plus existing redaction regressions.
 - Provider-bound live request payloads minimized/redacted -> request preview built from `ReviewerContextPackage` only.
-- Live-call caps enforced -> policy/budget tests with `max_live_calls=0`, cumulative planned calls, positive-cap multi-reviewer cases, and returned reservation ledger reuse.
+- Live-call caps enforced -> policy/budget tests with `max_live_calls=0`, cumulative planned calls, positive-cap multi-reviewer cases, returned reservation ledger reuse, same-run-key idempotency, same-run-key request conflict, and retry-run-key fresh budget consumption.
 - Default-safe recording -> policy audit serialization tests prove request text/private PR content is excluded while audit hashes/sizes/context inventory are retained.
 - Provider failures redacted -> typed provider failure summary tests with token-like error text.
 
