@@ -113,6 +113,8 @@ def _initialize_review_state(state: _EmptyDryRunRuntimeState) -> dict[str, Any]:
         reviewer_run_keys=[],
         reviewer_run_status={},
         reviewer_results=[],
+        live_llm_ledger=None,
+        live_llm_policy_audits=[],
         context_budget=budgeted_context.context_budget,
         redaction_status=None,
         findings=[],

@@ -13,9 +13,13 @@ The CLI must require an explicit live flag before sending PR content to an LLM p
 - context policy
 - whether truncation occurred
 
-`llm_policy` is the canonical provider-execution gate. A future live adapter must pass a `ReviewerContextPackage` plus explicit run-level policy input through that gate before invoking any provider transport. Config metadata such as `model` never enables live calls by itself; missing live opt-in, opt-in proof source, provider, or explicit policy model fails closed. The reviewer run key must also match the context package target, active stage, selected-reviewer stage, and reviewer name before request construction or budget reservation can pass.
+`llm_policy` is the canonical provider-execution gate. The live adapter must pass a `ReviewerContextPackage` plus explicit run-level policy input through that gate before invoking any provider transport. Config metadata such as `model` never enables live calls by itself; missing live opt-in, opt-in proof source, provider, or explicit policy model fails closed. The reviewer run key must also match the context package target, active stage, selected-reviewer stage, and reviewer name before request construction or budget reservation can pass.
 
 Passing policy decisions reserve live-call budget before provider execution. Reservations are keyed by reviewer run identity plus target/config/provider/model/request hash. Repeating the same reviewer run with the same request hash reuses the existing reservation; repeating it with different request data fails closed. Retry attempts and clarification-bound runs have distinct reviewer run keys and consume fresh budget.
+
+The first live adapter is transport-injected and provider-SDK-free by default. `execute_live_llm_reviewer_attempt` performs one provider attempt for one approved policy result and current ledger proof. `run_live_llm_reviewer_with_retries` is graph-visible orchestration: each retry uses a distinct `ReviewerRunKey.attempt`, records attempt status/evidence, and consumes a fresh policy reservation. Live retry is not hidden inside a transport client.
+
+Public CLI live execution requires explicit `--live-llm` plus provider, model, and positive live-call budget inputs. Config may provide live defaults, but config-only model metadata does not send PR content to a provider. Default fixture and fake GitHub dry-runs remain fake-reviewer paths.
 
 ## Context minimization
 
@@ -40,6 +44,8 @@ Policy results separate in-memory execution data from default-persisted audit da
 
 Provider transport failures must become typed, redacted summaries with stable reason codes. Missing credentials, timeout, rate limit, retry exhaustion, malformed response, unavailable provider, and unknown provider errors cannot create postable findings by themselves.
 
+Raw provider response text is not persisted by default. Live reviewer results retain only redacted parsed reviewer output, typed normalized artifacts, and `LiveLLMReviewerEvidence` containing hashes, byte counts, policy audit summaries, ledger summaries, request IDs after redaction, retryability, and raw-retention booleans. Malformed live provider output fails without a hidden repair LLM call.
+
 Required redaction targets include:
 
 - API keys and bearer tokens
@@ -51,3 +57,5 @@ Required redaction targets include:
 ## Harness
 
 Tests should include fixture PR titles, PR bodies, diffs, review summaries, review comments, and PR comments containing token-like values and prove that provider-bound live LLM payloads, logs, traces, rendered markdown, candidate/final GitHub payloads, JSON error payloads, and default output redact them.
+
+Live LLM smoke tests are marked `live_llm` and skipped unless `REVIEWGRAPH_LIVE_LLM=1`. When enabled, the smoke contract expects `REVIEWGRAPH_LIVE_LLM_PROVIDER`, `REVIEWGRAPH_LIVE_LLM_MODEL`, `REVIEWGRAPH_LIVE_LLM_API_KEY` or a provider-specific key such as `OPENAI_API_KEY`, and optionally `REVIEWGRAPH_LIVE_LLM_BASE_URL`; missing prerequisites produce a blocked artifact and no provider call.

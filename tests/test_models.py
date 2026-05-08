@@ -104,6 +104,8 @@ EXPECTED_STATE_FIELDS = (
     "reviewer_run_keys",
     "reviewer_run_status",
     "reviewer_results",
+    "live_llm_ledger",
+    "live_llm_policy_audits",
     "context_budget",
     "redaction_status",
     "findings",
@@ -1575,6 +1577,8 @@ def _review_state() -> ReviewState:
         reviewer_run_keys=[],
         reviewer_run_status={},
         reviewer_results=[],
+        live_llm_ledger=None,
+        live_llm_policy_audits=[],
         context_budget=ContextBudget(
             max_changed_files=10,
             max_patch_bytes=1000,

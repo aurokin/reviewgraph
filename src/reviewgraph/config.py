@@ -13,6 +13,7 @@ from reviewgraph.models import (
     ALLOWED_REVIEWER_CAPABILITIES,
     ALLOWED_REVIEWER_VERDICT_POWERS,
     ContextBudget,
+    LiveLLMConfig,
     ReviewConfig,
     ReviewerAgentConfig,
     ReviewerTriggers,
@@ -50,6 +51,7 @@ def parse_reviewer_config(data: dict[str, Any]) -> ReviewConfig:
     unknown_config_fields = set(data) - {
         "agents",
         "context_budget",
+        "live_llm",
         "trusted_bot_authors",
         "trusted_operator_authors",
     }
@@ -79,6 +81,7 @@ def parse_reviewer_config(data: dict[str, Any]) -> ReviewConfig:
             "reviewer config",
         ),
         context_budget=_optional_context_budget(data),
+        live_llm=_optional_live_llm_config(data),
     )
 
 
@@ -281,3 +284,46 @@ def _optional_context_budget(data: dict[str, Any]) -> ContextBudget | None:
             raise ConfigError(f"reviewer config context_budget.{field} must be a positive integer")
         fields[field] = raw
     return ContextBudget(**fields)
+
+
+def _optional_live_llm_config(data: dict[str, Any]) -> LiveLLMConfig | None:
+    if "live_llm" not in data:
+        return None
+    value = data["live_llm"]
+    if not isinstance(value, dict):
+        raise ConfigError("reviewer config live_llm must be an object")
+    unknown_fields = set(value) - {
+        "provider",
+        "model",
+        "max_attempts",
+        "timeout_seconds",
+        "total_timeout_seconds",
+        "max_live_calls",
+    }
+    if unknown_fields:
+        raise ConfigError(
+            f"reviewer config live_llm has unsupported fields: {', '.join(sorted(unknown_fields))}"
+        )
+    provider = _optional_str(value, "provider", "live_llm")
+    model = _optional_str(value, "model", "live_llm")
+    max_attempts = _optional_positive_int(value, "max_attempts", "live_llm") or 2
+    timeout_seconds = _optional_positive_int(value, "timeout_seconds", "live_llm") or 30
+    total_timeout_seconds = _optional_positive_int(value, "total_timeout_seconds", "live_llm") or 120
+    max_live_calls = _optional_non_negative_int(value, "max_live_calls", "live_llm")
+    return LiveLLMConfig(
+        provider=provider,
+        model=model,
+        max_attempts=max_attempts,
+        timeout_seconds=timeout_seconds,
+        total_timeout_seconds=total_timeout_seconds,
+        max_live_calls=max_live_calls,
+    )
+
+
+def _optional_non_negative_int(data: dict[str, Any], field: str, label: str) -> int | None:
+    if field not in data:
+        return None
+    value = data[field]
+    if type(value) is not int or value < 0:
+        raise ConfigError(f"reviewer config {label}.{field} must be a non-negative integer")
+    return value

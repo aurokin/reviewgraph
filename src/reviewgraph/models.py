@@ -1119,6 +1119,20 @@ class ClarificationStatus:
 
 
 @dataclass(frozen=True)
+class LiveLLMReviewerEvidence:
+    data: Mapping[str, object]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.data, Mapping):
+            raise ValueError("live LLM reviewer evidence data must be a mapping")
+        _require_json_value(dict(self.data), "live LLM reviewer evidence data")
+        object.__setattr__(self, "data", MappingProxyType(dict(self.data)))
+
+    def to_ordered_dict(self) -> dict[str, object]:
+        return dict(self.data)
+
+
+@dataclass(frozen=True)
 class ReviewerResult:
     run_key: ReviewerRunKey
     status: ReviewerRunStatusValue = ReviewerRunStatusValue.COMPLETED
@@ -1131,6 +1145,7 @@ class ReviewerResult:
     suppressed_outputs: tuple[SuppressedReviewerOutput, ...] = field(default_factory=tuple)
     normalization_errors: tuple[NormalizationError, ...] = field(default_factory=tuple)
     repair_record: ReviewerRepairRecord | None = None
+    live_llm_evidence: LiveLLMReviewerEvidence | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.run_key, ReviewerRunKey):
@@ -1159,6 +1174,8 @@ class ReviewerResult:
         )
         if self.repair_record is not None and not isinstance(self.repair_record, ReviewerRepairRecord):
             raise ValueError("reviewer result repair_record must be a ReviewerRepairRecord")
+        if self.live_llm_evidence is not None and not isinstance(self.live_llm_evidence, LiveLLMReviewerEvidence):
+            raise ValueError("reviewer result live_llm_evidence must be a LiveLLMReviewerEvidence")
 
 
 @dataclass(frozen=True)
@@ -1624,11 +1641,41 @@ class ReviewerAgentConfig:
 
 
 @dataclass(frozen=True)
+class LiveLLMConfig:
+    provider: str | None = None
+    model: str | None = None
+    max_attempts: int = 2
+    timeout_seconds: int = 30
+    total_timeout_seconds: int = 120
+    max_live_calls: int | None = None
+
+    def __post_init__(self) -> None:
+        _require_optional_non_empty(self.provider, "live LLM provider")
+        _require_optional_non_empty(self.model, "live LLM model")
+        _require_positive_int(self.max_attempts, "live LLM max_attempts")
+        _require_positive_int(self.timeout_seconds, "live LLM timeout_seconds")
+        _require_positive_int(self.total_timeout_seconds, "live LLM total_timeout_seconds")
+        if self.max_live_calls is not None:
+            _require_non_negative_int(self.max_live_calls, "live LLM max_live_calls")
+
+    def to_ordered_dict(self) -> dict[str, object]:
+        return {
+            "provider": self.provider,
+            "model": self.model,
+            "max_attempts": self.max_attempts,
+            "timeout_seconds": self.timeout_seconds,
+            "total_timeout_seconds": self.total_timeout_seconds,
+            "max_live_calls": self.max_live_calls,
+        }
+
+
+@dataclass(frozen=True)
 class ReviewConfig:
     agents: Mapping[str, ReviewerAgentConfig]
     trusted_operator_authors: tuple[str, ...] = field(default_factory=tuple)
     trusted_bot_authors: tuple[str, ...] = field(default_factory=tuple)
     context_budget: ContextBudget | None = None
+    live_llm: LiveLLMConfig | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.agents, Mapping):
@@ -1644,6 +1691,8 @@ class ReviewConfig:
         _require_string_tuple(self.trusted_bot_authors, "review config trusted_bot_authors")
         if self.context_budget is not None and not isinstance(self.context_budget, ContextBudget):
             raise ValueError("review config context_budget must be a ContextBudget value")
+        if self.live_llm is not None and not isinstance(self.live_llm, LiveLLMConfig):
+            raise ValueError("review config live_llm must be a LiveLLMConfig value")
         if len(set(self.trusted_operator_authors)) != len(self.trusted_operator_authors):
             raise ValueError("review config trusted_operator_authors must not contain duplicates")
         if len(set(self.trusted_bot_authors)) != len(self.trusted_bot_authors):
@@ -2755,6 +2804,8 @@ class ReviewState:
     reviewer_run_keys: list[ReviewerRunKey]
     reviewer_run_status: dict[str, ReviewerRunStatus]
     reviewer_results: list[ReviewerResult]
+    live_llm_ledger: Mapping[str, object] | None
+    live_llm_policy_audits: list[Mapping[str, object]]
     context_budget: ContextBudget
     redaction_status: RedactionStatus | None
     findings: list[Finding]

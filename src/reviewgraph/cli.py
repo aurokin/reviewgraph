@@ -25,6 +25,11 @@ def main(argv: list[str] | None = None) -> int:
     except SystemExit as exc:
         return int(exc.code) if isinstance(exc.code, int) else 2
     try:
+        if args.live_llm:
+            raise RunnerError(
+                "Live LLM execution is opt-in and requires the live transport harness; "
+                "default CLI review remains fake-provider-free."
+            )
         if args.github_pr is not None:
             if args.github_live_read:
                 raise RunnerError(
@@ -83,6 +88,15 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--markdown-out", default=None, help="Path to write rendered markdown.")
     parser.add_argument("--json-out", default=None, help="Path to write deterministic JSON envelope.")
     parser.add_argument("--print-markdown", action="store_true", help="Print rendered markdown to stdout.")
+    parser.add_argument("--live-llm", action="store_true", help="Opt into live LLM reviewer execution.")
+    parser.add_argument("--live-llm-provider", default=None, help="Live LLM provider for --live-llm.")
+    parser.add_argument("--live-llm-model", default=None, help="Live LLM model for --live-llm.")
+    parser.add_argument(
+        "--live-llm-max-calls",
+        type=int,
+        default=None,
+        help="Maximum live LLM provider calls allowed for --live-llm.",
+    )
     return parser
 
 
@@ -95,6 +109,19 @@ def _validate_target_args(parser: argparse.ArgumentParser, args: argparse.Namesp
         parser.error("--github-fake-data and --github-live-read cannot be combined")
     if args.github_pr is not None and args.github_fake_data is None and not args.github_live_read:
         parser.error("--github-pr requires --github-fake-data or --github-live-read")
+    if not args.live_llm and (
+        args.live_llm_provider is not None
+        or args.live_llm_model is not None
+        or args.live_llm_max_calls is not None
+    ):
+        parser.error("--live-llm-provider, --live-llm-model, and --live-llm-max-calls require --live-llm")
+    if args.live_llm:
+        if args.live_llm_provider is None:
+            parser.error("--live-llm requires --live-llm-provider")
+        if args.live_llm_model is None:
+            parser.error("--live-llm requires --live-llm-model")
+        if args.live_llm_max_calls is None or args.live_llm_max_calls <= 0:
+            parser.error("--live-llm requires positive --live-llm-max-calls")
 
 
 def _write_text(path: Path, text: str) -> None:

@@ -118,7 +118,7 @@ The default behavior must remain fake reviewers, no credentials, no live provide
 .venv/bin/python -m pytest tests/test_live_llm_adapter.py tests/test_llm_policy.py tests/test_adapter_boundaries.py -q
 .venv/bin/python -m pytest tests/test_reviewers_fake.py tests/test_reviewer_json_repair.py -q
 .venv/bin/python -m pytest tests/test_config.py tests/test_context_budget.py tests/test_reviewer_context.py tests/test_redaction.py -q
-.venv/bin/python -m pytest tests/test_cli.py tests/test_tracer_fixture_run.py tests/test_render.py tests/test_posting.py tests/test_payload_validation.py tests/test_final_payload.py -q
+.venv/bin/python -m pytest tests/test_cli.py tests/test_tracer_fixture_run.py tests/test_render.py tests/test_posting.py tests/test_payload_validation.py tests/test_payload_hashes.py -q
 .venv/bin/python -m py_compile src/reviewgraph/*.py
 .venv/bin/python scripts/check_docs.py
 git diff --check

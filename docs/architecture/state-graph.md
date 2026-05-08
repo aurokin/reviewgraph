@@ -26,6 +26,8 @@ class ReviewState(TypedDict):
     reviewer_run_keys: list[ReviewerRunKey]
     reviewer_run_status: dict[str, ReviewerRunStatus]
     reviewer_results: list[ReviewerResult]
+    live_llm_ledger: dict[str, object] | None
+    live_llm_policy_audits: list[dict[str, object]]
     context_budget: ContextBudget
     redaction_status: RedactionStatus | None
     findings: list[Finding]

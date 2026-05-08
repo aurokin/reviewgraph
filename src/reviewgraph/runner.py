@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
@@ -37,6 +38,7 @@ from reviewgraph.models import (
     ContextBudget,
     GateStatus,
     GraphError,
+    LiveLLMConfig,
     LocalNote,
     MemoryReference,
     PRConversationMemory,
@@ -117,6 +119,8 @@ class _StageRunResult:
     classified: dict[str, tuple[Any, ...]]
     context_budget: ContextBudget
     clarification_gate: ClarificationGateResult
+    live_llm_ledger: dict[str, object] | None = None
+    live_llm_policy_audits: tuple[dict[str, object], ...] = ()
 
 
 def run_fixture_dry_run(
@@ -125,16 +129,20 @@ def run_fixture_dry_run(
     reviewer_config_path: str | None = None,
     writer_sentinel: object | None = None,
     clarification_answers: tuple[ClarificationAnswer, ...] = (),
+    live_llm_settings: Mapping[str, object] | None = None,
+    live_llm_transport: object | None = None,
 ) -> DryRunResult:
     writer_call_count_before = _writer_call_count(writer_sentinel)
     fixture = load_fixture_pr(fixture_ref)
     config = load_reviewer_config(reviewer_config_path)
+    config = _config_with_live_settings(config, live_llm_settings)
     return _run_dry_run_core(
         dry_run_input=_input_from_fixture(fixture),
         config=config,
         writer_call_count_before=writer_call_count_before,
         writer_sentinel=writer_sentinel,
         clarification_answers=clarification_answers,
+        live_llm_transport=live_llm_transport,
     )
 
 
@@ -258,6 +266,7 @@ def _run_dry_run_core(
     writer_call_count_before: int,
     writer_sentinel: object | None,
     clarification_answers: tuple[ClarificationAnswer, ...] = (),
+    live_llm_transport: object | None = None,
 ) -> DryRunResult:
     conversation_memory = build_conversation_memory(
         dry_run_input.pr,
@@ -284,6 +293,7 @@ def _run_dry_run_core(
         omitted_file_paths=budgeted_context.context_budget.omitted_file_paths,
         omitted_memory_ids=budgeted_context.context_budget.omitted_memory_ids,
         clarification_answers=clarification_answers,
+        live_llm_transport=live_llm_transport,
     )
     selected_reviewers = stage_run.selected_reviewers
     graph_trace = stage_run.graph_trace
@@ -366,6 +376,8 @@ def _run_dry_run_core(
         rendered=rendered,
         clarification_gate=clarification_gate,
         partial_review=partial_review,
+        live_llm_ledger=stage_run.live_llm_ledger,
+        live_llm_policy_audits=stage_run.live_llm_policy_audits,
     )
     return DryRunResult(
         markdown=rendered.markdown,
@@ -386,6 +398,7 @@ def _run_review_stages(
     omitted_file_paths: tuple[str, ...] = (),
     omitted_memory_ids: tuple[str, ...] = (),
     clarification_answers: tuple[ClarificationAnswer, ...] = (),
+    live_llm_transport: object | None = None,
 ) -> _StageRunResult:
     answers_by_request_id = {
         answer.request_id: answer
@@ -408,6 +421,9 @@ def _run_review_stages(
     stage_budgets: list[ContextBudget] = []
     retained_reviewer_count = 0
     planned_live_calls = 0
+    live_enabled = config.live_llm is not None and live_llm_transport is not None
+    live_ledger = None
+    live_policy_audits: list[dict[str, object]] = []
     cursor = initial_stage_cursor()
     routing_state = _routing_review_state(
         config,
@@ -434,9 +450,18 @@ def _run_review_stages(
         stage = cursor.active_stage.value
 
         selected_stage_reviewers = select_reviewers_for_active_stage(routing_state)
+        live_call_costs = (
+            {
+                reviewer_key(reviewer): config.live_llm.max_attempts
+                for reviewer in selected_stage_reviewers
+            }
+            if live_enabled and config.live_llm is not None
+            else None
+        )
         budgeted_reviewers = apply_reviewer_budget(
             reviewers=selected_stage_reviewers,
             limits=budget_limits,
+            live_call_costs=live_call_costs,
             retained_reviewer_count=retained_reviewer_count,
             planned_live_calls=planned_live_calls,
         )
@@ -462,19 +487,74 @@ def _run_review_stages(
                 routing_state,
                 reviewer,
                 status=ReviewerRunStatusValue.RUNNING,
-                reason="deterministic fixture output execution started",
-            )
-            reviewer_result = execute_fake_reviewer(
-                adapter=fake_adapter,
-                package=build_reviewer_context_package(
-                    active_stage=stage,
-                    reviewer=reviewer,
-                    reviewer_config=config.agents.get(reviewer.name),
-                    budgeted_context=budgeted_context,
+                reason=(
+                    "live LLM reviewer execution started"
+                    if live_enabled
+                    else "deterministic fixture output execution started"
                 ),
-                run_key=reviewer_run_key_for_selection(routing_state, reviewer),
             )
-            routing_state.reviewer_results.append(reviewer_result)
+            package = build_reviewer_context_package(
+                active_stage=stage,
+                reviewer=reviewer,
+                reviewer_config=config.agents.get(reviewer.name),
+                budgeted_context=budgeted_context,
+            )
+            run_key = reviewer_run_key_for_selection(routing_state, reviewer)
+            if live_enabled:
+                if config.live_llm is None:
+                    raise RunnerError("live LLM config is required for live execution")
+                llm_module = importlib.import_module("reviewgraph.llm")
+                llm_policy_module = importlib.import_module("reviewgraph.llm_policy")
+                if live_ledger is None:
+                    live_ledger = llm_policy_module.LiveLLMBudgetLedger()
+                provider = config.live_llm.provider
+                model = config.live_llm.model or package.reviewer_config.model
+                if provider is None or model is None:
+                    reviewer_result = ReviewerResult(
+                        run_key=run_key,
+                        status=ReviewerRunStatusValue.FAILED,
+                        errors=("live LLM requires provider and effective model",),
+                    )
+                    routing_state.reviewer_results.append(reviewer_result)
+                else:
+                    live_result = llm_module.run_live_llm_reviewer_with_retries(
+                        package=package,
+                        initial_run_key=run_key,
+                        policy_input=llm_policy_module.LiveLLMPolicyInput(
+                            reviewer_run_key=run_key,
+                            live_llm_enabled=True,
+                            live_llm_opt_in_source="cli:--live-llm",
+                            provider=provider,
+                            model=model,
+                        ),
+                        ledger=live_ledger,
+                        transport=live_llm_transport,
+                        max_attempts=config.live_llm.max_attempts,
+                        timeout_seconds=config.live_llm.timeout_seconds,
+                    )
+                    live_ledger = live_result.ledger
+                    routing_state.live_llm_ledger = live_ledger.to_ordered_dict()
+                    graph_trace.extend(live_result.trace_events)
+                    for attempt in live_result.attempts:
+                        live_policy_audits.append(attempt.policy_result.to_audit_dict())
+                        routing_state.reviewer_results.append(attempt.reviewer_result)
+                        record_reviewer_run_status(
+                            routing_state,
+                            attempt.reviewer_result.run_key,
+                            status=attempt.reviewer_result.status,
+                            reason=_reviewer_result_error(
+                                attempt.reviewer_result,
+                                default="live LLM reviewer execution completed",
+                            ),
+                        )
+                    reviewer_result = live_result.final_result
+            else:
+                reviewer_result = execute_fake_reviewer(
+                    adapter=fake_adapter,
+                    package=package,
+                    run_key=run_key,
+                )
+                routing_state.reviewer_results.append(reviewer_result)
             if key in raw_outputs_by_key:
                 seen_raw_keys.add(key)
             if reviewer_result.status != ReviewerRunStatusValue.COMPLETED:
@@ -493,8 +573,11 @@ def _run_review_stages(
                 if not _reviewer_is_required(config, reviewer):
                     classified["local_notes"].append(_optional_reviewer_failure_note(reviewer))
                     continue
-                if _reviewer_result_is_explicit_failure(reviewer_result) or _reviewer_result_is_repair_exhausted(
-                    reviewer_result
+                if (
+                    _reviewer_result_is_explicit_failure(reviewer_result)
+                    or _reviewer_result_is_repair_exhausted(reviewer_result)
+                    or reviewer_result.live_llm_evidence is not None
+                    or live_enabled
                 ):
                     errors.append(_required_reviewer_failure_error(reviewer, reason=reason))
                     classified["local_notes"].append(_required_reviewer_failure_note(reviewer, reason=reason))
@@ -575,6 +658,8 @@ def _run_review_stages(
         classified={key: tuple(value) for key, value in classified.items()},
         context_budget=merge_context_budgets(budget_limits, *stage_budgets),
         clarification_gate=evaluate_clarification_gate(classified["clarification_requests"]),
+        live_llm_ledger=routing_state.live_llm_ledger,
+        live_llm_policy_audits=tuple(live_policy_audits),
     )
 
 
@@ -643,6 +728,8 @@ def _routing_review_state(
         reviewer_run_keys=[],
         reviewer_run_status={},
         reviewer_results=[],
+        live_llm_ledger=None,
+        live_llm_policy_audits=[],
         context_budget=context_budget,
         redaction_status=None,
         findings=[],
@@ -759,6 +846,77 @@ def _reviewer_result_is_repair_exhausted(reviewer_result: ReviewerResult) -> boo
     )
 
 
+def _config_with_live_settings(
+    config: ReviewerConfig,
+    settings: Mapping[str, object] | None,
+) -> ReviewerConfig:
+    if settings is None:
+        return config
+    provider = _optional_setting_str(settings, "provider") or (config.live_llm.provider if config.live_llm else None)
+    model = _optional_setting_str(settings, "model") or (config.live_llm.model if config.live_llm else None)
+    max_attempts = _positive_setting_int(
+        settings,
+        "max_attempts",
+        config.live_llm.max_attempts if config.live_llm else 2,
+    )
+    timeout_seconds = _positive_setting_int(
+        settings,
+        "timeout_seconds",
+        config.live_llm.timeout_seconds if config.live_llm else 30,
+    )
+    total_timeout_seconds = _positive_setting_int(
+        settings,
+        "total_timeout_seconds",
+        config.live_llm.total_timeout_seconds if config.live_llm else 120,
+    )
+    max_live_calls = _non_negative_setting_int(
+        settings,
+        "max_live_calls",
+        config.live_llm.max_live_calls if config.live_llm else None,
+    )
+    live_config = LiveLLMConfig(
+        provider=provider,
+        model=model,
+        max_attempts=max_attempts,
+        timeout_seconds=timeout_seconds,
+        total_timeout_seconds=total_timeout_seconds,
+        max_live_calls=max_live_calls,
+    )
+    context_budget = config.context_budget or default_context_budget()
+    if max_live_calls is not None:
+        context_budget = replace(context_budget, max_live_calls=max_live_calls)
+    return replace(config, context_budget=context_budget, live_llm=live_config)
+
+
+def _optional_setting_str(settings: Mapping[str, object], name: str) -> str | None:
+    value = settings.get(name)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value:
+        raise RunnerError(f"live LLM setting {name} must be a non-empty string")
+    return value
+
+
+def _positive_setting_int(settings: Mapping[str, object], name: str, default: int) -> int:
+    value = settings.get(name, default)
+    if type(value) is not int or value <= 0:
+        raise RunnerError(f"live LLM setting {name} must be a positive integer")
+    return value
+
+
+def _non_negative_setting_int(
+    settings: Mapping[str, object],
+    name: str,
+    default: int | None,
+) -> int | None:
+    value = settings.get(name, default)
+    if value is None:
+        return None
+    if type(value) is not int or value < 0:
+        raise RunnerError(f"live LLM setting {name} must be a non-negative integer")
+    return value
+
+
 def _review_config_hash(config: ReviewConfig) -> str:
     return canonical_json_hash(
         {
@@ -788,6 +946,7 @@ def _review_config_hash(config: ReviewConfig) -> str:
             "trusted_bot_authors": list(config.trusted_bot_authors),
             "trusted_operator_authors": list(config.trusted_operator_authors),
             "context_budget": _context_budget_hash_payload(config.context_budget),
+            "live_llm": config.live_llm.to_ordered_dict() if config.live_llm is not None else None,
         }
     )
 
@@ -1177,6 +1336,8 @@ def _json_envelope(
     rendered: RenderedReview,
     clarification_gate: ClarificationGateResult,
     partial_review: dict[str, Any],
+    live_llm_ledger: dict[str, object] | None = None,
+    live_llm_policy_audits: tuple[dict[str, object], ...] = (),
 ) -> dict[str, Any]:
     return _redact_json_value({
         "run_mode": "dry_run",
@@ -1232,10 +1393,19 @@ def _json_envelope(
                     if result.repair_record is not None
                     else None
                 ),
+                "live_llm_evidence": (
+                    result.live_llm_evidence.to_ordered_dict()
+                    if result.live_llm_evidence is not None
+                    else None
+                ),
                 "raw_output": result.raw_output,
             }
             for result in reviewer_results
         ],
+        "live_llm": {
+            "ledger": live_llm_ledger,
+            "policy_audits": list(live_llm_policy_audits),
+        },
         "side_effects": {
             "writer_called": writer_call_count > 0,
             "writer_call_count": writer_call_count,
