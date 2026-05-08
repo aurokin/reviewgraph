@@ -6,7 +6,7 @@ Active execution artifact for this milestone. Linear remains the durable source 
 
 - Milestone: `PRD 0007: Side Effects`
 - Milestone ID: `c6087171-c932-43a9-81b1-5cf3ddec025a`
-- Current execution status as of 2026-05-07 after AUR-241 implementation review: `AUR-244`, `AUR-218`, `AUR-217`, `AUR-219`, `AUR-243`, `AUR-220`, `AUR-221`, `AUR-245`, `AUR-246`, `AUR-223`, `AUR-222`, and `AUR-241` are implemented; `AUR-224` is the remaining active implementation issue; `AUR-261` is the milestone gate.
+- Current execution status as of 2026-05-08 after AUR-241 Linear completion: `AUR-244`, `AUR-218`, `AUR-217`, `AUR-219`, `AUR-243`, `AUR-220`, `AUR-221`, `AUR-245`, `AUR-246`, `AUR-223`, `AUR-222`, and `AUR-241` are done; `AUR-224` is the active implementation issue; `AUR-261` is the milestone gate.
 - Active implementation issues:
   - `AUR-244` / `RG-055: Define Payload Hash Domains And Golden Tests` / `Done`
   - `AUR-218` / `RG-029: Validate Top-Level Issue Comment Payloads` / `Done`
@@ -19,8 +19,8 @@ Active execution artifact for this milestone. Linear remains the durable source 
   - `AUR-246` / `RG-057: Block Non-Interactive Posting Mode` / `Done`
   - `AUR-223` / `RG-034: Suppress Writes With No Approved Findings` / `Done`
   - `AUR-222` / `RG-033: Implement Fake Top-Level Comment Writer` / `Done`
-  - `AUR-241` / `RG-052: Add Real Top-Level Comment Writer Adapter` / `Implemented, pending Linear completion`
-  - `AUR-224` / `RG-035: Add Manual Live Post Smoke Contract` / `Backlog`
+  - `AUR-241` / `RG-052: Add Real Top-Level Comment Writer Adapter` / `Done`
+  - `AUR-224` / `RG-035: Add Manual Live Post Smoke Contract` / `In Progress`
 - Gate issue:
   - `AUR-261` / `Complete PRD 0007: Side Effects` / `Backlog`
 - Canceled duplicates known from earlier Linear inventory:
