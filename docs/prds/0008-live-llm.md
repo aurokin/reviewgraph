@@ -38,6 +38,12 @@ Keep fake reviewers as the default. Add live LLM support only behind explicit op
 - Tests assert live-call caps skip/defer reviewers deterministically and emit local notes.
 - Live LLM smoke tests are opt-in.
 
+## Implemented Slice
+
+The implemented PRD 0008 slice keeps fake reviewers as the default and adds live LLM execution only when a run provides explicit opt-in, provider, model, live-call budget, and a provider transport. The public CLI lazy-loads the HTTP transport only after `--live-llm` validation passes; config metadata or a transport handle alone cannot send PR content to a provider.
+
+Live policy owns request minimization, redaction, provider/model audit, run-level opt-in proof, package fingerprinting, request hashing, byte counts, live-call reservations, and retry attempt identity. Live adapter evidence is typed and redacted; raw provider responses and request text are not persisted in default output. Provider failures, malformed responses, retry exhaustion, total-timeout caps, and budget exhaustion map into required/optional reviewer semantics without creating postable findings by themselves.
+
 ## Out of Scope
 
 - Tool-using live reviewer agents.

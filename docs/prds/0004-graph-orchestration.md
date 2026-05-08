@@ -74,4 +74,4 @@ Deferred intentionally:
 - answered clarification resume through `clarification_review` moved to PRD 0005 review-quality graph primitives;
 - approval, final payload construction, actor/permission checks, target freshness checks, marker reconciliation, and writer reachability belong to PRD 0007 side effects;
 - live GitHub reads belong to PRD 0006;
-- live LLM reviewer execution belongs to PRD 0008.
+- live LLM reviewer execution lands in PRD 0008.

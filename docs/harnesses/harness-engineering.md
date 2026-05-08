@@ -241,7 +241,7 @@ Build these early vertical slices before expanding every policy:
 
 Default commands must never require credentials or mutate external systems.
 
-Recommended future commands:
+Command classes:
 
 ```bash
 pytest
@@ -250,7 +250,9 @@ pytest -m live_llm
 pytest -m live_post --requires-human-approval
 ```
 
-Live read may run only after fake pagination and read-gap harnesses exist. Live LLM may run only after context package, redaction, minimization, budget, and fake reviewer harnesses exist. Live post may run only against a disposable allowlisted PR after fake writer, approval, freshness, actor/permission, final hash, and marker reconciliation harnesses exist.
+Live read may run only after fake pagination and read-gap harnesses exist. Live LLM may run only after context package, redaction, minimization, budget, fake reviewer, policy, adapter, retry, failure, and smoke-prerequisite harnesses exist. Live post may run only against a disposable allowlisted PR after fake writer, approval, freshness, actor/permission, final hash, and marker reconciliation harnesses exist.
+
+The live LLM command surface is explicitly opt-in. Default test commands skip the `live_llm` marker. Enabled smoke runs require `REVIEWGRAPH_LIVE_LLM=1`, provider, model, and credential environment variables; missing prerequisites produce a blocked artifact and no provider call.
 
 The manual live-post command surface is intentionally library-level for now. It requires a helper-created approved-post artifact whose source dry-run hash is distinct from the approved-post artifact hash, and its evidence must include manual cleanup guidance because automated comment cleanup is out of scope.
 

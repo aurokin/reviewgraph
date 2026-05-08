@@ -127,14 +127,32 @@ Budgeting is a graph decision, not a prompt convention. The graph records retain
 
 Reviewers beyond budget are selected-then-skipped: their trigger reasons remain explainable, their raw output is not executed, and a structured local note records the deferral. Oversized patches or conversation memory are represented as marker-only context with explicit truncation state.
 
+## Live LLM config
+
+Top-level config may include `live_llm` defaults, but config alone is never live opt-in:
+
+```yaml
+live_llm:
+  provider: openai
+  model: gpt-review
+  max_attempts: 2
+  timeout_seconds: 30
+  total_timeout_seconds: 120
+  max_live_calls: 2
+```
+
+`provider` and `model` are optional config defaults until a run explicitly opts into live execution. Public CLI live execution still requires `--live-llm`, provider, model, and a positive live-call budget. The runner also requires a separate run-level opt-in source and injected transport; config metadata or a transport handle alone cannot send PR content to a provider.
+
+`max_attempts`, `timeout_seconds`, and `total_timeout_seconds` must be positive integers. `max_live_calls` may be zero. When supplied, `max_live_calls` also updates the context-budget live-call cap. `total_timeout_seconds` caps the number of retry attempts that may be scheduled, and each retry attempt consumes its own live-call reservation.
+
 ## Optional agent fields
 
-- `model`: preferred model for this reviewer.
+- `model`: preferred model for this reviewer. In explicit live LLM mode, this may be used only as an effective model fallback when top-level live config or CLI settings do not provide one; it never enables live calls by itself.
 - `tools`: inert future tool identifiers. In MVP, accepted tool names are metadata only and must not create callable handles, provider tool schemas, extra capabilities, repository access, GitHub access, live calls, or write access.
 - `context`: context policy, such as diff-only, diff-plus-comments, or focused-files.
 - `capabilities`: allowed reviewer capabilities. MVP supports `none` and `diff_context`; later phases may add `github_read`, `read_repo`, or `run_tests`.
 
-These fields should be validated but do not need live implementations in the first tracer bullets. Tool identifiers use the `future-*` namespace until a later explicit tool policy exists.
+These fields must be validated early. `model` participates in live run identity and config hash only after explicit live opt-in exists. Tool identifiers use the `future-*` namespace until a later explicit tool policy exists.
 
 Reviewer capabilities must default to `diff_context`, with GitHub writes unavailable to reviewer agents. `read_repo` means full checkout or repository file access and is out of scope for MVP. A reviewer may recommend a postable finding, but only the graph and side-effect adapter can create a GitHub payload.
 

@@ -68,7 +68,19 @@ The PRD 0007 side-effect slice now proves these contracts behind fake and defaul
 - the real writer adapter accepts only finalized top-level issue-comment input, uses fake transports by default, records typed redacted evidence, and handles ambiguous accepted-write outcomes through writer-local recovery with no second POST in the same approved run/retry sequence;
 - manual live-post smoke is opt-in, skipped by default, disposable-target-only, TTY/human approved, typed-final-hash confirmed, and requires post-approval live actor/permission, target freshness, and marker pagination proof.
 
-Remaining graph work is intentionally staged in later PRDs: production live GitHub review, live LLM reviewer execution, public production posting, and a user-facing post command. Approval/finalization gates, marker reconciliation, fake writer proof, the real writer adapter contract, and the manual disposable live-post smoke contract are implemented behind default-safe harnesses.
+## Implemented live LLM checkpoint
+
+The PRD 0008 live LLM slice now proves these contracts behind explicit opt-in and fake-provider harnesses:
+
+- fake reviewers remain the default for fixture runs, GitHub dry-runs, and the default test matrix;
+- public CLI live execution requires `--live-llm`, provider, model, and a positive live-call budget before lazy-loading the live HTTP transport;
+- the runner requires a run-level opt-in source in addition to live config and an injected transport;
+- live policy records provider, model, reviewer, target, context policy, request hash, byte counts, redaction status, retained context, omitted markers, raw opt-in proof, and budget ledger state without persisting request text by default;
+- live adapter execution uses the same `ReviewerContextPackage`, `ReviewerRunKey`, capability preflight, normalization, and quality pipeline as fake reviewers;
+- timeout, rate-limit, outage, missing credentials, malformed response, retry exhaustion, total-timeout caps, and live-call budget exhaustion produce typed redacted evidence and map into required/optional reviewer semantics;
+- `live_llm` smoke tests are opt-in and skipped by default, with blocked prerequisite artifacts when credentials or provider settings are missing.
+
+Remaining graph work is intentionally staged in later PRDs: production live GitHub review, public production posting, and a user-facing post command. Approval/finalization gates, marker reconciliation, fake writer proof, the real writer adapter contract, the explicit opt-in live LLM adapter, and the manual disposable live-post smoke contract are implemented behind default-safe harnesses.
 
 ## MVP constraints
 
@@ -287,6 +299,8 @@ Remaining graph work is intentionally staged in later PRDs: production live GitH
 **Verification:** live tests are opt-in and skipped by default; fake transport tests prove all pages are fetched for files, issue comments, review comments, reviews, and thread state before truncation is applied; unknown thread state is modeled distinctly and is non-actionable by default; unknown actor or insufficient/unknown permissions fail closed.
 
 ### Task 19: Add live LLM adapter
+
+**Status:** Implemented as an explicit opt-in PRD 0008 slice. Fake reviewers remain default; live provider calls require run-level opt-in, provider/model/budget proof, and an injected transport.
 
 **Objective:** Use configured API provider for real reviewer calls.
 

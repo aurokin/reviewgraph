@@ -10,7 +10,7 @@ Without this boundary, untrusted PR comments could become instructions, reviewer
 
 Define a reviewer agent runtime contract around explicit prompt inputs, scoped context packages, read-only capabilities, model/tool metadata, and structured output. PR conversation memory is shared across agents as labeled data, not as instructions. Trusted memory may trigger reviewer selection when configured. Untrusted memory is passive metadata only in reviewer prompts; in MVP, untrusted comment bodies cannot affect routing, verdicts, approval, reviewer instructions, or public payload text.
 
-MVP reviewer agents are mostly prompts plus deterministic fake outputs. Live LLM reviewers are a later adapter behind the same context package contract, context budget, redaction policy, and quality classifier.
+MVP reviewer agents are mostly prompts plus deterministic fake outputs. The first live LLM reviewer adapter uses the same context package contract, context budget, redaction policy, and quality classifier behind explicit opt-in; tool-using or repository-reading agents remain later work.
 
 ## User Stories
 
