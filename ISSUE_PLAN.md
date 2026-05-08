@@ -25,7 +25,7 @@ The default behavior must remain fake reviewers, no credentials, no live provide
 ## Contracts To Preserve
 
 - Fake reviewers remain the default for normal fixture/GitHub dry-runs and default tests.
-- Config model metadata alone cannot call a live provider. A config opt-in must be a distinct `live_llm.enabled=true` run setting, not a reviewer `model` field.
+- Config model metadata alone cannot call a live provider. Config may provide live defaults such as provider/model/timeouts, but public CLI execution must still receive `--live-llm` to create the run-level opt-in source before PR content can be sent to a provider. Any config-only live execution path fails closed unless a non-CLI caller supplies an equivalent explicit run-level opt-in source.
 - Live execution requires run-level explicit opt-in, provider, model, an approved `LiveLLMPolicyResult`, and the exact current live-call ledger reservation proof.
 - Provider-bound request text is built only by `llm_policy` from `ReviewerContextPackage`.
 - The live adapter receives no GitHub transports, approval/finalization state, posting payload builders, writer clients, shell handles, or ambient network/session clients.
@@ -33,7 +33,8 @@ The default behavior must remain fake reviewers, no credentials, no live provide
 - Provider/model/reviewer/target/context/truncation/redaction/budget metadata is recorded in a typed, redacted `LiveLLMReviewerEvidence` field on `ReviewerResult` and in policy audit data. Do not stuff provider evidence into free-form `errors` or unredacted `raw_output`.
 - Raw provider response text is never persisted by default. Successful live output may retain only redacted parsed reviewer output as `ReviewerResult.raw_output`; live evidence records response hash, byte count, request ID, attempts, and response redaction status. Full raw response persistence is deferred until raw-trace opt-in has a typed policy.
 - Provider timeout, retry exhaustion, rate limit, outage, malformed response, and missing credentials map to failed `ReviewerResult` values. Required/optional reviewer semantics remain owned by existing runner policy and must be proven for live failures.
-- Live retry is graph-visible. The provider adapter performs one transport attempt for one approved policy result. A live reviewer attempt runner may schedule a bounded retry by creating a new `ReviewerRunKey.attempt` with `retry_of`, re-running policy, and consuming a fresh ledger reservation.
+- Live retry is graph-visible. The provider adapter performs one transport attempt for one approved policy result. A live reviewer attempt runner may schedule a bounded retry by creating a new `ReviewerRunKey.attempt` with `retry_of`, re-running policy, consuming a fresh ledger reservation, and appending each attempt to graph-owned `reviewer_run_keys`, `reviewer_run_status`, and `reviewer_results`. Classification uses only the successful final attempt; failed prior attempts remain evidence/status, not classified output.
+- Live config changes participate in idempotency. Provider, model, timeout, max attempts, and max live calls must be represented in `ReviewConfig` and included in the existing `config_hash` path so run keys and live reservations cannot be reused across changed live settings.
 - Live smoke tests are marked `live_llm` and skipped unless `REVIEWGRAPH_LIVE_LLM=1`.
 
 ## Current Code Context
@@ -57,38 +58,46 @@ The default behavior must remain fake reviewers, no credentials, no live provide
    - successful provider raw response text is not retained; only the redacted parsed reviewer output, response hash, byte count, request ID, and redaction status are retained;
    - malformed JSON/invalid schema becomes a failed `ReviewerResult` with redacted typed evidence;
    - missing credentials, timeout, rate limit, provider outage, and retry exhaustion produce redacted typed failure evidence and failed `ReviewerResult`;
-   - retryable provider failures are retried only by the graph-visible live attempt runner, up to the configured cap, with `ReviewerRunKey.attempt` and `retry_of` recorded;
+   - retryable provider failures are retried only by the graph-visible live attempt runner, up to the configured cap, with every attempt recorded in `reviewer_run_keys`, `reviewer_run_status`, and `reviewer_results`;
    - required live reviewer failure becomes the same fail-closed graph error/local note shape as required fake reviewer failure, while optional live reviewer failure remains a partial local review;
+   - changed live config fields change `config_hash` and therefore reviewer run keys/reservation identities;
+   - live-call budget costs selected live reviewers before execution using worst-case `max_attempts`; default `max_live_calls=0` blocks live execution unless config/CLI explicitly raises it;
    - default adapter tests do not require credentials, network, or live provider calls;
    - the `live_llm` smoke test is marked and skipped by default through `tests/conftest.py`, with a collection/default-skip assertion.
 2. Add `src/reviewgraph/llm.py`:
    - define provider request/response dataclasses and a `LiveLLMProviderTransport` protocol/callable contract;
    - define a deterministic fake provider transport for tests;
    - implement `execute_live_llm_reviewer_attempt(...)` that validates the AUR-232 live policy adapter boundary, calls only the injected transport once, normalizes provider JSON into `ReviewerResult`, and maps provider failures with `summarize_provider_failure`;
-   - implement `run_live_llm_reviewer_with_retries(...)` as graph-visible orchestration: default `max_attempts=2`, default `timeout_seconds=30`, each retry gets a distinct run key and policy reservation, and retry stops on non-retryable failure or success.
+   - implement `run_live_llm_reviewer_with_retries(...)` as graph-visible orchestration: default `max_attempts=2`, default `timeout_seconds=30`, optional total-time cap, no hidden transport retries, each retry gets a distinct run key and policy reservation, each attempt is returned for graph status/result recording, and retry stops on non-retryable failure or success.
 3. Add typed live evidence to the result contract:
    - add `LiveLLMReviewerEvidence` to `src/reviewgraph/models.py`;
    - add `live_llm_evidence: LiveLLMReviewerEvidence | None` to `ReviewerResult`;
    - update runner JSON serialization to include redacted live evidence without exposing raw request/response text.
 4. Refactor only the smallest shared reviewer-output normalization helper from `src/reviewgraph/reviewers.py` if needed so fake and live adapters share the output contract without duplicating normalization policy.
-5. Add explicit CLI/config opt-in surface:
+5. Add explicit CLI/config opt-in surface without breaking default import fences:
    - add `--live-llm`, `--live-llm-provider`, and `--live-llm-model`;
-   - add a distinct optional config object such as `live_llm.enabled`, `live_llm.provider`, `live_llm.model`, `live_llm.max_attempts`, and `live_llm.timeout_seconds`;
-   - fail closed if live is requested without provider or model;
+   - add `--live-llm-max-calls` if needed to raise the default zero live-call cap explicitly;
+   - add a distinct optional config object such as `live_llm.provider`, `live_llm.model`, `live_llm.max_attempts`, `live_llm.timeout_seconds`, and `live_llm.max_live_calls`; if an `enabled` field is accepted, it cannot bypass the public CLI `--live-llm` requirement;
+   - fail closed if live is requested without provider, model, or positive live-call budget;
    - keep normal dry-run default fake-only;
-   - implement an actual opt-in live transport path for the smoke test. Prefer an OpenAI-compatible HTTP transport isolated behind dynamic import/live path so default imports do not load network code or require credentials.
+   - implement an actual opt-in live transport path for the smoke test. Prefer an OpenAI-compatible HTTP transport in a separate live-only module and import it lazily/dynamically only inside the `--live-llm`/smoke path so importing or running default `reviewgraph.cli` and `reviewgraph.runner` cannot load `reviewgraph.llm` or network/provider modules.
 6. Add `live_llm` pytest marker to `pyproject.toml` and update `tests/conftest.py` to skip it unless `REVIEWGRAPH_LIVE_LLM=1`.
 7. Broaden redaction validation:
-   - assert live request/evidence/default JSON/JSON errors/rendered markdown/candidate payloads remain redacted;
-   - include posting/render/payload-validation regression tests when live evidence touches serialized output.
-8. Update narrow docs:
+   - assert live request/evidence/default JSON/JSON errors/rendered markdown/candidate payloads, graph trace, policy audit/log-like artifacts, and final payload harnesses remain redacted;
+   - assert raw provider response text never appears in `raw_output`, `errors`, `repair_record`, local notes, graph trace, default JSON, rendered markdown, candidate payloads, or final payloads;
+   - include posting/render/payload-validation/final-payload regression tests when live evidence or live findings touch serialized output.
+8. Add boundary tests for the new live modules:
+   - `src/reviewgraph/llm.py` imports no GitHub read/write, approval/finalization/posting/writer modules, provider SDKs, `requests`, shell/process modules, or ambient clients;
+   - default `reviewgraph.cli` and `reviewgraph.runner` imports do not transitively load `reviewgraph.llm`, live HTTP transports, provider SDKs, or network modules;
+   - live-only HTTP transport imports are isolated to explicit opt-in paths.
+9. Update narrow docs:
    - `docs/architecture/llm-data-handling.md` for live adapter opt-in, injected transport, audit/result evidence, and failure mapping;
    - `docs/architecture/state-graph.md` if runner/live adapter state changes;
    - `docs/harnesses/harness-engineering.md` for AUR-240 harness and skipped smoke discipline;
    - `README.md` if the current runnable slice/status changes.
-9. Run focused and regression validation.
-10. Use fresh subagents for plan review before implementation and code/docs review after implementation until no material findings remain.
-11. Commit the plan before implementation, then commit implementation and any review-fix batches separately, then update Linear with evidence.
+10. Run focused and regression validation.
+11. Use fresh subagents for plan review before implementation and code/docs review after implementation until no material findings remain.
+12. Commit the plan before implementation, then commit implementation and any review-fix batches separately, then update Linear with evidence.
 
 ## Focused Harness
 
@@ -102,7 +111,7 @@ The default behavior must remain fake reviewers, no credentials, no live provide
 .venv/bin/python -m pytest tests/test_live_llm_adapter.py tests/test_llm_policy.py tests/test_adapter_boundaries.py -q
 .venv/bin/python -m pytest tests/test_reviewers_fake.py tests/test_reviewer_json_repair.py -q
 .venv/bin/python -m pytest tests/test_config.py tests/test_context_budget.py tests/test_reviewer_context.py tests/test_redaction.py -q
-.venv/bin/python -m pytest tests/test_cli.py tests/test_tracer_fixture_run.py tests/test_render.py tests/test_posting.py tests/test_payload_validation.py -q
+.venv/bin/python -m pytest tests/test_cli.py tests/test_tracer_fixture_run.py tests/test_render.py tests/test_posting.py tests/test_payload_validation.py tests/test_final_payload.py -q
 .venv/bin/python -m py_compile src/reviewgraph/*.py
 .venv/bin/python scripts/check_docs.py
 git diff --check
@@ -111,11 +120,12 @@ git diff --check
 ## Acceptance Mapping
 
 - Fake reviewer default -> default runner/CLI tests plus live adapter tests proving config model alone stays fake.
-- Explicit opt-in -> CLI/config validation and policy-input tests requiring explicit live opt-in source, provider, and model.
+- Explicit opt-in -> CLI/config validation and policy-input tests requiring explicit run-level live opt-in source, provider, model, and positive live-call budget; config-only defaults cannot bypass `--live-llm` in public CLI.
 - Recorded provider/model/reviewer/target/context/truncation/redaction -> policy audit assertions and typed `LiveLLMReviewerEvidence` assertions in default JSON.
-- Minimized/redacted provider payload -> approved policy request assertions plus no-secret checks for request/evidence/default JSON/rendered markdown/candidate payloads/JSON errors.
-- Timeout/retry/rate-limit/outage mapping -> fake transport failure tests with graph-visible bounded attempt keys and `ReviewerResult(status=FAILED)`.
+- Minimized/redacted provider payload -> approved policy request assertions plus no-secret checks for request/evidence/default JSON/rendered markdown/candidate payloads/final payloads/graph trace/policy audit/JSON errors.
+- Timeout/retry/rate-limit/outage mapping -> fake transport failure tests with graph-visible bounded attempt keys, per-attempt result/status evidence, and `ReviewerResult(status=FAILED)`.
 - Required/optional live failure semantics -> runner tests proving required live failures fail closed while optional live failures stay partial/local.
+- Budget/idempotency -> tests proving live settings affect `config_hash`, selected live reviewers are budgeted by worst-case `max_attempts`, and zero/insufficient `max_live_calls` blocks before provider execution.
 - Live smoke skipped by default -> `pytest.mark.live_llm` plus `tests/conftest.py` skip unless `REVIEWGRAPH_LIVE_LLM=1`.
 
 ## Out Of Scope
