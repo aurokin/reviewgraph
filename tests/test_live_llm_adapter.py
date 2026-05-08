@@ -12,7 +12,6 @@ import pytest
 from reviewgraph.config import parse_reviewer_config
 from reviewgraph.context_budget import ContextBudget, apply_input_context_budget
 from reviewgraph.fixtures import load_fixture_pr
-from reviewgraph.hashing import canonical_json_hash
 from reviewgraph.llm import (
     FakeLiveLLMProviderTransport,
     LiveLLMProviderError,

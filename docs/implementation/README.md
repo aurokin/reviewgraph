@@ -15,10 +15,11 @@ When a Linear issue exposes a missing durable rule, update the narrowest doc ins
 
 ## Validation
 
-Run the default handoff validation sequence before handing off implementation work:
+Run the default handoff validation sequence before handing off implementation work. The sequence assumes the project test extra is installed (`python -m pip install -e ".[test]"`):
 
 ```bash
 python -m pytest -q
+python -m ruff check src tests scripts
 python -m py_compile src/reviewgraph/*.py
 python scripts/check_docs.py
 git diff --check

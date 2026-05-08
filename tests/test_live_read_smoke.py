@@ -6,7 +6,6 @@ import pytest
 
 from reviewgraph.github import GitHubReadResult
 from reviewgraph.github_live import (
-    GhApiReadTransport,
     GhCommandResult,
     _assert_read_only_gh_args,
     blocked_live_read_artifact,

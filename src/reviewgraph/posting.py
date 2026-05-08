@@ -4,14 +4,14 @@ from inspect import Parameter, signature
 from typing import Iterable
 
 from reviewgraph.hashing import (
-    canonical_json_hash,
+    canonical_json_hash as canonical_json_hash,
     canonical_text_body,
     canonical_visible_body as canonical_hash_visible_body,
     final_payload_hash,
     findings_hash as canonical_findings_hash,
     is_exact_reviewgraph_v1_marker_line,
-    marker_payload_hash,
-    sha256_text,
+    marker_payload_hash as marker_payload_hash,
+    sha256_text as sha256_text,
     visible_body_hash as canonical_visible_body_hash,
 )
 from reviewgraph.models import (

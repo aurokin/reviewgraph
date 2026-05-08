@@ -17,7 +17,6 @@ from reviewgraph.models import (
     ClassifiedFinding,
     Confidence,
     GateStatus,
-    LocalNote,
     OutputClassification,
     PostingDestination,
     PostingPlan,

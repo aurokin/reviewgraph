@@ -4,7 +4,6 @@ import ast
 
 import pytest
 
-from reviewgraph.finalization import FinalizeGithubPayloadResult
 from reviewgraph.finalization import finalize_github_payload
 from reviewgraph.models import (
     FinalizationReasonCode,

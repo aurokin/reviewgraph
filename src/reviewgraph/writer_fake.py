@@ -9,7 +9,10 @@ from reviewgraph.models import (
     WriterStatus,
 )
 from reviewgraph.payload_validation import validate_final_issue_comment_payload
-from reviewgraph.writer_input import FinalizedIssueCommentWriterInput, build_finalized_issue_comment_writer_input
+from reviewgraph.writer_input import (
+    FinalizedIssueCommentWriterInput,
+    build_finalized_issue_comment_writer_input as build_finalized_issue_comment_writer_input,
+)
 
 
 @dataclass(frozen=True)

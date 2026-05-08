@@ -8,6 +8,7 @@ from reviewgraph.models import (
     ClarificationRequest,
     ClassifiedFinding,
     ContextBudget,
+    DiffAnchor,
     LocalNote,
     MemoryReference,
     OmittedContextMarker,

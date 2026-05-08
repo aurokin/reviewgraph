@@ -15,7 +15,6 @@ from reviewgraph.models import (
     ApprovalDecision,
     ApprovalDecisionBuildReasonCode,
     ApprovalDecisionBuildResult,
-    ApprovalProofReasonCode,
     ArtifactKind,
     CandidateIssueCommentPayload,
     ClarificationAnswer,

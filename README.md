@@ -16,10 +16,11 @@ The current implementation includes the PRD 0002 fixture tracer bullet, the PRD 
 PYTHONPATH=src python -m reviewgraph.cli --fixture-pr basic-pr --print-markdown
 ```
 
-Default handoff validation:
+Default handoff validation assumes the project test extra is installed (`python -m pip install -e ".[test]"`):
 
 ```bash
 python -m pytest -q
+python -m ruff check src tests scripts
 python -m py_compile src/reviewgraph/*.py
 python scripts/check_docs.py
 git diff --check

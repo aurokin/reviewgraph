@@ -1892,152 +1892,194 @@ class ActorPermissionGateResult:
     transport_summary: ActorPermissionTransportSummary | None = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.status, GateStatus):
-            raise ValueError("actor permission gate status must be a GateStatus")
-        if self.status == GateStatus.UNKNOWN:
-            raise ValueError("actor permission gate status must be pass or fail")
-        _require_optional_non_empty(self.actor, "actor permission gate actor")
-        _require_optional_non_empty(self.permission, "actor permission gate permission")
-        _require_optional_non_empty(self.checked_at, "actor permission gate checked_at")
-        _require_optional_non_empty(self.reason, "actor permission gate reason")
-        if self.actor is not None and not _is_safe_actor_permission_identity(self.actor):
-            raise ValueError("actor permission gate actor must be allowlisted")
-        if self.credential_principal is not None and not _is_safe_actor_permission_identity(
-            self.credential_principal
-        ):
-            raise ValueError("actor permission gate credential_principal must be allowlisted")
-        if self.reason is not None and not _is_safe_actor_permission_reason(self.reason):
-            raise ValueError("actor permission gate reason must be allowlisted")
-        if self.reason_code is not None and not isinstance(self.reason_code, ActorPermissionReasonCode):
-            raise ValueError("actor permission gate reason_code must be an ActorPermissionReasonCode")
-        _require_optional_non_empty(self.credential_principal, "actor permission gate credential_principal")
-        _require_optional_non_empty(self.credential_source, "actor permission gate credential_source")
-        _require_optional_non_empty(self.repo_permission, "actor permission gate repo_permission")
-        _require_optional_non_empty(self.installation_permission, "actor permission gate installation_permission")
-        _require_optional_non_empty(self.endpoint_permission, "actor permission gate endpoint_permission")
-        if self.issue_comment_write is not None and not isinstance(self.issue_comment_write, bool):
-            raise ValueError("actor permission gate issue_comment_write must be a bool")
-        _require_optional_non_empty(self.check_method, "actor permission gate check_method")
-        _require_optional_non_empty(self.endpoint_method, "actor permission gate endpoint_method")
-        if self.checked_target is not None:
-            if not isinstance(self.checked_target, Mapping):
-                raise ValueError("actor permission gate checked_target must be a mapping")
-            if not all(isinstance(key, str) for key in self.checked_target):
-                raise ValueError("actor permission gate checked_target keys must be strings")
-            object.__setattr__(self, "checked_target", MappingProxyType(dict(self.checked_target)))
-        _require_optional_hash_like(self.checked_target_hash, "actor permission gate checked_target_hash")
-        _require_optional_non_empty(self.endpoint, "actor permission gate endpoint")
-        _require_optional_non_empty(self.endpoint_kind, "actor permission gate endpoint_kind")
-        if self.transport_summary is not None and not isinstance(
-            self.transport_summary, ActorPermissionTransportSummary
-        ):
-            raise ValueError("actor permission gate transport_summary must be an ActorPermissionTransportSummary")
+        _validate_actor_permission_gate_common(self)
         if self.status == GateStatus.PASS:
-            for name in (
-                "actor",
-                "permission",
-                "checked_at",
-                "credential_principal",
-                "credential_source",
-                "check_method",
-                "endpoint_method",
-                "checked_target",
-                "checked_target_hash",
-                "endpoint",
-                "endpoint_kind",
-                "transport_summary",
-            ):
-                if getattr(self, name) is None:
-                    raise ValueError(f"actor permission gate pass requires {name}")
-            if self.issue_comment_write is not True:
-                raise ValueError("actor permission gate pass requires issue_comment_write")
-            if self.reason_code is not None:
-                raise ValueError("actor permission gate pass must not include reason_code")
-            if self.reason is not None:
-                raise ValueError("actor permission gate pass must not include reason")
-            if self.permission in {"read", "triage", "issues:read", "pull_requests:read"}:
-                raise ValueError("actor permission gate pass requires write permission")
-            derived_permission = _actor_permission_derived_permission(
-                credential_source=self.credential_source,
-                repo_permission=self.repo_permission,
-                installation_permission=self.installation_permission,
-                endpoint_permission=self.endpoint_permission,
-            )
-            if derived_permission is None or self.permission != derived_permission:
-                raise ValueError("actor permission gate pass permission proof is inconsistent")
-            if self.check_method != ACTOR_PERMISSION_CHECK_METHOD:
-                raise ValueError("actor permission gate pass requires permission check_method")
-            if self.endpoint_method != ACTOR_PERMISSION_ENDPOINT_METHOD:
-                raise ValueError("actor permission gate pass requires POST endpoint_method")
-            if self.endpoint_kind != ACTOR_PERMISSION_ENDPOINT_KIND:
-                raise ValueError("actor permission gate pass requires issue_comment endpoint_kind")
-            if self.checked_at is not None and not _is_realistic_rfc3339_utc_z(self.checked_at):
-                raise ValueError("actor permission gate pass requires UTC RFC3339 checked_at")
-            if self.checked_target is not None:
-                expected_endpoint = _actor_permission_expected_endpoint(self.checked_target)
-                if expected_endpoint is None or self.endpoint != expected_endpoint:
-                    raise ValueError("actor permission gate pass endpoint does not match checked_target")
-                if self.checked_target_hash != _domain_json_hash(
-                    "reviewgraph.review_target.v1", dict(self.checked_target)
-                ):
-                    raise ValueError("actor permission gate pass checked_target_hash mismatch")
-            if self.transport_summary is not None:
-                if self.transport_summary.endpoint_kind != ACTOR_PERMISSION_TRANSPORT_ENDPOINT_KIND:
-                    raise ValueError("actor permission gate pass transport summary endpoint_kind mismatch")
-                if self.transport_summary.reason_code is not None:
-                    raise ValueError("actor permission gate pass transport summary must not include reason_code")
-                if self.transport_summary.retryable:
-                    raise ValueError("actor permission gate pass transport summary must not be retryable")
-        if self.status == GateStatus.FAIL and self.reason_code is None:
-            raise ValueError("actor permission gate failure requires reason_code")
-        if self.status == GateStatus.FAIL and self.transport_summary is None:
-            raise ValueError("actor permission gate failure requires transport_summary")
-        if self.status == GateStatus.FAIL and self.transport_summary is not None and self.reason_code is not None:
-            if self.permission is not None and self.permission != _actor_permission_failure_permission(
-                self.repo_permission,
-                self.installation_permission,
-                self.endpoint_permission,
-            ):
-                raise ValueError("actor permission gate failure permission proof is unsafe")
-            if self.checked_at is not None and not _is_realistic_rfc3339_utc_z(self.checked_at):
-                raise ValueError("actor permission gate failure checked_at must be validated")
-            if self.credential_source is not None and self.credential_source not in ALLOWED_ACTOR_PERMISSION_CREDENTIAL_SOURCES:
-                raise ValueError("actor permission gate failure credential_source is unsafe")
-            if self.repo_permission is not None and self.repo_permission not in ALLOWED_ACTOR_PERMISSION_REPO_PERMISSIONS:
-                raise ValueError("actor permission gate failure repo_permission is unsafe")
-            if (
-                self.installation_permission is not None
-                and self.installation_permission not in ALLOWED_ACTOR_PERMISSION_ENDPOINT_PERMISSIONS
-            ):
-                raise ValueError("actor permission gate failure installation_permission is unsafe")
-            if (
-                self.endpoint_permission is not None
-                and self.endpoint_permission not in ALLOWED_ACTOR_PERMISSION_ENDPOINT_PERMISSIONS
-            ):
-                raise ValueError("actor permission gate failure endpoint_permission is unsafe")
-            if self.check_method is not None and self.check_method != ACTOR_PERMISSION_CHECK_METHOD:
-                raise ValueError("actor permission gate failure check_method is unsafe")
-            if self.endpoint_method is not None and self.endpoint_method != ACTOR_PERMISSION_ENDPOINT_METHOD:
-                raise ValueError("actor permission gate failure endpoint_method is unsafe")
-            if self.endpoint_kind is not None and self.endpoint_kind != ACTOR_PERMISSION_ENDPOINT_KIND:
-                raise ValueError("actor permission gate failure endpoint_kind is unsafe")
-            if self.endpoint is not None:
-                if self.checked_target is None:
-                    raise ValueError("actor permission gate failure endpoint requires checked_target")
-                expected_endpoint = _actor_permission_expected_endpoint(self.checked_target)
-                if expected_endpoint is None or self.endpoint != expected_endpoint:
-                    raise ValueError("actor permission gate failure endpoint is unsafe")
-            transport_reason_code = self.transport_summary.reason_code
-            if transport_reason_code is not None:
-                if transport_reason_code not in TRANSPORT_ACTOR_PERMISSION_REASON_CODES:
-                    raise ValueError("actor permission gate transport summary reason_code must be transport failure")
-                if transport_reason_code != self.reason_code:
-                    raise ValueError("actor permission gate transport summary reason_code mismatch")
-            elif self.reason_code in TRANSPORT_ACTOR_PERMISSION_REASON_CODES - {ActorPermissionReasonCode.MALFORMED_RESPONSE}:
-                if transport_reason_code != self.reason_code:
-                    raise ValueError("actor permission gate transport summary reason_code mismatch")
-            if self.transport_summary.retryable != (transport_reason_code in RETRYABLE_ACTOR_PERMISSION_REASON_CODES):
-                raise ValueError("actor permission gate transport summary retryable mismatch")
+            _validate_actor_permission_gate_pass(self)
+        if self.status == GateStatus.FAIL:
+            _validate_actor_permission_gate_fail(self)
+
+
+def _validate_actor_permission_gate_common(result: ActorPermissionGateResult) -> None:
+    if not isinstance(result.status, GateStatus):
+        raise ValueError("actor permission gate status must be a GateStatus")
+    if result.status == GateStatus.UNKNOWN:
+        raise ValueError("actor permission gate status must be pass or fail")
+    _require_optional_non_empty(result.actor, "actor permission gate actor")
+    _require_optional_non_empty(result.permission, "actor permission gate permission")
+    _require_optional_non_empty(result.checked_at, "actor permission gate checked_at")
+    _require_optional_non_empty(result.reason, "actor permission gate reason")
+    if result.actor is not None and not _is_safe_actor_permission_identity(result.actor):
+        raise ValueError("actor permission gate actor must be allowlisted")
+    if result.credential_principal is not None and not _is_safe_actor_permission_identity(
+        result.credential_principal
+    ):
+        raise ValueError("actor permission gate credential_principal must be allowlisted")
+    if result.reason is not None and not _is_safe_actor_permission_reason(result.reason):
+        raise ValueError("actor permission gate reason must be allowlisted")
+    if result.reason_code is not None and not isinstance(result.reason_code, ActorPermissionReasonCode):
+        raise ValueError("actor permission gate reason_code must be an ActorPermissionReasonCode")
+    _require_optional_non_empty(result.credential_principal, "actor permission gate credential_principal")
+    _require_optional_non_empty(result.credential_source, "actor permission gate credential_source")
+    _require_optional_non_empty(result.repo_permission, "actor permission gate repo_permission")
+    _require_optional_non_empty(result.installation_permission, "actor permission gate installation_permission")
+    _require_optional_non_empty(result.endpoint_permission, "actor permission gate endpoint_permission")
+    if result.issue_comment_write is not None and not isinstance(result.issue_comment_write, bool):
+        raise ValueError("actor permission gate issue_comment_write must be a bool")
+    _require_optional_non_empty(result.check_method, "actor permission gate check_method")
+    _require_optional_non_empty(result.endpoint_method, "actor permission gate endpoint_method")
+    if result.checked_target is not None:
+        _validate_actor_permission_checked_target(result)
+    _require_optional_hash_like(result.checked_target_hash, "actor permission gate checked_target_hash")
+    _require_optional_non_empty(result.endpoint, "actor permission gate endpoint")
+    _require_optional_non_empty(result.endpoint_kind, "actor permission gate endpoint_kind")
+    if result.transport_summary is not None and not isinstance(
+        result.transport_summary, ActorPermissionTransportSummary
+    ):
+        raise ValueError("actor permission gate transport_summary must be an ActorPermissionTransportSummary")
+
+
+def _validate_actor_permission_checked_target(result: ActorPermissionGateResult) -> None:
+    if not isinstance(result.checked_target, Mapping):
+        raise ValueError("actor permission gate checked_target must be a mapping")
+    if not all(isinstance(key, str) for key in result.checked_target):
+        raise ValueError("actor permission gate checked_target keys must be strings")
+    object.__setattr__(result, "checked_target", MappingProxyType(dict(result.checked_target)))
+
+
+def _validate_actor_permission_gate_pass(result: ActorPermissionGateResult) -> None:
+    for name in (
+        "actor",
+        "permission",
+        "checked_at",
+        "credential_principal",
+        "credential_source",
+        "check_method",
+        "endpoint_method",
+        "checked_target",
+        "checked_target_hash",
+        "endpoint",
+        "endpoint_kind",
+        "transport_summary",
+    ):
+        if getattr(result, name) is None:
+            raise ValueError(f"actor permission gate pass requires {name}")
+    if result.issue_comment_write is not True:
+        raise ValueError("actor permission gate pass requires issue_comment_write")
+    if result.reason_code is not None:
+        raise ValueError("actor permission gate pass must not include reason_code")
+    if result.reason is not None:
+        raise ValueError("actor permission gate pass must not include reason")
+    if result.permission in {"read", "triage", "issues:read", "pull_requests:read"}:
+        raise ValueError("actor permission gate pass requires write permission")
+    _validate_actor_permission_pass_proof(result)
+    _validate_actor_permission_pass_target(result)
+    _validate_actor_permission_pass_transport(result)
+
+
+def _validate_actor_permission_pass_proof(result: ActorPermissionGateResult) -> None:
+    derived_permission = _actor_permission_derived_permission(
+        credential_source=result.credential_source,
+        repo_permission=result.repo_permission,
+        installation_permission=result.installation_permission,
+        endpoint_permission=result.endpoint_permission,
+    )
+    if derived_permission is None or result.permission != derived_permission:
+        raise ValueError("actor permission gate pass permission proof is inconsistent")
+    if result.check_method != ACTOR_PERMISSION_CHECK_METHOD:
+        raise ValueError("actor permission gate pass requires permission check_method")
+    if result.endpoint_method != ACTOR_PERMISSION_ENDPOINT_METHOD:
+        raise ValueError("actor permission gate pass requires POST endpoint_method")
+    if result.endpoint_kind != ACTOR_PERMISSION_ENDPOINT_KIND:
+        raise ValueError("actor permission gate pass requires issue_comment endpoint_kind")
+    if result.checked_at is not None and not _is_realistic_rfc3339_utc_z(result.checked_at):
+        raise ValueError("actor permission gate pass requires UTC RFC3339 checked_at")
+
+
+def _validate_actor_permission_pass_target(result: ActorPermissionGateResult) -> None:
+    if result.checked_target is None:
+        return
+    expected_endpoint = _actor_permission_expected_endpoint(result.checked_target)
+    if expected_endpoint is None or result.endpoint != expected_endpoint:
+        raise ValueError("actor permission gate pass endpoint does not match checked_target")
+    if result.checked_target_hash != _domain_json_hash("reviewgraph.review_target.v1", dict(result.checked_target)):
+        raise ValueError("actor permission gate pass checked_target_hash mismatch")
+
+
+def _validate_actor_permission_pass_transport(result: ActorPermissionGateResult) -> None:
+    if result.transport_summary is None:
+        return
+    if result.transport_summary.endpoint_kind != ACTOR_PERMISSION_TRANSPORT_ENDPOINT_KIND:
+        raise ValueError("actor permission gate pass transport summary endpoint_kind mismatch")
+    if result.transport_summary.reason_code is not None:
+        raise ValueError("actor permission gate pass transport summary must not include reason_code")
+    if result.transport_summary.retryable:
+        raise ValueError("actor permission gate pass transport summary must not be retryable")
+
+
+def _validate_actor_permission_gate_fail(result: ActorPermissionGateResult) -> None:
+    if result.reason_code is None:
+        raise ValueError("actor permission gate failure requires reason_code")
+    if result.transport_summary is None:
+        raise ValueError("actor permission gate failure requires transport_summary")
+    _validate_actor_permission_failure_metadata(result)
+    _validate_actor_permission_failure_transport(result)
+
+
+def _validate_actor_permission_failure_metadata(result: ActorPermissionGateResult) -> None:
+    if result.permission is not None and result.permission != _actor_permission_failure_permission(
+        result.repo_permission,
+        result.installation_permission,
+        result.endpoint_permission,
+    ):
+        raise ValueError("actor permission gate failure permission proof is unsafe")
+    if result.checked_at is not None and not _is_realistic_rfc3339_utc_z(result.checked_at):
+        raise ValueError("actor permission gate failure checked_at must be validated")
+    if result.credential_source is not None and result.credential_source not in ALLOWED_ACTOR_PERMISSION_CREDENTIAL_SOURCES:
+        raise ValueError("actor permission gate failure credential_source is unsafe")
+    if result.repo_permission is not None and result.repo_permission not in ALLOWED_ACTOR_PERMISSION_REPO_PERMISSIONS:
+        raise ValueError("actor permission gate failure repo_permission is unsafe")
+    if (
+        result.installation_permission is not None
+        and result.installation_permission not in ALLOWED_ACTOR_PERMISSION_ENDPOINT_PERMISSIONS
+    ):
+        raise ValueError("actor permission gate failure installation_permission is unsafe")
+    if (
+        result.endpoint_permission is not None
+        and result.endpoint_permission not in ALLOWED_ACTOR_PERMISSION_ENDPOINT_PERMISSIONS
+    ):
+        raise ValueError("actor permission gate failure endpoint_permission is unsafe")
+    _validate_actor_permission_failure_methods(result)
+
+
+def _validate_actor_permission_failure_methods(result: ActorPermissionGateResult) -> None:
+    if result.check_method is not None and result.check_method != ACTOR_PERMISSION_CHECK_METHOD:
+        raise ValueError("actor permission gate failure check_method is unsafe")
+    if result.endpoint_method is not None and result.endpoint_method != ACTOR_PERMISSION_ENDPOINT_METHOD:
+        raise ValueError("actor permission gate failure endpoint_method is unsafe")
+    if result.endpoint_kind is not None and result.endpoint_kind != ACTOR_PERMISSION_ENDPOINT_KIND:
+        raise ValueError("actor permission gate failure endpoint_kind is unsafe")
+    if result.endpoint is not None:
+        if result.checked_target is None:
+            raise ValueError("actor permission gate failure endpoint requires checked_target")
+        expected_endpoint = _actor_permission_expected_endpoint(result.checked_target)
+        if expected_endpoint is None or result.endpoint != expected_endpoint:
+            raise ValueError("actor permission gate failure endpoint is unsafe")
+
+
+def _validate_actor_permission_failure_transport(result: ActorPermissionGateResult) -> None:
+    if result.transport_summary is None or result.reason_code is None:
+        return
+    transport_reason_code = result.transport_summary.reason_code
+    if transport_reason_code is not None:
+        if transport_reason_code not in TRANSPORT_ACTOR_PERMISSION_REASON_CODES:
+            raise ValueError("actor permission gate transport summary reason_code must be transport failure")
+        if transport_reason_code != result.reason_code:
+            raise ValueError("actor permission gate transport summary reason_code mismatch")
+    elif result.reason_code in TRANSPORT_ACTOR_PERMISSION_REASON_CODES - {ActorPermissionReasonCode.MALFORMED_RESPONSE}:
+        if transport_reason_code != result.reason_code:
+            raise ValueError("actor permission gate transport summary reason_code mismatch")
+    if result.transport_summary.retryable != (transport_reason_code in RETRYABLE_ACTOR_PERMISSION_REASON_CODES):
+        raise ValueError("actor permission gate transport summary retryable mismatch")
 
 
 @dataclass(frozen=True)
@@ -2546,46 +2588,58 @@ class ApprovalDecision:
             raise ValueError("approval approved_permission_endpoint_method is unsupported")
         if self.approved_permission_endpoint_kind != ACTOR_PERMISSION_ENDPOINT_KIND:
             raise ValueError("approval approved_permission_endpoint_kind is unsupported")
-        if not isinstance(self.approved_permission_checked_target, Mapping):
-            raise ValueError("approval approved_permission_checked_target must be a mapping")
-        if not all(isinstance(key, str) for key in self.approved_permission_checked_target):
-            raise ValueError("approval approved_permission_checked_target keys must be strings")
-        object.__setattr__(
-            self,
-            "approved_permission_checked_target",
-            MappingProxyType(dict(self.approved_permission_checked_target)),
-        )
-        _require_hash_like(
-            self.approved_permission_checked_target_hash,
-            "approval approved_permission_checked_target_hash",
-        )
-        if self.approved_permission_checked_target != self.approved_review_target.to_ordered_dict():
-            raise ValueError("approval permission checked_target must match approved_review_target")
-        if self.approved_permission_checked_target_hash != self.approved_review_target_hash:
-            raise ValueError("approval permission checked_target_hash must match approved_review_target_hash")
-        expected_endpoint = _actor_permission_expected_endpoint(self.approved_permission_checked_target)
-        if expected_endpoint is None or self.approved_permission_endpoint != expected_endpoint:
-            raise ValueError("approval permission endpoint must match approved_review_target")
-        if not _is_realistic_rfc3339_utc_z(self.approved_permission_checked_at):
-            raise ValueError("approval approved_permission_checked_at must be UTC RFC3339")
-        derived_permission = _actor_permission_derived_permission(
-            credential_source=self.approved_credential_source,
-            repo_permission=self.approved_repo_permission,
-            installation_permission=self.approved_installation_permission,
-            endpoint_permission=self.approved_endpoint_permission,
-        )
-        if derived_permission is None or self.approved_permission != derived_permission:
-            raise ValueError("approval permission proof is inconsistent")
-        if not isinstance(self.approved_permission_transport_summary, ActorPermissionTransportSummary):
-            raise ValueError("approval approved_permission_transport_summary must be valid")
-        if self.approved_permission_transport_summary.reason_code is not None:
-            raise ValueError("approval passing permission transport summary must not include reason_code")
-        if self.approved_permission_transport_summary.retryable:
-            raise ValueError("approval passing permission transport summary must not be retryable")
+        _validate_approval_permission_target_and_transport(self)
         if type(self.include_public_verdict) is not bool:
             raise ValueError("approval include_public_verdict must be a boolean")
         if self.approved and not self.approved_item_ids:
             raise ValueError("approved decision requires approved_item_ids")
+
+
+def _validate_approval_permission_target_and_transport(approval: ApprovalDecision) -> None:
+    if not isinstance(approval.approved_permission_checked_target, Mapping):
+        raise ValueError("approval approved_permission_checked_target must be a mapping")
+    if not all(isinstance(key, str) for key in approval.approved_permission_checked_target):
+        raise ValueError("approval approved_permission_checked_target keys must be strings")
+    object.__setattr__(
+        approval,
+        "approved_permission_checked_target",
+        MappingProxyType(dict(approval.approved_permission_checked_target)),
+    )
+    _require_hash_like(
+        approval.approved_permission_checked_target_hash,
+        "approval approved_permission_checked_target_hash",
+    )
+    if approval.approved_permission_checked_target != approval.approved_review_target.to_ordered_dict():
+        raise ValueError("approval permission checked_target must match approved_review_target")
+    if approval.approved_permission_checked_target_hash != approval.approved_review_target_hash:
+        raise ValueError("approval permission checked_target_hash must match approved_review_target_hash")
+    expected_endpoint = _actor_permission_expected_endpoint(approval.approved_permission_checked_target)
+    if expected_endpoint is None or approval.approved_permission_endpoint != expected_endpoint:
+        raise ValueError("approval permission endpoint must match approved_review_target")
+    if not _is_realistic_rfc3339_utc_z(approval.approved_permission_checked_at):
+        raise ValueError("approval approved_permission_checked_at must be UTC RFC3339")
+    _validate_approval_permission_proof(approval)
+    _validate_approval_permission_transport(approval)
+
+
+def _validate_approval_permission_proof(approval: ApprovalDecision) -> None:
+    derived_permission = _actor_permission_derived_permission(
+        credential_source=approval.approved_credential_source,
+        repo_permission=approval.approved_repo_permission,
+        installation_permission=approval.approved_installation_permission,
+        endpoint_permission=approval.approved_endpoint_permission,
+    )
+    if derived_permission is None or approval.approved_permission != derived_permission:
+        raise ValueError("approval permission proof is inconsistent")
+
+
+def _validate_approval_permission_transport(approval: ApprovalDecision) -> None:
+    if not isinstance(approval.approved_permission_transport_summary, ActorPermissionTransportSummary):
+        raise ValueError("approval approved_permission_transport_summary must be valid")
+    if approval.approved_permission_transport_summary.reason_code is not None:
+        raise ValueError("approval passing permission transport summary must not include reason_code")
+    if approval.approved_permission_transport_summary.retryable:
+        raise ValueError("approval passing permission transport summary must not be retryable")
 
 
 @dataclass(frozen=True)

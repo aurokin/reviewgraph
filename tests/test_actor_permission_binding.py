@@ -7,7 +7,6 @@ import pytest
 
 from reviewgraph.approval import build_approval_decision, build_approval_proof
 from reviewgraph.finalization import validate_actor_permission_snapshot_for_finalization
-from reviewgraph.hashing import final_payload_hash, findings_hash, marker_payload_hash
 from reviewgraph.models import (
     ActorPermissionFinalizationReasonCode,
     ActorPermissionReasonCode,
@@ -17,12 +16,8 @@ from reviewgraph.models import (
     Confidence,
     FinalIssueCommentPayload,
     GateStatus,
-    OutputClassification,
     PayloadValidationResult,
-    PostingDestination,
     PostingPlan,
-    PostingPlanItem,
-    RedactionStatus,
     ReviewTarget,
     Severity,
 )

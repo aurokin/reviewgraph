@@ -8,7 +8,7 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Mapping, Protocol
+from typing import Callable, Mapping, Protocol
 
 from reviewgraph.approval import build_approval_decision, build_approval_proof
 from reviewgraph.final_payload import build_approved_final_issue_comment

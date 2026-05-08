@@ -8,7 +8,7 @@ from typing import Any
 
 from reviewgraph.fixtures import (
     ChangedFile,
-    FixtureError,
+    FixtureError as FixtureError,
     FixturePR,
     ReviewerConfig,
     load_fixture_pr,
@@ -32,8 +32,8 @@ from reviewgraph.diff_anchor import attach_diff_anchors
 from reviewgraph.hashing import canonical_json_hash
 from reviewgraph.memory import build_conversation_memory
 from reviewgraph.models import (
-    ClarificationRequest,
     ClarificationAnswer,
+    ClarificationRequest as ClarificationRequest,
     ClassifiedFinding,
     ContextBudget,
     GateStatus,

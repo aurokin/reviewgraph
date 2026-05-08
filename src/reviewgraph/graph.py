@@ -10,7 +10,7 @@ from reviewgraph.fixtures import FixturePR, load_fixture_pr
 from reviewgraph.memory import build_conversation_memory
 from reviewgraph.models import (
     ReviewConfig,
-    ReviewStage,
+    ReviewStage as ReviewStage,
     ReviewState,
     ReviewTarget,
     RunMode,

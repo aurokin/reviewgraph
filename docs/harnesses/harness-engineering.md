@@ -217,6 +217,7 @@ python -m pytest tests/test_tracer_fixture_run.py tests/test_cli.py tests/test_g
 python -m pytest tests/test_reviewer_context.py tests/test_prompt_injection_memory.py tests/test_contract_boundaries.py -q
 python -m pytest tests/test_github_fake_read.py tests/test_github_read_gaps.py tests/test_github_pagination.py tests/test_github_memory_trust.py tests/test_live_read_smoke.py -q
 python -m pytest -q
+python -m ruff check src tests scripts
 python -m py_compile src/reviewgraph/*.py
 python scripts/check_docs.py
 git diff --check
@@ -226,12 +227,15 @@ For implementation handoff, run the default validation sequence:
 
 ```bash
 python -m pytest -q
+python -m ruff check src tests scripts
 python -m py_compile src/reviewgraph/*.py
 python scripts/check_docs.py
 git diff --check
 ```
 
-The default suite includes marker/hash golden tests, fake writer tests, real writer contract tests with fake transports, manual live-post contract tests with the marked smoke skipped, and unmarked live smoke prerequisite checks. It must not post to GitHub, call live LLMs, require credentials, or require human input.
+The default validation sequence assumes the project test extra is installed (`python -m pip install -e ".[test]"`).
+
+The default suite includes marker/hash golden tests, fake writer tests, real writer contract tests with fake transports, manual live-post contract tests with the marked smoke skipped, unmarked live smoke prerequisite checks, Ruff import/syntax checks, and Ruff cyclomatic-complexity checks. It must not post to GitHub, call live LLMs, require credentials, or require human input.
 
 For milestone gates, also run the Linear backlog export check described in `docs/implementation/README.md` and delete the temporary export before handoff.
 
