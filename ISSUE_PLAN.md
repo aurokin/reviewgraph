@@ -26,10 +26,11 @@ Close PRD 0008 only after proving the implemented live LLM policy, adapter bound
 
 - Every active PRD 0008 implementation issue is `Done` in Linear with an evidence comment.
 - Fresh Linear inventory proves no open PRD 0008 implementation issue remains besides the gate.
-- PRD 0009 remains ordered after PRD 0008; `AUR-242` must not be started before this gate closes.
+- PRD 0009 remains ordered after PRD 0008; `AUR-260` must block `AUR-242`, or an explicitly equivalent first-PRD-0009 blocker must exist, and no PRD 0009 issue may be started before this gate and its docs closeout are complete.
 - Focused validation for AUR-212, AUR-232, and AUR-240 passes.
 - Full validation, docs check, py-compile, diff check, and backlog export check pass.
-- Durable docs explain the final live LLM guardrail, adapter, opt-in, redaction, budget, retry, failure, and smoke-test contracts.
+- Durable docs explain the final live LLM guardrail, adapter, opt-in, redaction, budget, retry, failure, smoke-test, reviewer-context, and adapter-boundary contracts.
+- The milestone-complete documentation refactor/audit is complete before `AUR-260` moves to `Done`.
 - Fresh subagent review of code, tests, docs, Linear evidence, and gate evidence reports no material issues.
 - Default commands still cannot call live providers, write GitHub, require credentials, or require human input.
 - No `.ws/`, temporary Linear export, live LLM artifact, live-post artifact, audit scratch file, or subagent scratch file remains.
@@ -40,14 +41,17 @@ Close PRD 0008 only after proving the implemented live LLM policy, adapter bound
 2. Audit Linear:
    - Re-fetch PRD 0008 milestone and issues.
    - Re-read AUR-212/AUR-232/AUR-240 evidence comments.
-   - Verify `AUR-242` remains `Backlog`.
+   - Verify `AUR-260` blocks `AUR-242`, or record the exact equivalent first-PRD-0009 blocker.
+   - Inventory every PRD 0009 issue and verify none is `In Progress` or `Done` before this gate/docs closeout finishes.
 3. Audit repository docs:
    - `README.md`
    - `docs/architecture/llm-data-handling.md`
+   - `docs/architecture/reviewer-config.md`
    - `docs/architecture/state-graph.md`
    - `docs/harnesses/harness-engineering.md`
    - `docs/product/rules.md`
    - `docs/prds/0008-live-llm.md`
+   - `docs/prds/0010-agent-context-and-adapter-boundaries.md`
    - `docs/decisions/`
 4. Run validation:
    - `.venv/bin/python -m pytest tests/test_llm_policy.py -q`
@@ -59,11 +63,15 @@ Close PRD 0008 only after proving the implemented live LLM policy, adapter bound
    - `.venv/bin/python -m py_compile src/reviewgraph/*.py`
    - `.venv/bin/python scripts/check_docs.py`
    - `git diff --check`
-5. Create a temporary Linear backlog export for PRD 0008/0009 ordering evidence, run `scripts/check_docs.py --backlog-export <temp>`, then delete the export.
-6. If the audit finds documentation gaps, make the narrowest durable doc updates and commit them separately.
-7. Use fresh subagents to review the gate evidence, docs, and issue/milestone closure decision.
-8. Move `AUR-260` to `In Review`, add a Linear gate evidence comment, then move it to `Done` only after review is clean.
-9. After `AUR-260` is `Done`, do the milestone-complete documentation refactor/audit required by the thread goal before starting PRD 0009.
+5. Create a temporary Linear backlog export for PRD 0008/0009 ordering evidence. The export must include `AUR-212`, `AUR-232`, `AUR-240`, `AUR-260`, `AUR-242`, and all other PRD 0009 issues with statuses and blocker/blocking relationships. Run `scripts/check_docs.py --backlog-export <temp>`, record the check output and export hash for Linear evidence, then delete the export.
+6. Complete the milestone documentation refactor/audit before gate closure:
+   - Reconcile durable docs so a future agent can discover final PRD 0008 behavior without reading Linear comments first.
+   - Update only durable docs that are stale or missing key decisions; avoid changing docs that already state the contract accurately.
+   - Ensure docs cover progressive disclosure: top-level current slice in `README.md`, product guardrails in `docs/product/`, architecture contracts in `docs/architecture/`, harness commands in `docs/harnesses/`, PRD contract in `docs/prds/0008-live-llm.md`, and durable tradeoffs in `docs/decisions/` only if needed.
+   - Commit docs changes separately from validation/evidence commits.
+7. Use fresh subagents to review the gate evidence, docs refactor/audit, Linear relationships, and issue/milestone closure decision.
+8. Move `AUR-260` to `In Review`, add a Linear gate evidence comment, then move it to `Done` only after review is clean and the documentation refactor/audit is complete.
+9. After `AUR-260` is `Done`, add a project/milestone status update if Linear exposes one, and do not start PRD 0009 until the final gate evidence is attached.
 
 ## Acceptance Mapping
 
@@ -71,7 +79,20 @@ Close PRD 0008 only after proving the implemented live LLM policy, adapter bound
 - Policy/audit/redaction/budget guardrails -> AUR-212 evidence, `tests/test_llm_policy.py`, `docs/architecture/llm-data-handling.md`.
 - Adapter boundaries -> AUR-232 evidence, `tests/test_adapter_boundaries.py`, `tests/test_contract_boundaries.py`.
 - Default-safe harness -> full default pytest, live markers skipped, docs harness text.
-- Milestone sequencing -> Linear milestone inventory plus backlog export check.
+- Milestone sequencing -> Linear milestone inventory plus backlog export check proving `AUR-260` blocks `AUR-242` or equivalent first-PRD-0009 blocker.
+- Documentation closeout -> durable docs audit/refactor completed before `AUR-260` is `Done`, with fresh subagent review and validation evidence.
+
+## Required Linear Gate Evidence Comment
+
+The final AUR-260 evidence comment must include:
+
+- Implementation issue inventory: `AUR-212`, `AUR-232`, and `AUR-240` statuses plus links to their evidence comments.
+- Validation matrix: focused AUR-212/AUR-232/AUR-240 commands, full test suite, py-compile, docs check, diff check, and backlog export check outputs.
+- Backlog/export proof: temp export hash, included issues, relationship proof for `AUR-260 -> AUR-242` or equivalent, and confirmation the temp export was deleted.
+- Documentation audit result: docs inspected, docs changed or explicitly left unchanged, commit hashes, and progressive-disclosure coverage.
+- Fresh subagent review outcomes: names/ids and final clean result.
+- Cleanup proof: no `.ws/`, temp export, live artifacts, live-post artifacts, audit scratch files, or subagent scratch files remain.
+- Acceptance mapping: live opt-in/default fake, policy/audit/redaction/budget, adapter boundaries, live smoke, default-safe tests, and milestone sequencing.
 
 ## Out Of Scope
 
