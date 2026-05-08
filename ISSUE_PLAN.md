@@ -15,7 +15,7 @@ Linear is the durable source for status, blockers, and handoff. Durable behavior
 - Linear comments fetched on 2026-05-07: none
 - Upstream blockers complete: `AUR-244`, `AUR-218`, `AUR-217`, `AUR-219`, `AUR-243`, `AUR-220`, `AUR-221`, `AUR-245`, `AUR-246`, `AUR-223`, and `AUR-222`.
 - Downstream issues: `AUR-224` owns manual live post smoke; `AUR-261` owns milestone closure.
-- Linear description has stale wording from before AUR-222 review fixes: it says the writer receives a marker reconciliation plan and permits a second POST after an ambiguous accepted-write recovery scan. This issue will update Linear to match the current durable contract before completion.
+- Linear description had stale wording from before AUR-222 review fixes: it said the writer receives a marker reconciliation plan and permits a second POST after an ambiguous accepted-write recovery scan. Completion requires updating Linear to match the current durable contract.
 
 ## Objective
 

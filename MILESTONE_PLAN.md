@@ -6,7 +6,7 @@ Active execution artifact for this milestone. Linear remains the durable source 
 
 - Milestone: `PRD 0007: Side Effects`
 - Milestone ID: `c6087171-c932-43a9-81b1-5cf3ddec025a`
-- Current execution status as of 2026-05-07 after moving AUR-222 to implementation: `AUR-244`, `AUR-218`, `AUR-217`, `AUR-219`, `AUR-243`, `AUR-220`, `AUR-221`, `AUR-245`, `AUR-246`, and `AUR-223` are `Done`; `AUR-222` is `In Progress`; remaining active implementation issues are `Backlog`; `AUR-261` is the milestone gate.
+- Current execution status as of 2026-05-07 after AUR-241 implementation review: `AUR-244`, `AUR-218`, `AUR-217`, `AUR-219`, `AUR-243`, `AUR-220`, `AUR-221`, `AUR-245`, `AUR-246`, `AUR-223`, `AUR-222`, and `AUR-241` are implemented; `AUR-224` is the remaining active implementation issue; `AUR-261` is the milestone gate.
 - Active implementation issues:
   - `AUR-244` / `RG-055: Define Payload Hash Domains And Golden Tests` / `Done`
   - `AUR-218` / `RG-029: Validate Top-Level Issue Comment Payloads` / `Done`
@@ -18,8 +18,8 @@ Active execution artifact for this milestone. Linear remains the durable source 
   - `AUR-245` / `RG-056: Harden Marker Author Pagination Reconciliation` / `Done`
   - `AUR-246` / `RG-057: Block Non-Interactive Posting Mode` / `Done`
   - `AUR-223` / `RG-034: Suppress Writes With No Approved Findings` / `Done`
-  - `AUR-222` / `RG-033: Implement Fake Top-Level Comment Writer` / `In Progress`
-  - `AUR-241` / `RG-052: Add Real Top-Level Comment Writer Adapter` / `Backlog`
+  - `AUR-222` / `RG-033: Implement Fake Top-Level Comment Writer` / `Done`
+  - `AUR-241` / `RG-052: Add Real Top-Level Comment Writer Adapter` / `Implemented, pending Linear completion`
   - `AUR-224` / `RG-035: Add Manual Live Post Smoke Contract` / `Backlog`
 - Gate issue:
   - `AUR-261` / `Complete PRD 0007: Side Effects` / `Backlog`
@@ -46,7 +46,7 @@ The product point is controlled side effects. Reviewers do not write to GitHub, 
 - `src/reviewgraph/posting.py` builds dry-run posting plans and candidate issue-comment payloads, validates MVP artifact kind, computes visible/full/findings hashes, and rejects public request-changes verdict text.
 - `src/reviewgraph/runner.py` and `src/reviewgraph/targets.py` produce dry-run output and writer-call sentinel proof. Approval, finalization, marker reconciliation, and fake writer/post-mode harnesses now exist behind explicit non-default boundaries; public runs still do not expose a production post path.
 - `docs/architecture/side-effects.md`, `docs/architecture/github-integration.md`, and `docs/architecture/state-graph.md` define the durable side-effect contract.
-- Existing tests cover candidate/final payload construction, posting-plan local-only behavior, dry-run writer boundaries, approval/finalization gates, marker reconciliation, fake writer reachability, payload schema primitives, redaction, and GitHub read/dry-run paths. Remaining PRD 0007 issues must preserve default dry-run behavior while adding the real writer adapter and manual live-post smoke proof.
+- Existing tests cover candidate/final payload construction, posting-plan local-only behavior, dry-run writer boundaries, approval/finalization gates, marker reconciliation, fake writer reachability, real writer adapter contracts with fake transports, payload schema primitives, redaction, and GitHub read/dry-run paths. Remaining PRD 0007 work must preserve default dry-run behavior while adding manual live-post smoke proof and closing the milestone gate.
 
 ## Execution Order
 
