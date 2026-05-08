@@ -34,7 +34,7 @@ This issue must not introduce live GitHub writes, a public production `--post` C
 - Writer attempts must emit redacted transport summaries: endpoint/method class, retryability, stable failure code, request ID when available, and marker scan page/comment counts when recovery scans happen.
 - Transport summaries must not include tokens, raw stderr, request headers, unredacted payload bodies, or unredacted comment bodies.
 - Ambiguous accepted-write recovery is writer-local and only after a POST attempt may have reached GitHub. It uses shared marker parsing/reconciliation primitives and the finalized input's expected target/payload/findings hashes.
-- The writer owns an in-memory retry-sequence guard keyed by `run_id`, target hash, payload hash, and findings hash. Once a POST attempt is ambiguous for that key, every later call with the same finalized input is recovery-only and must not issue another POST.
+- The writer owns an in-memory retry-sequence guard keyed by `run_id`, target hash, payload hash, and findings hash. It records the key before every POST attempt whose outcome may represent an accepted write. Every later call with the same finalized input is recovery-only and must not issue another POST.
 - After an ambiguous accepted-write outcome, a second POST is forbidden in the same approved run/retry sequence even if recovery finds no accepted artifact.
 - Incomplete, empty, unavailable, timed-out, rate-limited, malformed, conflicting, or otherwise failed recovery scans return `FAILED` with stable error evidence and zero additional POSTs.
 - If recovery finds a matching trusted marker, the writer returns `RECONCILED` or posted/reconciled evidence with zero additional POSTs.
@@ -61,7 +61,7 @@ This issue must not introduce live GitHub writes, a public production `--post` C
    - Add typed outcome detail rather than overloading `error`: at minimum distinguish `posted`, `reconciled_existing`, `validation_failed`, `transport_failed`, `retryable_unknown`, `ambiguous_unresolved`, `forbidden_second_post`, `trusted_marker_conflict`, and `response_actor_mismatch`.
 4. Implement ambiguous accepted-write recovery:
    - Transport may raise or return an explicit ambiguous accepted-write timeout outcome after one POST call.
-   - The writer records the retry-sequence key as POST-attempted before recovery. Any later same-key call enters recovery-only mode and does not call POST again.
+   - The writer records the retry-sequence key as POST-attempted before calling the POST transport. Any later same-key call enters recovery-only mode and does not call POST again, including after ambiguous timeout, malformed accepted response, missing/malformed comment ID, or response-author mismatch.
    - The writer then performs a complete paginated marker recovery scan through the injected marker transport.
    - The scan uses `reconcile_paginated_trusted_markers(...)` with approved actor, trusted bot authors, and expected hashes from the finalized payload.
    - `RECONCILED_EXISTING` returns `GitHubWriterResult(status=RECONCILED, comment_id=existing_id, ...)`.
@@ -92,6 +92,7 @@ Create `tests/test_github_writer.py` covering:
 - Timeout/rate-limit/forbidden/not-found/unavailable/malformed-response/transport-unknown POST failures return stable redacted errors.
 - Ambiguous accepted-write timeout performs exactly one recovery marker scan and zero additional POSTs.
 - Calling the same writer again with the same finalized input after ambiguous unresolved recovery returns `forbidden_second_post` or recovery-only failure evidence with zero additional POST calls.
+- Calling the same writer again with the same finalized input after malformed accepted response, missing/malformed comment ID, or response-author mismatch returns recovery-only failure evidence with zero additional POST calls.
 - Ambiguous recovery with matching trusted marker returns reconciled existing and zero additional POSTs.
 - Ambiguous recovery with duplicate trusted identical markers returns reconciled existing with duplicate metadata and zero additional POSTs.
 - Ambiguous recovery with trusted conflicting marker fails closed and zero additional POSTs.
