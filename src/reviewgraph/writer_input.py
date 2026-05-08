@@ -101,6 +101,8 @@ def build_finalized_issue_comment_writer_input(
         raise ValueError("finalized writer input approval payload hash mismatch")
     if approval.approved_review_target_hash != finalization.final_payload.review_target.target_hash():
         raise ValueError("finalized writer input approval target hash mismatch")
+    if run_id != finalization.final_payload.marker_run_id:
+        raise ValueError("finalized writer input run_id must match final payload marker run_id")
     return FinalizedIssueCommentWriterInput(
         final_payload=finalization.final_payload,
         final_payload_hash=finalization.final_payload.final_payload_hash,

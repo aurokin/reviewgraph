@@ -289,7 +289,8 @@ Remaining graph work is intentionally staged in later PRDs: production live GitH
 **Objective:** Post a top-level PR comment only after fresh-target, actor/permission, redaction, marker-reconciliation, and final-payload-hash approval checks.
 
 **Files:**
-- Modify: `src/reviewgraph/github.py`
+- Modify: `src/reviewgraph/writer_github.py`
+- Modify: `src/reviewgraph/writer_input.py`
 - Test: `tests/test_github_writer.py`
 
 **Verification:** writer tests use a fake transport; live post smoke is manual only; `COMMENT` reviews, `REQUEST_CHANGES`, and `APPROVE` remain unsupported; approval fails if the GitHub actor changes before write; target freshness includes merge-base SHA when available; marker reconciliation trusts only approved actor/configured bot comments; retry after timeout or process restart discovers the embedded ReviewGraph marker and creates at most one top-level comment for the approved payload.

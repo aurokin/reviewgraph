@@ -81,7 +81,7 @@ def test_github_writer_rejects_raw_or_formal_review_like_payloads(case: str) -> 
 
 
 def test_github_writer_validates_final_payload_before_transport() -> None:
-    payload = replace(_payload(), marker_run_id="other-run")
+    payload = replace(_payload(), marker_target_hash="sha256:" + "0" * 64)
     writer_input = _writer_input(payload=payload)
     transport = _PostTransport()
     writer = GitHubIssueCommentWriter(transport=transport)

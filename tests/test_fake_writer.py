@@ -147,7 +147,7 @@ def test_finalized_writer_input_rejects_non_released_or_non_safe_states(case: st
 
 
 def test_fake_writer_returns_failed_without_transport_call_for_invalid_wrapped_payload() -> None:
-    payload = replace(_payload(), marker_run_id="other-run")
+    payload = replace(_payload(), marker_target_hash="sha256:" + "0" * 64)
     finalization = _finalization(payload=payload)
     writer_input = build_finalized_issue_comment_writer_input(
         finalization=finalization,
@@ -200,6 +200,17 @@ def test_finalized_writer_input_rejects_rejected_approval() -> None:
             finalization=_finalization(payload=payload),
             approval=replace(_approval(payload=payload), approved=False),
             run_id="run-123",
+        )
+
+
+def test_finalized_writer_input_rejects_run_id_rebinding() -> None:
+    payload = _payload()
+
+    with pytest.raises(ValueError, match="run_id must match"):
+        build_finalized_issue_comment_writer_input(
+            finalization=_finalization(payload=payload),
+            approval=_approval(payload=payload),
+            run_id="other-run",
         )
 
 
