@@ -22,8 +22,9 @@ Add explicit interface and harness coverage proving reviewer adapters are decoup
 
 ## Contracts To Preserve
 
-- Reviewer adapters accept only a scoped `ReviewerContextPackage` or, for future live adapters, a passing live LLM policy result built from that package.
-- Reviewer adapters return structured `ReviewerResult` values from a graph-owned `ReviewerRunKey`.
+- The structured reviewer adapter boundary is the `execute_*` callable, not the raw fixture-output lookup method. `FakeReviewerAdapter.run(package)` remains a raw fixture source; `execute_fake_reviewer(adapter, package, run_key)` is the fake structured adapter boundary.
+- Structured reviewer adapter boundaries accept only a scoped `ReviewerContextPackage` or, for future live adapters, a passing live LLM policy result built from that package, plus a graph-owned `ReviewerRunKey`.
+- Structured reviewer adapter boundaries return `ReviewerResult` values from the graph-owned `ReviewerRunKey`.
 - Reviewer adapters must not receive GitHub read transports, GitHub write transports, approval state, finalization state, posting payload builders, writer clients, provider clients, process handles, or ambient network/session clients.
 - Reviewer capabilities must be validated before adapter execution. Unsupported capabilities remain config errors or pre-execution boundary failures, not prompt-time decisions.
 - Fake reviewer behavior remains default, deterministic, provider-free, and compatible with existing fake reviewer repair/normalization semantics.
@@ -32,7 +33,7 @@ Add explicit interface and harness coverage proving reviewer adapters are decoup
 ## Current Code Context
 
 - `src/reviewgraph/reviewers.py` currently exposes `FakeReviewerAdapter.run(package)` and `execute_fake_reviewer(adapter, package, run_key)`.
-- `FakeReviewerAdapter.run()` already accepts only `ReviewerContextPackage`, but `execute_fake_reviewer()` accepts an adapter object without a shared adapter protocol or explicit capability preflight.
+- `FakeReviewerAdapter.run()` already accepts only `ReviewerContextPackage` but returns raw fixture output. `execute_fake_reviewer()` returns `ReviewerResult` and is the canonical fake adapter execution boundary, but it accepts an adapter object without a shared adapter protocol or explicit capability/run-key preflight.
 - `tests/test_reviewers_fake.py` already asserts the fake adapter run signature accepts only `package` and that fake reviewers have no provider behavior.
 - `tests/test_contract_boundaries.py` already contains import-boundary checks for models, config, findings, GitHub fake read, and reviewer context, but there is no `tests/test_adapter_boundaries.py` focused on reviewer adapter modules and shared adapter contracts.
 - `src/reviewgraph/llm_policy.py` from AUR-212 is provider-SDK-free and returns policy results/failure summaries without provider execution.
@@ -41,19 +42,20 @@ Add explicit interface and harness coverage proving reviewer adapters are decoup
 ## Plan
 
 1. Add focused tests in `tests/test_adapter_boundaries.py` before implementation:
-   - `FakeReviewerAdapter.run` accepts only `package`;
-   - `execute_fake_reviewer` accepts only `adapter`, `package`, and graph-owned `run_key`;
+   - `FakeReviewerAdapter.run` accepts only `package` and is documented/tested as a raw fixture source, not the structured adapter boundary;
+   - `execute_fake_reviewer` is the canonical fake structured adapter boundary, accepts only `adapter`, `package`, and graph-owned `run_key`, and returns `ReviewerResult`;
    - adapter functions reject non-`ReviewerContextPackage` package inputs before registry lookup or reviewer output parsing;
+   - fake execution rejects mismatched run keys before registry lookup: wrong target hash, reviewer name, selected-reviewer stage, or active stage must fail as boundary violations;
    - `execute_fake_reviewer` returns `ReviewerResult` for valid fake output and never a raw mapping/string;
    - reviewer adapter modules do not import GitHub read/write transports, approval/finalization/posting/writer modules, provider SDKs, network/process modules, or global client modules;
    - reviewer adapter callable signatures contain no forbidden handle-like parameter names such as `github_client`, `transport`, `writer`, `approval`, `finalization`, `payload`, `session`, `process`, or `provider_client`;
    - fake adapter package capability policy must match reviewer config capabilities and remain read-only/provider-off by default before execution;
    - unsupported or tool-like capabilities cannot be smuggled directly through a manually constructed package into adapter execution;
-   - future live adapter contract is represented as a protocol/typing surface that accepts a passing AUR-212 policy result and a run key and returns `ReviewerResult`, without provider execution in this issue.
+   - future live adapter contract is represented by a provider-free validator/stub surface that accepts only an approved AUR-212 policy result with an execution plan and matching run key, then returns/permits a `ReviewerResult` contract without provider execution in this issue.
 2. Implement narrow boundary support in `src/reviewgraph/reviewers.py`:
    - define adapter protocols or type aliases for fake and future live reviewers if useful;
-   - add a pre-execution boundary validator for `ReviewerContextPackage` capability policy and selected reviewer metadata;
-   - call the validator from `FakeReviewerAdapter.run()` or `execute_fake_reviewer()` before any fake registry lookup;
+   - add deterministic boundary validators for `ReviewerContextPackage` capability policy, selected reviewer metadata, graph-owned run-key binding, and live policy result approval;
+   - call the fake validator from `execute_fake_reviewer()` before any fake registry lookup;
    - keep normalization/repair behavior unchanged.
 3. Add static import/signature tests for `src/reviewgraph/reviewers.py`, `src/reviewgraph/reviewer_context.py`, and `src/reviewgraph/llm_policy.py` so future adapter code cannot bypass the intended boundaries.
 4. Update narrow docs only if needed:
@@ -85,8 +87,9 @@ git diff --check
 - Adapters accept only context package and return structured reviewer results -> adapter signature tests plus fake execution result tests.
 - No GitHub transports/approval/writer payload builders -> static import and callable-parameter boundary tests.
 - Capabilities validated before execution -> package/capability preflight tests, including manually constructed invalid package cases.
+- Run-key binding validated before execution -> fake adapter tests prove mismatched target/stage/reviewer fails before registry lookup.
 - Boundary tests fail on direct imports or ambient clients -> AST import tests and transitive import smoke tests.
-- Fake/live share input/output contract -> fake protocol and future live policy-result protocol tests without provider SDK calls.
+- Fake/live share input/output contract -> fake `execute_*` boundary and future live policy-result validator tests without provider SDK calls.
 
 ## Out Of Scope
 
