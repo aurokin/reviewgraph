@@ -51,6 +51,7 @@ This is a gate and documentation-refactor issue. It should not implement PRD 000
 4. Focused validation matrix:
    - Run PRD 0007 focused harnesses:
      - `.venv/bin/python -m pytest tests/test_payload_hashes.py -q`
+     - `.venv/bin/python -m pytest tests/test_posting.py -q`
      - `.venv/bin/python -m pytest tests/test_payload_validation.py -q`
      - `.venv/bin/python -m pytest tests/test_approval.py -q`
      - `.venv/bin/python -m pytest tests/test_permissions.py -q`
@@ -98,7 +99,7 @@ This is a gate and documentation-refactor issue. It should not implement PRD 000
 ## Focused Evidence Checklist
 
 - `AUR-244` hash domains: `src/reviewgraph/hashing.py`, `tests/test_payload_hashes.py`.
-- `AUR-218` payload validation and candidate/final split: `src/reviewgraph/payload_validation.py`, `src/reviewgraph/final_payload.py`, `tests/test_payload_validation.py`.
+- `AUR-218` payload validation and candidate/final split: `src/reviewgraph/posting.py`, `src/reviewgraph/payload_validation.py`, `src/reviewgraph/final_payload.py`, `tests/test_posting.py`, `tests/test_payload_validation.py`.
 - `AUR-217` item-level approval and final hash: `src/reviewgraph/approval.py`, `tests/test_approval.py`.
 - `AUR-219` actor/permission gate: `src/reviewgraph/permissions.py`, `tests/test_permissions.py`.
 - `AUR-243` approval actor/permission binding: `src/reviewgraph/approval.py`, `src/reviewgraph/finalization.py`, `tests/test_actor_permission_binding.py`.

@@ -24,6 +24,11 @@ REQUIRED_DOC_INDEX_LINKS = [
     "plans/implementation-plan.md",
 ]
 
+LINK_TARGET_DOCS = [
+    "docs/README.md",
+    "docs/decisions/README.md",
+]
+
 IMPLEMENTATION_PLAN_PHRASES = [
     "dry-run",
     "item-level approval",
@@ -114,7 +119,35 @@ def check_docs() -> list[str]:
             DECISION_PHRASES,
         )
     )
+    for relative in LINK_TARGET_DOCS:
+        errors.extend(check_markdown_link_targets(relative, read_text(relative)))
 
+    return errors
+
+
+def check_markdown_link_targets(relative: str, text: str) -> list[str]:
+    errors: list[str] = []
+    source_path = ROOT / relative
+    source_dir = source_path.parent
+    for link in markdown_links(text):
+        if (
+            not link
+            or link.startswith("#")
+            or "://" in link
+            or link.startswith("mailto:")
+        ):
+            continue
+        target = link.split("#", 1)[0]
+        if not target:
+            continue
+        target_path = (source_dir / target).resolve()
+        try:
+            target_path.relative_to(ROOT)
+        except ValueError:
+            errors.append(f"{relative}: link escapes repository: {link!r}")
+            continue
+        if not target_path.exists():
+            errors.append(f"{relative}: link target does not exist: {link!r}")
     return errors
 
 

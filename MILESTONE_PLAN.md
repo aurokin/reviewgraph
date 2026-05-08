@@ -86,7 +86,7 @@ For milestone gates and any issue that changes blockers/order, also run `python 
 ## Harness Strategy
 
 - `AUR-244` focused harness: payload hash domain and marker hash golden tests in `tests/test_payload_hashes.py`.
-- `AUR-218` focused harness: payload validation tests rejecting formal PR reviews and non-issue-comment endpoints.
+- `AUR-218` focused harness: posting and payload validation tests covering candidate payload boundaries, top-level issue-comment-only payloads, and rejection of formal PR reviews and non-issue-comment endpoints.
 - `AUR-217` focused harness: approval model/final-hash binding tests using distinct candidate/final payload fixtures, likely in `tests/test_approval.py`.
 - `AUR-219` focused harness: actor/permission gate tests with fake permission transport, endpoint-specific issue-comment write ability, transport failure taxonomy, stale-cache rejection, and role/token mismatch cases.
 - `AUR-243` focused harness: approval actor/permission snapshot binding and finalization mismatch tests.

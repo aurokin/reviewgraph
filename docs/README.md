@@ -28,6 +28,7 @@ This directory uses progressive disclosure: start broad, then follow the narrowe
 - Changing reviewer prompt/context boundaries -> `prds/0010-agent-context-and-adapter-boundaries.md` and `architecture/reviewer-config.md`
 - Changing graph routing -> `architecture/state-graph.md`
 - Changing GitHub access -> `architecture/github-integration.md`
+- Changing approval, finalization, marker reconciliation, or writer reachability -> `architecture/side-effects.md`, `architecture/github-integration.md`, and `decisions/0008-finalization-owns-writer-release.md`
 - Changing output format -> `architecture/findings-contract.md`
 - Changing finding quality policy -> `architecture/review-quality.md`
 - Changing live LLM behavior -> `architecture/llm-data-handling.md`
@@ -48,3 +49,4 @@ This directory uses progressive disclosure: start broad, then follow the narrowe
 - Finding quality and logic review -> `harnesses/harness-engineering.md#review-quality`
 - Rendering, redaction, and payload previews -> `harnesses/harness-engineering.md#rendering-and-redaction`
 - Approval, finalization, and GitHub writes -> `harnesses/harness-engineering.md#side-effects`
+- PRD 0007 side-effect milestone proof -> `harnesses/harness-engineering.md#prd-0007-validation`

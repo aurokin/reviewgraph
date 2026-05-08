@@ -8,6 +8,23 @@ The graph may prepare a GitHub payload, but only the side-effect adapter may pos
 
 Clarification is not a GitHub write in MVP. If a reviewer needs human input, the graph should stop with a local question or structured clarification output rather than posting that question to the PR automatically.
 
+## Implementation Agent Map
+
+When changing side-effect behavior, keep ownership explicit:
+
+- `posting.py` builds dry-run posting plans and candidate issue-comment payloads for rendering and approval.
+- `hashing.py`, `markers.py`, and `payload_validation.py` define canonical hash domains, exact marker grammar, candidate/final payload validation, and marker reconciliation primitives.
+- `approval.py` builds item-level approval proof and approval decisions from candidate payloads, selected public items, target binding, final full-body hash, actor/permission display proof, and approver metadata.
+- `permissions.py` evaluates endpoint-specific issue-comment actor/permission proof before approval and during finalization.
+- `finalization.py` owns writer-release preflight, current actor/permission re-check, target freshness re-check, final payload construction, final hash validation, redaction validation, marker reconciliation, and finalized writer-input release.
+- `post_interaction.py` blocks non-interactive post mode before approval input or final payload construction.
+- `writer_input.py` is the neutral finalized-input boundary between graph policy and writer adapters.
+- `writer_fake.py` proves allowed post behavior without GitHub.
+- `writer_github.py` is transport-focused. It receives finalized input only and handles POST result classification plus writer-local recovery after ambiguous accepted-write outcomes.
+- `github_live_post.py` is a manual smoke harness, not production posting or a public CLI path.
+
+Do not move approval, freshness, marker, redaction, routing, or item-selection decisions into reviewer prompts, renderers, GitHub read adapters, or writer adapters. Candidate payloads are approval/render artifacts only; they are not final payloads and are not writer inputs.
+
 ## Posting plan
 
 The renderer produces a `PostingPlan` before approval. Each output item has one destination:

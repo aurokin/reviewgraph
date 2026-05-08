@@ -54,7 +54,21 @@ The PRD 0006 GitHub read/memory slice now proves these contracts in fake adapter
 - GitHub fake-read dry-run feeds the same renderer and graph contracts as fixture dry-run and proves no writer path is reachable;
 - live read smoke is opt-in, skipped by default, read-only, and separated from production review, approval, finalization, and writer paths.
 
-Remaining graph work is intentionally staged in later PRDs: production live GitHub review, live LLM reviewer execution, and public production posting. Approval/finalization gates, marker reconciliation, fake writer proof, the real writer adapter contract, and the manual disposable live-post smoke contract are implemented behind default-safe harnesses.
+## Implemented side-effect checkpoint
+
+The PRD 0007 side-effect slice now proves these contracts behind fake and default-safe harnesses:
+
+- payload hash domains are canonical for candidate visible bodies, final full bodies, marker payload hashes, review targets, and sorted approved finding fingerprints;
+- candidate issue-comment payloads are render/approval inputs only, while final issue-comment payloads include the exact final-line ReviewGraph marker;
+- approval is item-level and binds selected public findings to target hash, final full-body hash, actor, endpoint-specific issue-comment permission, checked-at time, approver, and public-verdict choice;
+- non-interactive post mode fails closed before approval input or final payload construction;
+- finalization owns writer-release preflight, current actor/permission re-check, target freshness re-check, final body/hash construction, redaction validation, marker reconciliation, and finalized writer-input release;
+- no-approved-finding, local-only, suggested-reply-only, suppressed-only, clarification-only, rejected approval, missing approval, stale target, actor drift, permission drift, redaction failure, and marker conflict paths reach zero writers;
+- fake writer and post-mode graph harnesses prove an approved finalized top-level issue comment calls a fake writer at most once;
+- the real writer adapter accepts only finalized top-level issue-comment input, uses fake transports by default, records typed redacted evidence, and handles ambiguous accepted-write outcomes through writer-local recovery with no second POST in the same approved run/retry sequence;
+- manual live-post smoke is opt-in, skipped by default, disposable-target-only, TTY/human approved, typed-final-hash confirmed, and requires post-approval live actor/permission, target freshness, and marker pagination proof.
+
+Remaining graph work is intentionally staged in later PRDs: production live GitHub review, live LLM reviewer execution, public production posting, and a user-facing post command. Approval/finalization gates, marker reconciliation, fake writer proof, the real writer adapter contract, and the manual disposable live-post smoke contract are implemented behind default-safe harnesses.
 
 ## MVP constraints
 
@@ -286,6 +300,8 @@ Remaining graph work is intentionally staged in later PRDs: production live GitH
 
 ### Task 20: Add idempotent GitHub comment writer
 
+**Status:** Implemented as a default-safe PRD 0007 proof boundary. A future milestone must add any public posting command or production approval surface.
+
 **Objective:** Post a top-level PR comment only after fresh-target, actor/permission, redaction, marker-reconciliation, and final-payload-hash approval checks.
 
 **Files:**
@@ -293,4 +309,4 @@ Remaining graph work is intentionally staged in later PRDs: production live GitH
 - Modify: `src/reviewgraph/writer_input.py`
 - Test: `tests/test_github_writer.py`
 
-**Verification:** writer tests use a fake transport; live post smoke is manual only; `COMMENT` reviews, `REQUEST_CHANGES`, and `APPROVE` remain unsupported; approval fails if the GitHub actor changes before write; target freshness includes merge-base SHA when available; marker reconciliation trusts only approved actor/configured bot comments; retry after timeout or process restart discovers the embedded ReviewGraph marker and creates at most one top-level comment for the approved payload.
+**Verification:** writer tests use a fake transport; live post smoke is manual only; `COMMENT` reviews, `REQUEST_CHANGES`, and `APPROVE` remain unsupported; approval fails if the GitHub actor changes before write; target freshness includes merge-base SHA when available; marker reconciliation trusts only approved actor/configured bot comments; ambiguous accepted-write recovery posts zero additional comments in the same approved run/retry sequence; pre-seeded trusted markers reconcile without another post. Global cross-process duplicate prevention is deferred until an external lock or storage design exists.

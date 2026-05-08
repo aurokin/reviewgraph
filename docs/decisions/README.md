@@ -11,6 +11,7 @@ Decision records capture durable tradeoffs that should outlive individual implem
 5. [Inert reviewer tool metadata](0005-inert-reviewer-tool-metadata.md)
 6. [Passive memory is metadata-only in reviewer prompts](0006-passive-memory-metadata-only.md)
 7. [Required reviewer failure is fail-closed graph state](0007-required-reviewer-fail-closed-state.md)
+8. [Finalization owns writer release](0008-finalization-owns-writer-release.md)
 
 ## Rule
 

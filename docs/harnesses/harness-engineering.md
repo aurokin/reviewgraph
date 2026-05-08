@@ -187,6 +187,40 @@ python -m pytest tests/test_findings.py tests/test_reviewer_json_repair.py tests
 - Writer idempotency harnesses prove retry safety for one approved run/retry sequence. Cross-process duplicate prevention is deferred unless an external lock/storage design is added.
 - Manual live-post contract tests live in `tests/test_live_post_contract.py`. Unmarked tests run in the default suite with fake runners only. The single marked smoke is skipped unless `REVIEWGRAPH_LIVE_POST=1`; even then it blocks without exact `owner/repo#pr` allowlist, disposable marker, `pat` credential-source declaration, approved-post artifact, TTY approval surface, typed final hash match, live post-approval actor/permission proof, target freshness proof with compare-derived merge base, and complete marker pagination. The contract rejects fake proof objects, hand-written artifacts, candidate-only artifacts, alternate write commands, fork PRs, and non-top-level issue-comment payloads.
 
+### PRD 0007 Validation
+
+Use this matrix when closing or modifying the side-effect milestone. It is intentionally executable from local fixtures and fake transports:
+
+```bash
+python -m pytest tests/test_payload_hashes.py -q
+python -m pytest tests/test_posting.py -q
+python -m pytest tests/test_payload_validation.py -q
+python -m pytest tests/test_approval.py -q
+python -m pytest tests/test_permissions.py -q
+python -m pytest tests/test_actor_permission_binding.py -q
+python -m pytest tests/test_target_freshness.py -q
+python -m pytest tests/test_markers.py tests/test_marker_hardening.py -q
+python -m pytest tests/test_non_interactive_posting.py -q
+python -m pytest tests/test_no_approved_findings.py -q
+python -m pytest tests/test_fake_writer.py tests/test_post_mode_graph.py -q
+python -m pytest tests/test_github_writer.py -q
+python -m pytest tests/test_live_post_contract.py -q
+```
+
+Run these broader guards when the change touches shared graph, CLI, reviewer-boundary, GitHub read, or documentation behavior:
+
+```bash
+python -m pytest tests/test_tracer_fixture_run.py tests/test_cli.py tests/test_github_dry_run_cli.py -q
+python -m pytest tests/test_reviewer_context.py tests/test_prompt_injection_memory.py tests/test_contract_boundaries.py -q
+python -m pytest tests/test_github_fake_read.py tests/test_github_read_gaps.py tests/test_github_pagination.py tests/test_github_memory_trust.py tests/test_live_read_smoke.py -q
+python -m pytest -q
+python -m py_compile src/reviewgraph/*.py
+python scripts/check_docs.py
+git diff --check
+```
+
+For milestone gates, also run the Linear backlog export check described in `docs/implementation/README.md` and delete the temporary export before handoff. The default matrix must not post to GitHub, call live LLMs, require credentials, or require human input.
+
 ## Tracer Bullets
 
 Build these early vertical slices before expanding every policy:

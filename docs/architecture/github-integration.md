@@ -138,6 +138,8 @@ Allowed MVP side effects after approval:
 
 - top-level PR comment
 
+Implemented PRD 0007 writer code is still a default-safe proof boundary. The fake writer and post-mode harness prove the graph route to one top-level issue comment without GitHub. The real writer adapter is exercised only with fake transports by default and receives `FinalizedIssueCommentWriterInput`, not candidate payloads or graph state. Public production posting remains out of scope until a later milestone creates an explicit user-facing command and approval surface.
+
 Deferred side effects:
 
 - formal PR review with `COMMENT`

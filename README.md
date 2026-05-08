@@ -29,6 +29,20 @@ python -m pytest
 python scripts/check_docs.py
 ```
 
+## Side-effect status
+
+Default commands remain non-mutating. The public CLI exposes fixture and GitHub dry-run review only; production posting is still future work.
+
+Implemented PRD 0007 code is a proof boundary, not a public posting feature:
+
+- candidate payloads are render/approval inputs, never writer inputs;
+- finalization owns approval shape, approved item IDs, current actor/permission, target freshness, final payload hash, redaction, marker reconciliation, and writer release;
+- the fake writer proves the allowed post route without GitHub;
+- the real writer adapter is contract-tested with fake transports and accepts only finalized top-level issue-comment input;
+- the manual live-post smoke is library-level, skipped by default, disposable-target-only, and requires human TTY approval plus typed final-hash confirmation.
+
+Agents changing side-effect code should start with [Side-Effect Boundaries](docs/architecture/side-effects.md), [GitHub Integration](docs/architecture/github-integration.md), and [Harness Engineering](docs/harnesses/harness-engineering.md#prd-0007-validation).
+
 Packaged fixture IDs currently cover:
 
 - `basic-pr`: normal fixture dry run with a postable finding, local note, suppressed output, memory, redaction, posting plan, and no-writer proof.
