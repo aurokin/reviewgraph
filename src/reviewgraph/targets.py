@@ -13,6 +13,7 @@ from reviewgraph.read_gaps import FailClosedReadOutcome
 from reviewgraph.runner import (
     DryRunResult,
     _DryRunInput,
+    _config_with_live_settings,
     _fail_closed_dry_run_result,
     _run_dry_run_core,
     _writer_call_count,
@@ -25,9 +26,13 @@ def run_github_fake_dry_run(
     github_fake_data_path: str | Path,
     reviewer_config_path: str | None = None,
     writer_sentinel: object | None = None,
+    live_llm_settings: dict[str, object] | None = None,
+    live_llm_transport: object | None = None,
+    live_llm_opt_in_source: str | None = None,
 ) -> DryRunResult:
     writer_call_count_before = _writer_call_count(writer_sentinel)
     config = load_reviewer_config(reviewer_config_path)
+    config = _config_with_live_settings(config, live_llm_settings)
     transport, raw_reviewer_outputs = load_paginated_fake_github_transport(github_fake_data_path)
     read_result = read_github_pr_with_paginated_fake_transport(transport, github_pr_ref)
     writer_call_count = _writer_call_count(writer_sentinel) - writer_call_count_before
@@ -41,6 +46,8 @@ def run_github_fake_dry_run(
         config=config,
         writer_call_count_before=writer_call_count_before,
         writer_sentinel=writer_sentinel,
+        live_llm_transport=live_llm_transport,
+        live_llm_opt_in_source=live_llm_opt_in_source,
     )
 
 

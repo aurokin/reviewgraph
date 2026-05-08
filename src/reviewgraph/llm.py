@@ -208,44 +208,34 @@ def run_live_llm_reviewer_with_retries(
     transport: LiveLLMProviderTransport,
     max_attempts: int = DEFAULT_LIVE_LLM_MAX_ATTEMPTS,
     timeout_seconds: int = DEFAULT_LIVE_LLM_TIMEOUT_SECONDS,
+    total_timeout_seconds: int = DEFAULT_LIVE_LLM_TOTAL_TIMEOUT_SECONDS,
 ) -> LiveLLMRetryRunResult:
     if type(max_attempts) is not int or max_attempts <= 0:
         raise ValueError("max_attempts must be a positive integer")
     if type(timeout_seconds) is not int or timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be a positive integer")
+    if type(total_timeout_seconds) is not int or total_timeout_seconds <= 0:
+        raise ValueError("total_timeout_seconds must be a positive integer")
+    if total_timeout_seconds < timeout_seconds:
+        raise ValueError("total_timeout_seconds must be greater than or equal to timeout_seconds")
     attempts: list[LiveLLMAttemptResult] = []
     trace_events: list[dict[str, object]] = []
     current_ledger = ledger
     retry_of = initial_run_key.stable_key()
-    if package.context_budget.max_live_calls < max_attempts:
-        run_key = initial_run_key
-        policy_result = evaluate_live_llm_policy(
-            package,
-            replace(policy_input, reviewer_run_key=run_key),
-            ledger=current_ledger,
+    effective_max_attempts = min(max_attempts, total_timeout_seconds // timeout_seconds)
+    if package.context_budget.max_live_calls < effective_max_attempts:
+        raise ValueError("live LLM budget must cover effective max attempts before provider execution")
+    if effective_max_attempts < max_attempts:
+        trace_events.append(
+            {
+                "event": "live_llm_total_timeout_cap_applied",
+                "configured_max_attempts": max_attempts,
+                "effective_max_attempts": effective_max_attempts,
+                "timeout_seconds": timeout_seconds,
+                "total_timeout_seconds": total_timeout_seconds,
+            }
         )
-        result = _failed_result(
-            run_key,
-            errors=("live LLM budget does not cover configured max attempts",),
-            evidence=_evidence(
-                policy_result=policy_result,
-                current_ledger=policy_result.ledger,
-                run_key=run_key,
-                status="failed",
-                response_text=None,
-                response_request_id=None,
-                failure_reason="live_call_budget_exceeded",
-            ),
-        )
-        return LiveLLMRetryRunResult(
-            attempts=(LiveLLMAttemptResult(policy_result=policy_result, reviewer_result=result),),
-            ledger=policy_result.ledger,
-            trace_events=(
-                _policy_trace(policy_result, run_key=run_key),
-                {"event": "live_llm_budget_exhausted", "run_key": run_key.stable_key()},
-            ),
-        )
-    for attempt in range(1, max_attempts + 1):
+    for attempt in range(1, effective_max_attempts + 1):
         run_key = replace(
             initial_run_key,
             attempt=attempt,
@@ -288,7 +278,7 @@ def run_live_llm_reviewer_with_retries(
         trace_events.append({"event": "live_llm_provider_attempt_failed", "run_key": run_key.stable_key()})
         if not retryable:
             break
-        if attempt == max_attempts:
+        if attempt == effective_max_attempts:
             exhausted_evidence = _retry_exhausted_evidence(result.live_llm_evidence)
             attempts[-1] = LiveLLMAttemptResult(
                 policy_result=policy_result,
@@ -299,6 +289,8 @@ def run_live_llm_reviewer_with_retries(
                 ),
             )
             trace_events.append({"event": "live_llm_retry_exhausted", "run_key": run_key.stable_key()})
+            if effective_max_attempts < max_attempts:
+                trace_events.append({"event": "live_llm_total_timeout_exhausted", "run_key": run_key.stable_key()})
             break
         trace_events.append({"event": "live_llm_retry_scheduled", "run_key": run_key.stable_key()})
     return LiveLLMRetryRunResult(
@@ -440,7 +432,7 @@ def _evidence(
     plan = policy_result.execution_plan
     response_hash = _text_hash(response_text) if response_text is not None else None
     response_byte_count = len(response_text.encode("utf-8")) if response_text is not None else None
-    response_redaction = response_redaction or RedactionStatus(redacted=False, replacement_count=0)
+    response_redaction = response_redaction or _response_redaction_status(response_text)
     safe_response_request_id = response_request_id
     if response_request_id is not None:
         request_id_redaction = redact_text(response_request_id)
@@ -459,8 +451,8 @@ def _evidence(
     return LiveLLMReviewerEvidence(
         data={
             "status": status,
-            "provider": plan.provider if plan is not None else policy_result.audit_record.provider,
-            "model": plan.model if plan is not None else policy_result.audit_record.model,
+            "provider": _safe_text(plan.provider) if plan is not None else policy_result.audit_record.provider,
+            "model": _safe_text(plan.model) if plan is not None else policy_result.audit_record.model,
             "reviewer": run_key.reviewer,
             "target_hash": run_key.target_hash,
             "run_key": run_key.stable_key(),
@@ -503,6 +495,21 @@ def _policy_trace(policy_result: LiveLLMPolicyResult, *, run_key: ReviewerRunKey
 
 def _text_hash(text: str) -> str:
     return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _safe_text(text: str) -> str:
+    return redact_text(text).text
+
+
+def _response_redaction_status(text: str | None) -> RedactionStatus:
+    if text is None:
+        return RedactionStatus(redacted=False, replacement_count=0)
+    redaction = redact_text(text)
+    return RedactionStatus(
+        redacted=redaction.redacted,
+        replacement_count=redaction.replacement_count,
+        categories=redaction.categories,
+    )
 
 
 def _retry_exhausted_evidence(evidence: LiveLLMReviewerEvidence | None) -> LiveLLMReviewerEvidence | None:

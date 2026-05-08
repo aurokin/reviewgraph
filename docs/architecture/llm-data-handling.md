@@ -17,9 +17,9 @@ The CLI must require an explicit live flag before sending PR content to an LLM p
 
 Passing policy decisions reserve live-call budget before provider execution. Reservations are keyed by reviewer run identity plus target/config/provider/model/request hash. Repeating the same reviewer run with the same request hash reuses the existing reservation; repeating it with different request data fails closed. Retry attempts and clarification-bound runs have distinct reviewer run keys and consume fresh budget.
 
-The first live adapter is transport-injected and provider-SDK-free by default. `execute_live_llm_reviewer_attempt` performs one provider attempt for one approved policy result and current ledger proof. `run_live_llm_reviewer_with_retries` is graph-visible orchestration: each retry uses a distinct `ReviewerRunKey.attempt`, records attempt status/evidence, and consumes a fresh policy reservation. Live retry is not hidden inside a transport client.
+The first live adapter is transport-injected and provider-SDK-free by default. `execute_live_llm_reviewer_attempt` performs one provider attempt for one approved policy result and current ledger proof. `run_live_llm_reviewer_with_retries` is graph-visible orchestration: each retry uses a distinct `ReviewerRunKey.attempt`, records attempt status/evidence, and consumes a fresh policy reservation. Live retry is not hidden inside a transport client. The runner requires a run-level opt-in source in addition to live config and an injected transport; config metadata or a transport handle alone is not enough to send PR content to a provider.
 
-Public CLI live execution requires explicit `--live-llm` plus provider, model, and positive live-call budget inputs. Config may provide live defaults, but config-only model metadata does not send PR content to a provider. Default fixture and fake GitHub dry-runs remain fake-reviewer paths.
+Public CLI live execution requires explicit `--live-llm` plus provider, model, and positive live-call budget inputs. The CLI lazy-loads the live HTTP transport only after this explicit flag is validated. Config may provide live defaults, but config-only model metadata does not send PR content to a provider. Default fixture and fake GitHub dry-runs remain fake-reviewer paths.
 
 ## Context minimization
 
@@ -42,7 +42,7 @@ Raw provider submission and raw trace persistence are separate decisions. A run 
 
 Policy results separate in-memory execution data from default-persisted audit data. The provider execution plan may hold the explicit provider/model and redacted provider request text only long enough for immediate submission. Default JSON/audit output records redacted provider/model display values, reviewer, target, context policy, retained file paths, retained memory IDs, omitted-context markers, truncation notices, redaction status, request hash, byte count, raw opt-in proof source, and budget before/after counts; audit metadata is redacted before serialization. Policy audit objects do not retain request text unless raw trace persistence is explicitly approved.
 
-Provider transport failures must become typed, redacted summaries with stable reason codes. Missing credentials, timeout, rate limit, retry exhaustion, malformed response, unavailable provider, and unknown provider errors cannot create postable findings by themselves.
+Provider transport failures must become typed, redacted summaries with stable reason codes. Missing credentials, timeout, rate limit, retry exhaustion, malformed response, unavailable provider, and unknown provider errors cannot create postable findings by themselves. `timeout_seconds` bounds each provider attempt; `total_timeout_seconds` caps the number of attempts that may be scheduled for one live reviewer run.
 
 Raw provider response text is not persisted by default. Live reviewer results retain only redacted parsed reviewer output, typed normalized artifacts, and `LiveLLMReviewerEvidence` containing hashes, byte counts, policy audit summaries, ledger summaries, request IDs after redaction, retryability, and raw-retention booleans. Malformed live provider output fails without a hidden repair LLM call.
 

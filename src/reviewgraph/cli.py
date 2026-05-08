@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import sys
 from pathlib import Path
@@ -25,11 +26,9 @@ def main(argv: list[str] | None = None) -> int:
     except SystemExit as exc:
         return int(exc.code) if isinstance(exc.code, int) else 2
     try:
-        if args.live_llm:
-            raise RunnerError(
-                "Live LLM execution is opt-in and requires the live transport harness; "
-                "default CLI review remains fake-provider-free."
-            )
+        live_llm_settings = _live_llm_settings(args)
+        live_llm_transport = _live_llm_transport(args.live_llm_provider) if args.live_llm else None
+        live_llm_opt_in_source = "cli:--live-llm" if args.live_llm else None
         if args.github_pr is not None:
             if args.github_live_read:
                 raise RunnerError(
@@ -39,11 +38,17 @@ def main(argv: list[str] | None = None) -> int:
                 github_pr_ref=args.github_pr,
                 github_fake_data_path=args.github_fake_data,
                 reviewer_config_path=args.reviewer_config,
+                live_llm_settings=live_llm_settings,
+                live_llm_transport=live_llm_transport,
+                live_llm_opt_in_source=live_llm_opt_in_source,
             )
         else:
             result = run_fixture_dry_run(
                 fixture_ref=args.fixture_pr or "basic-pr",
                 reviewer_config_path=args.reviewer_config,
+                live_llm_settings=live_llm_settings,
+                live_llm_transport=live_llm_transport,
+                live_llm_opt_in_source=live_llm_opt_in_source,
             )
         if args.markdown_out is not None:
             _write_text(Path(args.markdown_out), result.markdown)
@@ -122,6 +127,21 @@ def _validate_target_args(parser: argparse.ArgumentParser, args: argparse.Namesp
             parser.error("--live-llm requires --live-llm-model")
         if args.live_llm_max_calls is None or args.live_llm_max_calls <= 0:
             parser.error("--live-llm requires positive --live-llm-max-calls")
+
+
+def _live_llm_settings(args: argparse.Namespace) -> dict[str, object] | None:
+    if not args.live_llm:
+        return None
+    return {
+        "provider": args.live_llm_provider,
+        "model": args.live_llm_model,
+        "max_live_calls": args.live_llm_max_calls,
+    }
+
+
+def _live_llm_transport(provider: str | None) -> object:
+    module = importlib.import_module("reviewgraph.llm_http")
+    return module.transport_from_environment(provider=provider)
 
 
 def _write_text(path: Path, text: str) -> None:
