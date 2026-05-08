@@ -49,6 +49,7 @@ Close PRD 0008 only after proving the implemented live LLM policy, adapter bound
    - `docs/architecture/reviewer-config.md`
    - `docs/architecture/state-graph.md`
    - `docs/harnesses/harness-engineering.md`
+   - `docs/plans/implementation-plan.md`
    - `docs/product/rules.md`
    - `docs/prds/0008-live-llm.md`
    - `docs/prds/0010-agent-context-and-adapter-boundaries.md`
@@ -69,9 +70,13 @@ Close PRD 0008 only after proving the implemented live LLM policy, adapter bound
    - Update only durable docs that are stale or missing key decisions; avoid changing docs that already state the contract accurately.
    - Ensure docs cover progressive disclosure: top-level current slice in `README.md`, product guardrails in `docs/product/`, architecture contracts in `docs/architecture/`, harness commands in `docs/harnesses/`, PRD contract in `docs/prds/0008-live-llm.md`, and durable tradeoffs in `docs/decisions/` only if needed.
    - Commit docs changes separately from validation/evidence commits.
-7. Use fresh subagents to review the gate evidence, docs refactor/audit, Linear relationships, and issue/milestone closure decision.
-8. Move `AUR-260` to `In Review`, add a Linear gate evidence comment, then move it to `Done` only after review is clean and the documentation refactor/audit is complete.
-9. After `AUR-260` is `Done`, add a project/milestone status update if Linear exposes one, and do not start PRD 0009 until the final gate evidence is attached.
+7. Re-run post-doc validation after any docs closeout commit:
+   - `.venv/bin/python scripts/check_docs.py`
+   - `git diff --check`
+   - Any focused docs-related tests or validators affected by changed docs.
+8. Use fresh subagents to review the gate evidence, docs refactor/audit, Linear relationships, and issue/milestone closure decision.
+9. Move `AUR-260` to `In Review`, add a Linear gate evidence comment, then move it to `Done` only after review is clean and the documentation refactor/audit is complete.
+10. After `AUR-260` is `Done`, add a project/milestone status update if Linear exposes one, and do not start PRD 0009 until the final gate evidence is attached.
 
 ## Acceptance Mapping
 
@@ -87,7 +92,7 @@ Close PRD 0008 only after proving the implemented live LLM policy, adapter bound
 The final AUR-260 evidence comment must include:
 
 - Implementation issue inventory: `AUR-212`, `AUR-232`, and `AUR-240` statuses plus links to their evidence comments.
-- Validation matrix: focused AUR-212/AUR-232/AUR-240 commands, full test suite, py-compile, docs check, diff check, and backlog export check outputs.
+- Validation matrix: focused AUR-212/AUR-232/AUR-240 commands, full test suite, py-compile, docs check, diff check, backlog export check outputs, and post-doc-closeout validation outputs.
 - Backlog/export proof: temp export hash, included issues, relationship proof for `AUR-260 -> AUR-242` or equivalent, and confirmation the temp export was deleted.
 - Documentation audit result: docs inspected, docs changed or explicitly left unchanged, commit hashes, and progressive-disclosure coverage.
 - Fresh subagent review outcomes: names/ids and final clean result.
