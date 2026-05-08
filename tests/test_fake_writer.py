@@ -27,6 +27,8 @@ from reviewgraph.models import (
 from reviewgraph.permissions import issue_comment_endpoint
 from reviewgraph.writer_fake import (
     FakeIssueCommentWriter,
+)
+from reviewgraph.writer_input import (
     FinalizedIssueCommentWriterInput,
     build_finalized_issue_comment_writer_input,
 )

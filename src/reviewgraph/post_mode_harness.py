@@ -47,7 +47,8 @@ from reviewgraph.post_interaction import (
     evaluate_post_mode_interaction_gate,
 )
 from reviewgraph.posting import build_candidate_issue_comment_payload, build_posting_plan
-from reviewgraph.writer_fake import FakeIssueCommentWriter, build_finalized_issue_comment_writer_input
+from reviewgraph.writer_fake import FakeIssueCommentWriter
+from reviewgraph.writer_input import build_finalized_issue_comment_writer_input
 
 
 EVALUATED_AT = "2026-05-07T00:05:00Z"

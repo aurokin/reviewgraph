@@ -34,6 +34,7 @@ Implement side effects only after dry-run, quality classification, posting plan 
 - Finalization fetches existing PR comments before writer release and reconciles matching markers.
 - The writer receives only finalized writer input after marker reconciliation returns `SAFE_TO_POST`.
 - The real writer may perform marker rescans only as writer-local recovery after an ambiguous accepted-write POST result; normal pre-write marker reconciliation remains finalization-owned, and ambiguous recovery must not issue a second POST in the same approved run/retry sequence.
+- The real writer uses typed redacted transport evidence and records a same-sequence one-POST guard before potentially accepted write attempts.
 - If the PR target changes before posting, ReviewGraph fails closed and emits dry-run output.
 - If no findings are approved, the writer is not invoked.
 
