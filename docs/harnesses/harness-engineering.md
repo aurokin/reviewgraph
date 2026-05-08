@@ -137,6 +137,7 @@ Golden tests should protect product behavior without freezing incidental wording
 - Prompt-input harnesses must prove instructions are separate from context data. Untrusted or passive memory is exposed only as labeled metadata in MVP; bodies must not enter prompt instructions or prompt data.
 - Context-package traces must include selected reviewer config metadata, memory IDs, trust labels, resolved status, passive/actionable state, truncation status, omitted-context IDs, and capability policy.
 - Provider-bound preview harnesses are non-live. They must prove minimized/redacted request text, redaction status, provider identity absent unless explicitly supplied by a future live caller, and separate `raw_provider_submission_enabled=false` and `raw_trace_persistence_enabled=false` defaults.
+- Live LLM policy harnesses are provider-SDK-free. They must prove explicit live opt-in, provider/model requirements, default-safe audit serialization without request text, separate raw-provider/raw-trace opt-in proof, typed redacted provider failure summaries, and run-level live-call reservation ledgers keyed by reviewer run identity.
 - Context-budget harnesses must prove changed-file, patch-byte, memory-byte, reviewer-count, and live-call caps before reviewer execution. Deferred reviewers are selected-then-skipped, become local notes, and their raw fixture output is not consumed.
 
 ### Review Quality

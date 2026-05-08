@@ -25,6 +25,8 @@ Add deterministic live LLM data-handling guardrails before any live provider ada
 - Config metadata such as `model` or inert `tools` cannot trigger a live provider call.
 - AUR-212 defines policy inputs only; CLI/config/provider resolution and provider execution are deferred to AUR-240.
 - Run-level live opt-in is required for live readiness. Live opt-in without provider/model fails closed.
+- Provider and model must arrive as explicit policy input; reviewer config metadata is recorded as context but is not a live-readiness fallback.
+- Reviewer run keys must match the `ReviewerContextPackage` target, active stage, selected-reviewer stage, and reviewer before any request preview or reservation can pass.
 - Provider-bound request data must come from `ReviewerContextPackage`, not raw PR objects, full config maps, GitHub transports, side-effect state, or ambient process state.
 - Provider-bound request text is minimized and redacted by default.
 - Raw provider submission and raw trace persistence are separate explicit choices; live opt-in alone does not permit raw submission.
@@ -48,23 +50,24 @@ Add deterministic live LLM data-handling guardrails before any live provider ada
    - live mode requires explicit run-level opt-in;
    - provider and model are required for live-ready requests;
    - fake/default mode is not live-ready even when reviewer config contains a model;
-   - opt-in truth table: no opt-in, config model only, live opt-in without provider, live opt-in without model, raw provider requested without raw-provider opt-in, raw trace requested without raw-trace opt-in, and passing redacted request;
+   - opt-in truth table: no opt-in, missing opt-in source, config model only, live opt-in without provider, live opt-in without explicit policy model, raw provider requested without raw-provider opt-in/proof, raw trace requested without raw-trace opt-in/proof, and passing redacted request;
+   - reviewer run key target/stage/reviewer mismatch fails closed before request construction;
    - provider-bound request is built from `ReviewerContextPackage` and is redacted by default;
    - raw provider submission and raw trace persistence are separately gated and recorded;
    - live-call budget cost is explicit and rejected/deferred when `max_live_calls=0`, cumulative planned calls would exceed the cap, or multiple reviewers would exceed a positive cap;
    - budget reservation is stateful: a cap of `1` with two live reviewer policy attempts passes the first, returns a ledger with one reserved call, and blocks/deferred the second before any provider execution plan can be used;
    - reservation identity is idempotent: repeated policy evaluation for the same reviewer run key and same request hash reuses the prior reservation, repeated evaluation for the same run key and different request hash fails with `live_call_reservation_conflict`, and a retry attempt with a distinct run key consumes a fresh budget slot;
    - guardrail output records provider, model, reviewer, canonical target fields, target hash, context policy, retained file paths, retained memory IDs, omitted context IDs/reasons, truncation notices, redaction status, raw flags, opt-in proof, and budget cost;
-   - default policy result serialization omits full provider request text and private PR content while retaining reservation key/status, budget before/after counts, request hash, byte counts, context inventory, redaction categories, and raw opt-in proof;
+   - default policy result serialization omits full provider request text and private PR content while retaining reservation key/status, budget before/after counts, request hash, byte counts, redacted provider/model display values, redacted context inventory, redaction categories, and raw opt-in proof;
    - provider failure summaries redact token-like text and expose stable reason codes for missing credentials, timeout, rate limit, malformed response, unavailable provider, and unknown provider error;
    - a fixture with token-like PR title/body/diff/review/comment data flows through the exact policy result serialization without leaking the token fragments by default;
    - no provider client, network transport, GitHub transport, approval/finalization, posting, or writer module is imported.
 2. Implement `src/reviewgraph/llm_policy.py` as a pure policy/preview module:
    - typed policy input, run-level budget ledger/reservation, provider execution plan, blocked result, public audit record, and redacted provider failure dataclasses if existing models are not sufficient;
    - pure functions that evaluate opt-in, provider/model requirements, context package preview, redaction, raw opt-ins, live-call budget cost, and run-level reservation updates;
-   - stable blocked reason codes such as `missing_live_opt_in`, `missing_provider`, `missing_model`, `live_call_budget_exceeded`, `live_call_reservation_conflict`, `raw_provider_not_approved`, and `raw_trace_not_approved`;
+   - stable blocked reason codes such as `missing_live_opt_in`, `missing_provider`, `missing_model`, `reviewer_run_key_mismatch`, `live_call_budget_exceeded`, `live_call_reservation_conflict`, `raw_provider_not_approved`, and `raw_trace_not_approved`;
    - stable provider failure reason codes including `missing_credentials`, `timeout`, `rate_limited`, `retry_exhausted`, `malformed_response`, `provider_unavailable`, and `unknown_provider_error`;
-   - a default-safe audit serialization method that excludes request text unless raw trace persistence is approved and otherwise records only reservation key/status, budget before/after counts, hashes, byte counts, context inventory, redaction summaries, raw opt-in proof, and reason/status fields;
+   - a default-safe audit serialization method that excludes request text unless raw trace persistence is approved and otherwise records only reservation key/status, budget before/after counts, hashes, byte counts, redacted provider/model display values, redacted context inventory, redaction summaries, raw opt-in proof, and reason/status fields;
    - no SDK/network/provider execution behavior.
 3. Define the persistence boundary in docs/tests for AUR-212:
    - `llm_policy` owns serializable per-reviewer policy audit records now;
@@ -97,6 +100,8 @@ git diff --check
 ## Acceptance Mapping
 
 - Live LLM requires explicit opt-in -> policy tests for missing opt-in and config metadata alone.
+- Explicit provider/model inputs -> policy tests prove reviewer config model alone is not a live-readiness fallback.
+- Reviewer run key binding -> policy tests prove mismatched target/stage/reviewer fails closed.
 - Provider/model/reviewer/target/context/truncation recorded -> policy result serialization/assertions.
 - Fake reviewers remain default -> existing fake reviewer tests plus new guardrail default-mode tests.
 - Redaction covers provider-bound requests and default output surfaces -> provider preview/redaction tests plus existing redaction regressions.
