@@ -12,7 +12,7 @@
 
 Start with tracer bullets, not a complete policy engine. The first useful implementation should run a fixture PR through the graph, select reviewers with staged reasons, emit markdown/JSON, classify output into postable and non-postable items, and prove no GitHub writer is called. Reviewer context boundaries and clarification state are part of the early graph shape, not late integration polish. Answered clarification resume belongs to the fixture graph contract; live reads, live LLM calls, and approval-gated posting come after the fixture graph proves those contracts.
 
-The executable backlog lives in Linear. Treat this plan as the durable sequencing narrative, not the complete ticket list. Every implementation issue should identify the narrowest contract doc, the deterministic fixture or fake, the harness command, the expected artifact, and the explicit out-of-scope boundary before code lands.
+This plan is the durable sequencing narrative; concrete tasks are tracked as GitHub issues and pull requests on this repository (see `docs/decisions/0010-docs-and-github-are-the-backlog.md`). Every implementation issue should identify the narrowest contract doc, the deterministic fixture or fake, the harness command, the expected artifact, and the explicit out-of-scope boundary before code lands.
 
 ## Implemented orchestration checkpoint
 
@@ -92,7 +92,7 @@ Remaining graph work is intentionally staged in later PRDs: production live GitH
 - Formal GitHub review submission, inline comments, approvals, and request-changes writes are out of scope for MVP.
 - Fixture PRs, fake GitHub adapters, and fake reviewer adapters prove behavior before live integrations.
 - Live read, live LLM, and live post behavior are opt-in.
-- Linear is the executable backlog; repository docs are the durable product, architecture, harness, and decision contracts.
+- The repository is the backlog: this plan and the PRDs set sequence and intent, GitHub issues and pull requests hold concrete tasks, and repository docs are the durable product, architecture, harness, and decision contracts.
 
 ## Phase 1 — Contracts and fixtures
 

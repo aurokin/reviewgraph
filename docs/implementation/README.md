@@ -2,16 +2,16 @@
 
 This directory is for narrow implementation contracts once code exists. Keep broad product and architecture material in `docs/product/` and `docs/architecture/`.
 
-## Working from Linear
+## Working from issues
 
-Concrete implementation work is tracked in Linear, not in generated files inside this repository. Each Linear issue should be executable from:
+Concrete implementation work is tracked as GitHub issues and pull requests on this repository, sequenced by `docs/plans/implementation-plan.md`. Do not add generated planning files. Each task should be executable from:
 
-- the issue description and linked milestone;
+- the issue or PR description and the plan phase it belongs to;
 - the narrowest durable doc that defines the behavior;
 - the harness proof contract in `docs/harnesses/harness-engineering.md`;
-- the linked blocker relationships in Linear.
+- any blocking issues named in the issue or PR.
 
-When a Linear issue exposes a missing durable rule, update the narrowest doc instead of adding a one-off local planning file.
+When a task exposes a missing durable rule, update the narrowest doc instead of adding a one-off local planning file.
 
 ## Validation
 
@@ -32,16 +32,6 @@ Run the documentation contract check before handing off documentation-only or pl
 ```bash
 python scripts/check_docs.py
 ```
-
-To prove a Linear issue queue export is dependency-ordered, pass a canonical export:
-
-```bash
-python scripts/check_docs.py --backlog-export path/to/linear-backlog-export.json
-```
-
-The export must be a JSON object with `source: "Linear"`, `project`, `milestone`, `exported_at`, and an ordered `issues` array. Each issue uses `id`, `title`, `status_type`, and `blocked_by`. The checker filters issues whose `status_type` is `canceled`, then fails on duplicate active IDs, missing blockers, cycles, or blockers that appear after their dependent issue. It prints source, project, milestone, timestamp, active issue count, dependency edge count, and skipped canceled count.
-
-Synthetic examples live in `docs/plans/fixtures/`. They are parser/checker examples only and are not the ReviewGraph backlog.
 
 ## Expected future docs
 
