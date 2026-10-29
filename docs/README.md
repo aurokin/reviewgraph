@@ -19,8 +19,8 @@ This directory uses progressive disclosure: start broad, then follow the narrowe
 ## Source of truth
 
 - Product, architecture, harness, and decision contracts live in this repository.
-- Concrete implementation tickets, milestone order, blockers, and agent handoff details live in Linear under the ReviewGraph project.
-- Do not recreate temporary issue trees in the repo once Linear represents them.
+- Milestone order lives in the [implementation plan](plans/implementation-plan.md); concrete tasks, blockers, and handoff details live in GitHub issues and pull requests on this repository. See [Decision 0010](decisions/0010-docs-and-github-are-the-backlog.md).
+- Do not add temporary issue trees or generated planning files to the repo.
 
 ## By task
 
@@ -38,7 +38,7 @@ This directory uses progressive disclosure: start broad, then follow the narrowe
 - Adding tests -> `harnesses/harness-engineering.md`
 - Deciding whether to post to GitHub -> `product/rules.md` and `architecture/side-effects.md`
 - Breaking work into implementation slices -> `prds/README.md`
-- Working a concrete implementation ticket -> Linear issue plus the narrowest linked durable doc
+- Working a concrete implementation ticket -> GitHub issue plus the narrowest linked durable doc
 
 ## By proof type
 

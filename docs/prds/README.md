@@ -2,7 +2,9 @@
 
 These PRDs turn the architecture docs into independently plannable product slices. They are not a single linear implementation plan. Each PRD should be small enough to become one or more issue sets while preserving the larger ReviewGraph product contract.
 
-Implementation issues for these PRDs live in Linear. Keep this directory focused on product slice intent, durable decisions, and acceptance shape. Do not mirror the full Linear backlog here.
+Implementation tasks for these PRDs are GitHub issues and pull requests, sequenced by `docs/plans/implementation-plan.md`. Keep this directory focused on product slice intent, durable decisions, and acceptance shape. Do not mirror individual issues here.
+
+Milestone copies of these PRDs matched the files here; one later revision of PRD 0007 is kept in [the archive](../archive/prd-0007-side-effects-milestone-revision.md) for history.
 
 ## Read Order
 
@@ -31,4 +33,4 @@ Implementation issues for these PRDs live in Linear. Keep this directory focused
 
 When implementation behavior changes, update the narrowest PRD or durable architecture doc rather than expanding this index.
 
-When implementation sequencing changes, update Linear relationships first. Update this index only when the durable dependency shape changes.
+When implementation sequencing changes, update `docs/plans/implementation-plan.md`. Update this index only when the durable dependency shape changes.

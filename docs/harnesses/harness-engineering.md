@@ -2,7 +2,7 @@
 
 Harnesses are the product contract in executable form. They prove ReviewGraph's graph state, reviewer boundaries, quality policy, and side-effect gates before live GitHub or live LLM behavior is trusted.
 
-This document is not the implementation backlog. The detailed issue sequence lives in Linear. Use this guide to decide what proof a slice needs, what fixtures or fakes should exist, and which validation command an implementation agent should run before handing off work.
+This document is not the implementation backlog. The sequence lives in `docs/plans/implementation-plan.md`, and concrete tasks are GitHub issues and pull requests. Use this guide to decide what proof a slice needs, what fixtures or fakes should exist, and which validation command an implementation agent should run before handing off work.
 
 ## Progressive Disclosure
 
@@ -14,9 +14,9 @@ Read only as deep as the task requires:
 4. Quality policy: `docs/architecture/review-quality.md`
 5. Side effects and approval: `docs/architecture/side-effects.md`
 6. Harness proof: this document
-7. Concrete task order: Linear issues in the ReviewGraph project
+7. Concrete task order: `docs/plans/implementation-plan.md` and GitHub issues
 
-If a slice changes behavior, update the narrowest durable doc before or alongside the harness. Do not copy the Linear issue list into docs.
+If a slice changes behavior, update the narrowest durable doc before or alongside the harness. Do not copy individual issue lists into durable docs.
 
 ## Slice Proof Contract
 
@@ -237,8 +237,6 @@ The default validation sequence assumes the project test extra is installed (`py
 
 The default suite includes marker/hash golden tests, fake writer tests, real writer contract tests with fake transports, manual live-post contract tests with the marked smoke skipped, unmarked live smoke prerequisite checks, Ruff import/syntax checks, and Ruff cyclomatic-complexity checks. It must not post to GitHub, call live LLMs, require credentials, or require human input.
 
-For milestone gates, also run the Linear backlog export check described in `docs/implementation/README.md` and delete the temporary export before handoff.
-
 ## Tracer Bullets
 
 Build these early vertical slices before expanding every policy:
@@ -282,11 +280,3 @@ python scripts/check_docs.py
 ```
 
 This verifies the docs index points at required architecture, PRD, decision, harness, and implementation-plan entry points, and that the implementation plan and agent instructions preserve core MVP constraints.
-
-When validating a Linear issue queue, export the ordered Linear issues into the canonical JSON shape described in `docs/implementation/README.md`, then run:
-
-```bash
-python scripts/check_docs.py --backlog-export path/to/linear-backlog-export.json
-```
-
-The backlog check is intentionally export-based and read-only. It does not make repository docs the backlog; it proves that a Linear-derived queue has no duplicate active IDs, missing blocker references, cycles, or blocker-after-dependent inversions.

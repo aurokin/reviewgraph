@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [Decision 0010](0010-docs-and-github-are-the-backlog.md). Kept for history; the tracker it names is no longer used.
 
 ## Context
 
